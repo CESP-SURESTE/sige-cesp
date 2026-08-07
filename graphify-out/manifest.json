@@ -1,0 +1,72 @@
+{
+  "Backend/eslint.config.mjs": {
+    "mtime": 1785955372.8628688,
+    "ast_hash": "069d66f3fd2af0b03d917cf51a1f4c42",
+    "semantic_hash": "069d66f3fd2af0b03d917cf51a1f4c42"
+  },
+  "Backend/nest-cli.json": {
+    "mtime": 1785955372.8628688,
+    "ast_hash": "fa439650fa28a1a7aa8c2b6d81c8cc20",
+    "semantic_hash": "fa439650fa28a1a7aa8c2b6d81c8cc20"
+  },
+  "Backend/package.json": {
+    "mtime": 1785962101.4129755,
+    "ast_hash": "e79c56124c93276fe7a33f731d27d9db",
+    "semantic_hash": "e79c56124c93276fe7a33f731d27d9db"
+  },
+  "Backend/prisma/migrations/20260805204943_init_modelo_completo/migration.sql": {
+    "mtime": 1785962983.318645,
+    "ast_hash": "a002837fd3eee3d0985cda63bd58414d",
+    "semantic_hash": "a002837fd3eee3d0985cda63bd58414d"
+  },
+  "Backend/skills-lock.json": {
+    "mtime": 1785960667.6250005,
+    "ast_hash": "137db2f9ad3a660f6233247efe85eb09",
+    "semantic_hash": "137db2f9ad3a660f6233247efe85eb09"
+  },
+  "Backend/src/app.controller.spec.ts": {
+    "mtime": 1785955372.8682826,
+    "ast_hash": "e91fed2ee35431d60d1adbf1d5739b83",
+    "semantic_hash": "e91fed2ee35431d60d1adbf1d5739b83"
+  },
+  "Backend/src/app.controller.ts": {
+    "mtime": 1785955372.866279,
+    "ast_hash": "ae15d1c5a85e6ebfad68b7193766dfb5",
+    "semantic_hash": "ae15d1c5a85e6ebfad68b7193766dfb5"
+  },
+  "Backend/src/app.module.ts": {
+    "mtime": 1785955372.866279,
+    "ast_hash": "97d51467c8acb83d4379da2cebfb9d63",
+    "semantic_hash": "97d51467c8acb83d4379da2cebfb9d63"
+  },
+  "Backend/src/app.service.ts": {
+    "mtime": 1785955372.8682826,
+    "ast_hash": "08e985e831bca61f6be89c5c2ecef2fa",
+    "semantic_hash": "08e985e831bca61f6be89c5c2ecef2fa"
+  },
+  "Backend/src/main.ts": {
+    "mtime": 1785955372.8682826,
+    "ast_hash": "513b1a8ccb913e8454d526755795b56e",
+    "semantic_hash": "513b1a8ccb913e8454d526755795b56e"
+  },
+  "Backend/test/app.e2e-spec.ts": {
+    "mtime": 1785955372.870888,
+    "ast_hash": "668094bf268e0395763312620e5638e8",
+    "semantic_hash": "668094bf268e0395763312620e5638e8"
+  },
+  "Backend/test/jest-e2e.json": {
+    "mtime": 1785955372.8682826,
+    "ast_hash": "707a50895cb1c565825637916e9cf290",
+    "semantic_hash": "707a50895cb1c565825637916e9cf290"
+  },
+  "Backend/tsconfig.build.json": {
+    "mtime": 1785955372.8628688,
+    "ast_hash": "d23fc4aff02c91ce9c424c15aea9b49b",
+    "semantic_hash": "d23fc4aff02c91ce9c424c15aea9b49b"
+  },
+  "Backend/tsconfig.json": {
+    "mtime": 1785955372.866279,
+    "ast_hash": "e99b998156dc99eda85378413a794718",
+    "semantic_hash": "e99b998156dc99eda85378413a794718"
+  }
+}

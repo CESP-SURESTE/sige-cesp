@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Edit",
+      "Write",
+      "Bash(pnpm *)",
+      "Bash(npx *)",
+      "Bash(node *)",
+      "Bash(git status)",
+      "Bash(git diff)",
+      "Bash(git log *)",
+      "Bash(git add *)",
+      "Bash(git commit *)"
+    ],
+    "ask": [
+      "Write(**/.env*)",
+      "Write(**/schema.prisma)",
+      "Bash(pnpm install*)",
+      "Bash(pnpm remove*)",
+      "Bash(prisma migrate deploy*)",
+      "Bash(prisma migrate reset*)",
+      "Bash(git push*)",
+      "Bash(rm *)",
+      "Bash(Remove-Item*)"
+    ]
+  }
+}

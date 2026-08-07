@@ -1,0 +1,513 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ============================
+// ENUMS
+// ============================
+
+enum RolUsuario {
+  ALUMNO
+  MAESTRO
+  ADMINISTRATIVO
+}
+
+enum EstatusAcademico {
+  INSCRITO
+  BAJA_TEMPORAL
+  BAJA_DEFINITIVA
+  EGRESADO
+}
+
+enum TipoContacto {
+  TUTOR
+  EMERGENCIA
+}
+
+enum EstatusEmpleado {
+  ACTIVO
+  BAJA
+  LICENCIA
+}
+
+enum PuestoAdministrativo {
+  DIRECTOR
+  COORDINADOR_ACADEMICO
+  COORDINADOR_ADMINISTRATIVO
+  AUXILIAR
+  RECEPCION
+  OTRO
+}
+
+enum NivelPermiso {
+  SUPER_ADMIN
+  ADMIN
+  AUXILIAR
+}
+
+enum AccionAuditoria {
+  ALTA
+  BAJA
+  EDICION
+  CAMBIO_PERMISO
+  CAMBIO_ESTATUS
+  ELIMINACION
+}
+
+enum NivelCarrera {
+  TECNICO
+  LICENCIATURA
+  MAESTRIA
+  DOCTORADO
+}
+
+enum ModalidadCarrera {
+  PRESENCIAL
+  SEMIPRESENCIAL
+  EN_LINEA
+}
+
+enum EstatusCarrera {
+  ACTIVA
+  INACTIVA
+}
+
+enum AreaPersonalServicios {
+  INTENDENCIA
+  SEGURIDAD
+  JARDINERIA
+  MANTENIMIENTO
+  OTRO
+}
+
+// ============================
+// SEDE / INFRAESTRUCTURA
+// ============================
+
+model Sede {
+  id                  String   @id @default(uuid())
+  nombre              String   @unique
+  direccion           String
+  ubicacionReferencia String   @map("ubicacion_referencia")
+  telefono            String
+  costoRenta          Decimal? @map("costo_renta") @db.Decimal(10, 2)
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  carreras            Carrera[]
+  salones             Salon[]
+  usuarios            Usuario[]
+  personalServicios   PersonalServicios[]
+  grupos              Grupo[]
+  responsables        SedeResponsable[]
+  registrosAuditoria  RegistroAuditoria[]
+
+  @@map("sedes")
+}
+
+model SedeResponsable {
+  id               String               @id @default(uuid())
+  sedeId           String               @map("sede_id")
+  sede             Sede                 @relation(fields: [sedeId], references: [id])
+  administrativoId String               @map("administrativo_id")
+  administrativo   PerfilAdministrativo @relation(fields: [administrativoId], references: [id])
+  esPrincipal      Boolean              @default(false) @map("es_principal")
+  createdAt        DateTime             @default(now()) @map("created_at")
+
+  @@unique([sedeId, administrativoId])
+  @@map("sede_responsables")
+}
+
+model Salon {
+  id        String   @id @default(uuid())
+  sedeId    String   @map("sede_id")
+  sede      Sede     @relation(fields: [sedeId], references: [id])
+  nombre    String
+  capacidad Int
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  grupos Grupo[]
+
+  @@unique([sedeId, nombre])
+  @@map("salones")
+}
+
+// ============================
+// CARRERA / MALLA
+// ============================
+
+model Carrera {
+  id          String           @id @default(uuid())
+  nombre      String
+  clave       String           @unique
+  sedeId      String           @map("sede_id")
+  sede        Sede             @relation(fields: [sedeId], references: [id])
+  duracion    Int
+  nivel       NivelCarrera
+  modalidad   ModalidadCarrera
+  estatus     EstatusCarrera   @default(ACTIVA)
+  rvoe        String
+  descripcion String
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+
+  mallaCurricular MallaCurricular?
+  materias        Materia[]
+  grupos          Grupo[]
+  alumnos         PerfilAlumno[]
+
+  @@map("carreras")
+}
+
+model MallaCurricular {
+  id            String   @id @default(uuid())
+  carreraId     String   @unique @map("carrera_id")
+  carrera       Carrera  @relation(fields: [carreraId], references: [id])
+  storagePath   String   @map("storage_path")
+  nombreArchivo String   @map("nombre_archivo")
+  subidaEn      DateTime @default(now()) @map("subida_en")
+  subidaPorId   String   @map("subida_por")
+  subidaPor     Usuario  @relation(fields: [subidaPorId], references: [id])
+
+  @@map("mallas_curriculares")
+}
+
+// ============================
+// GRUPO / MATERIA
+// ============================
+
+model Grupo {
+  id          String   @id @default(uuid())
+  sedeId      String   @map("sede_id")
+  sede        Sede     @relation(fields: [sedeId], references: [id])
+  carreraId   String   @map("carrera_id")
+  carrera     Carrera  @relation(fields: [carreraId], references: [id])
+  salonId     String   @map("salon_id")
+  salon       Salon    @relation(fields: [salonId], references: [id])
+  nombre      String
+  anioInicio  Int      @map("anio_inicio")
+  cicloActual Int      @map("ciclo_actual")
+  capacidad   Int
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  alumnos GrupoAlumno[]
+
+  @@map("grupos")
+}
+
+model GrupoAlumno {
+  id               String       @id @default(uuid())
+  grupoId          String       @map("grupo_id")
+  grupo            Grupo        @relation(fields: [grupoId], references: [id])
+  alumnoId         String       @map("alumno_id")
+  alumno           PerfilAlumno @relation(fields: [alumnoId], references: [id])
+  fechaInscripcion DateTime     @default(now()) @map("fecha_inscripcion")
+
+  @@unique([grupoId, alumnoId])
+  @@map("grupo_alumnos")
+}
+
+model Materia {
+  id        String   @id @default(uuid())
+  nombre    String
+  carreraId String   @map("carrera_id")
+  carrera   Carrera  @relation(fields: [carreraId], references: [id])
+  ciclo     Int
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("materias")
+}
+
+// ============================
+// USUARIO (cuenta de acceso)
+// ============================
+
+model Usuario {
+  // OJO: mismo id que devuelve Supabase Auth al crear la cuenta — no se autogenera aquí
+  id            String     @id
+  email         String     @unique
+  rol           RolUsuario
+  sedeId        String     @map("sede_id")
+  sede          Sede       @relation(fields: [sedeId], references: [id])
+  codigoExterno String?    @unique @map("codigo_externo")
+  primerIngreso Boolean    @default(true) @map("primer_ingreso")
+  activo        Boolean    @default(true)
+  ultimoAcceso  DateTime?  @map("ultimo_acceso")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+
+  perfilAlumno         PerfilAlumno?
+  perfilMaestro        PerfilMaestro?
+  perfilAdministrativo PerfilAdministrativo?
+  mallasSubidas        MallaCurricular[]
+  registrosAuditoria   RegistroAuditoria[]
+
+  @@map("usuarios")
+}
+
+// ============================
+// ALUMNO
+// ============================
+
+model PerfilAlumno {
+  id               String           @id @default(uuid())
+  usuarioId        String           @unique @map("usuario_id")
+  usuario          Usuario          @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  nombres          String
+  apellidoPaterno  String           @map("apellido_paterno")
+  apellidoMaterno  String?          @map("apellido_materno")
+  curp             String?
+  fechaNacimiento  DateTime         @map("fecha_nacimiento")
+  matricula        String           @unique
+  correoPersonal   String           @map("correo_personal")
+  carreraId        String           @map("carrera_id")
+  carrera          Carrera          @relation(fields: [carreraId], references: [id])
+  estatusAcademico EstatusAcademico @map("estatus_academico")
+  periodoIngreso   String           @map("periodo_ingreso")
+  semestreActual   Int              @map("semestre_actual")
+  telefono         String?
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+
+  contactos  ContactoAlumno[]
+  infoMedica InfoMedicaAlumno?
+  grupos     GrupoAlumno[]
+
+  @@map("perfiles_alumno")
+}
+
+model ContactoAlumno {
+  id         String       @id @default(uuid())
+  alumnoId   String       @map("alumno_id")
+  alumno     PerfilAlumno @relation(fields: [alumnoId], references: [id], onDelete: Cascade)
+  tipo       TipoContacto
+  nombre     String
+  telefono   String
+  correo     String?
+  parentesco String
+  orden      Int
+
+  @@map("contactos_alumno")
+}
+
+model InfoMedicaAlumno {
+  id                   String       @id @default(uuid())
+  alumnoId             String       @unique @map("alumno_id")
+  alumno               PerfilAlumno @relation(fields: [alumnoId], references: [id], onDelete: Cascade)
+  tieneCondicionMedica Boolean      @default(false) @map("tiene_condicion_medica")
+  padecimiento         String?
+  medicamentos         String?
+  alergias             String?
+  tratamientoAdicional String?      @map("tratamiento_adicional")
+
+  @@map("info_medica_alumno")
+}
+
+// ============================
+// MAESTRO
+// ============================
+
+model PerfilMaestro {
+  id                String          @id @default(uuid())
+  usuarioId         String          @unique @map("usuario_id")
+  usuario           Usuario         @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  nombres           String
+  apellidoPaterno   String          @map("apellido_paterno")
+  apellidoMaterno   String?         @map("apellido_materno")
+  curp              String
+  cedulaProfesional String?         @map("cedula_profesional")
+  correoPersonal    String          @map("correo_personal")
+  telefono          String
+  fechaContratacion DateTime        @map("fecha_contratacion")
+  estatus           EstatusEmpleado
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
+
+  contactos  ContactoMaestro[]
+  infoMedica InfoMedicaMaestro?
+
+  @@map("perfiles_maestro")
+}
+
+model ContactoMaestro {
+  id         String        @id @default(uuid())
+  maestroId  String        @map("maestro_id")
+  maestro    PerfilMaestro @relation(fields: [maestroId], references: [id], onDelete: Cascade)
+  nombre     String
+  telefono   String
+  correo     String?
+  parentesco String
+  orden      Int
+
+  @@map("contactos_maestro")
+}
+
+model InfoMedicaMaestro {
+  id                   String        @id @default(uuid())
+  maestroId            String        @unique @map("maestro_id")
+  maestro              PerfilMaestro @relation(fields: [maestroId], references: [id], onDelete: Cascade)
+  tieneCondicionMedica Boolean       @default(false) @map("tiene_condicion_medica")
+  padecimiento         String?
+  medicamentos         String?
+  alergias             String?
+  tratamientoAdicional String?       @map("tratamiento_adicional")
+
+  @@map("info_medica_maestro")
+}
+
+// ============================
+// ADMINISTRATIVO
+// ============================
+
+model PerfilAdministrativo {
+  id                String               @id @default(uuid())
+  usuarioId         String               @unique @map("usuario_id")
+  usuario           Usuario              @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  nombres           String
+  apellidoPaterno   String               @map("apellido_paterno")
+  apellidoMaterno   String?              @map("apellido_materno")
+  curp              String
+  correoPersonal    String               @map("correo_personal")
+  telefono          String
+  fechaContratacion DateTime             @map("fecha_contratacion")
+  estatus           EstatusEmpleado
+  puesto            PuestoAdministrativo
+  nivelPermiso      NivelPermiso         @map("nivel_permiso")
+  createdAt         DateTime             @default(now()) @map("created_at")
+  updatedAt         DateTime             @updatedAt @map("updated_at")
+
+  contactos   ContactoAdministrativo[]
+  infoMedica  InfoMedicaAdministrativo?
+  sedesACargo SedeResponsable[]
+  permisos    PermisoAdministrativo[]
+
+  @@map("perfiles_administrativo")
+}
+
+model ContactoAdministrativo {
+  id               String               @id @default(uuid())
+  administrativoId String               @map("administrativo_id")
+  administrativo   PerfilAdministrativo @relation(fields: [administrativoId], references: [id], onDelete: Cascade)
+  nombre           String
+  telefono         String
+  correo           String?
+  parentesco       String
+  orden            Int
+
+  @@map("contactos_administrativo")
+}
+
+model InfoMedicaAdministrativo {
+  id                   String               @id @default(uuid())
+  administrativoId     String               @unique @map("administrativo_id")
+  administrativo       PerfilAdministrativo @relation(fields: [administrativoId], references: [id], onDelete: Cascade)
+  tieneCondicionMedica Boolean              @default(false) @map("tiene_condicion_medica")
+  padecimiento         String?
+  medicamentos         String?
+  alergias             String?
+  tratamientoAdicional String?              @map("tratamiento_adicional")
+
+  @@map("info_medica_administrativo")
+}
+
+// ============================
+// PERSONAL DE SERVICIOS (sin login)
+// ============================
+
+model PersonalServicios {
+  id                String                @id @default(uuid())
+  sedeId            String                @map("sede_id")
+  sede              Sede                  @relation(fields: [sedeId], references: [id])
+  nombres           String
+  apellidoPaterno   String                @map("apellido_paterno")
+  apellidoMaterno   String?               @map("apellido_materno")
+  curp              String
+  area              AreaPersonalServicios
+  telefono          String
+  correoPersonal    String?               @map("correo_personal")
+  fechaContratacion DateTime              @map("fecha_contratacion")
+  estatus           EstatusEmpleado
+  createdAt         DateTime              @default(now()) @map("created_at")
+  updatedAt         DateTime              @updatedAt @map("updated_at")
+
+  contactos  ContactoPersonalServicios[]
+  infoMedica InfoMedicaPersonalServicios?
+
+  @@map("personal_servicios")
+}
+
+model ContactoPersonalServicios {
+  id                  String            @id @default(uuid())
+  personalServiciosId String            @map("personal_servicios_id")
+  personalServicios   PersonalServicios @relation(fields: [personalServiciosId], references: [id], onDelete: Cascade)
+  nombre              String
+  telefono            String
+  correo              String?
+  parentesco          String
+  orden               Int
+
+  @@map("contactos_personal_servicios")
+}
+
+model InfoMedicaPersonalServicios {
+  id                   String            @id @default(uuid())
+  personalServiciosId  String            @unique @map("personal_servicios_id")
+  personalServicios    PersonalServicios @relation(fields: [personalServiciosId], references: [id], onDelete: Cascade)
+  tieneCondicionMedica Boolean           @default(false) @map("tiene_condicion_medica")
+  padecimiento         String?
+  medicamentos         String?
+  alergias             String?
+  tratamientoAdicional String?           @map("tratamiento_adicional")
+
+  @@map("info_medica_personal_servicios")
+}
+
+// ============================
+// AUDITORÍA Y PERMISOS
+// ============================
+
+model RegistroAuditoria {
+  id        String          @id @default(uuid())
+  usuarioId String          @map("usuario_id")
+  usuario   Usuario         @relation(fields: [usuarioId], references: [id])
+  sedeId    String          @map("sede_id")
+  sede      Sede            @relation(fields: [sedeId], references: [id])
+  accion    AccionAuditoria
+  entidad   String
+  entidadId String          @map("entidad_id")
+  detalle   Json?
+  fecha     DateTime        @default(now())
+
+  @@map("registro_auditoria")
+}
+
+model Seccion {
+  id     String @id @default(uuid())
+  nombre String @unique
+  clave  String @unique
+
+  permisos PermisoAdministrativo[]
+
+  @@map("secciones")
+}
+
+model PermisoAdministrativo {
+  id               String               @id @default(uuid())
+  administrativoId String               @map("administrativo_id")
+  administrativo   PerfilAdministrativo @relation(fields: [administrativoId], references: [id], onDelete: Cascade)
+  seccionId        String               @map("seccion_id")
+  seccion          Seccion              @relation(fields: [seccionId], references: [id])
+  puedeVer         Boolean              @default(true) @map("puede_ver")
+  puedeEditar      Boolean              @default(false) @map("puede_editar")
+
+  @@unique([administrativoId, seccionId])
+  @@map("permisos_administrativo")
+}

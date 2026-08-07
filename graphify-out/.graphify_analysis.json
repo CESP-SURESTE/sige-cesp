@@ -1,0 +1,305 @@
+{
+  "communities": {
+    "0": [
+      "backend_tsconfig",
+      "backend_tsconfig_compileroptions",
+      "backend_tsconfig_compileroptions_allowsyntheticdefaultimports",
+      "backend_tsconfig_compileroptions_baseurl",
+      "backend_tsconfig_compileroptions_declaration",
+      "backend_tsconfig_compileroptions_emitdecoratormetadata",
+      "backend_tsconfig_compileroptions_esmoduleinterop",
+      "backend_tsconfig_compileroptions_experimentaldecorators",
+      "backend_tsconfig_compileroptions_forceconsistentcasinginfilenames",
+      "backend_tsconfig_compileroptions_incremental",
+      "backend_tsconfig_compileroptions_isolatedmodules",
+      "backend_tsconfig_compileroptions_module",
+      "backend_tsconfig_compileroptions_moduleresolution",
+      "backend_tsconfig_compileroptions_nofallthroughcasesinswitch",
+      "backend_tsconfig_compileroptions_noimplicitany",
+      "backend_tsconfig_compileroptions_outdir",
+      "backend_tsconfig_compileroptions_removecomments",
+      "backend_tsconfig_compileroptions_resolvepackagejsonexports",
+      "backend_tsconfig_compileroptions_skiplibcheck",
+      "backend_tsconfig_compileroptions_sourcemap",
+      "backend_tsconfig_compileroptions_strictbindcallapply",
+      "backend_tsconfig_compileroptions_strictnullchecks",
+      "backend_tsconfig_compileroptions_target"
+    ],
+    "1": [
+      "backend_package",
+      "backend_package_author",
+      "backend_package_description",
+      "backend_package_jest",
+      "backend_package_jest_collectcoveragefrom",
+      "backend_package_jest_coveragedirectory",
+      "backend_package_jest_modulefileextensions",
+      "backend_package_jest_rootdir",
+      "backend_package_jest_testenvironment",
+      "backend_package_jest_testregex",
+      "backend_package_jest_transform",
+      "backend_package_license",
+      "backend_package_name",
+      "backend_package_private",
+      "backend_package_transform_t_j_s",
+      "backend_package_version",
+      "ref_js",
+      "ref_json",
+      "ref_t_j_s",
+      "ref_ts"
+    ],
+    "2": [
+      "backend_src_app_controller",
+      "backend_src_app_controller_appcontroller",
+      "backend_src_app_controller_appcontroller_constructor",
+      "backend_src_app_controller_appcontroller_gethello",
+      "backend_src_app_controller_spec",
+      "backend_src_app_module",
+      "backend_src_app_module_appmodule",
+      "backend_src_app_service",
+      "backend_src_app_service_appservice",
+      "backend_src_app_service_appservice_gethello",
+      "backend_src_main",
+      "backend_src_main_bootstrap",
+      "backend_test_app_e2e_spec",
+      "controller",
+      "get",
+      "injectable",
+      "module"
+    ],
+    "3": [
+      "backend_package_dependencies",
+      "backend_package_dependencies_nestjs_common",
+      "backend_package_dependencies_nestjs_core",
+      "backend_package_dependencies_nestjs_platform_express",
+      "backend_package_dependencies_prisma_client",
+      "backend_package_dependencies_reflect_metadata",
+      "backend_package_dependencies_rxjs",
+      "backend_package_dependencies_supabase_server",
+      "nestjs_common",
+      "nestjs_core",
+      "nestjs_platform_express",
+      "prisma_client",
+      "reflect_metadata",
+      "rxjs",
+      "supabase_server"
+    ],
+    "4": [
+      "backend_package_scripts",
+      "backend_package_scripts_build",
+      "backend_package_scripts_format",
+      "backend_package_scripts_lint",
+      "backend_package_scripts_start",
+      "backend_package_scripts_start_debug",
+      "backend_package_scripts_start_dev",
+      "backend_package_scripts_start_prod",
+      "backend_package_scripts_test",
+      "backend_package_scripts_test_cov",
+      "backend_package_scripts_test_debug",
+      "backend_package_scripts_test_e2e",
+      "backend_package_scripts_test_watch"
+    ],
+    "5": [
+      "backend_tsconfig_build",
+      "backend_tsconfig_build_exclude",
+      "backend_tsconfig_build_extends",
+      "ref_dist",
+      "ref_node_modules",
+      "ref_spec_ts",
+      "ref_test",
+      "ref_tsconfig_json"
+    ],
+    "6": [
+      "backend_package_devdependencies",
+      "backend_package_devdependencies_globals",
+      "backend_package_devdependencies_nestjs_testing",
+      "backend_package_devdependencies_types_express",
+      "globals",
+      "nestjs_testing",
+      "types_express"
+    ],
+    "7": [
+      "backend_nest_cli",
+      "backend_nest_cli_collection",
+      "backend_nest_cli_compileroptions",
+      "backend_nest_cli_compileroptions_deleteoutdir",
+      "backend_nest_cli_schema",
+      "backend_nest_cli_sourceroot"
+    ],
+    "8": [
+      "backend_package_devdependencies_eslint",
+      "eslint"
+    ],
+    "9": [
+      "backend_package_devdependencies_eslint_config_prettier",
+      "eslint_config_prettier"
+    ],
+    "10": [
+      "backend_package_devdependencies_eslint_eslintrc",
+      "eslint_eslintrc"
+    ],
+    "11": [
+      "backend_package_devdependencies_eslint_js",
+      "eslint_js"
+    ],
+    "12": [
+      "backend_package_devdependencies_eslint_plugin_prettier",
+      "eslint_plugin_prettier"
+    ],
+    "13": [
+      "backend_package_devdependencies_jest",
+      "jest"
+    ],
+    "14": [
+      "backend_package_devdependencies_nestjs_cli",
+      "nestjs_cli"
+    ],
+    "15": [
+      "backend_package_devdependencies_nestjs_schematics",
+      "nestjs_schematics"
+    ],
+    "16": [
+      "backend_package_devdependencies_prettier",
+      "prettier"
+    ],
+    "17": [
+      "backend_package_devdependencies_prisma",
+      "prisma"
+    ],
+    "18": [
+      "backend_package_devdependencies_source_map_support",
+      "source_map_support"
+    ],
+    "19": [
+      "backend_package_devdependencies_supertest",
+      "supertest"
+    ],
+    "20": [
+      "backend_package_devdependencies_ts_jest",
+      "ts_jest"
+    ],
+    "21": [
+      "backend_package_devdependencies_ts_loader",
+      "ts_loader"
+    ],
+    "22": [
+      "backend_package_devdependencies_ts_node",
+      "ts_node"
+    ],
+    "23": [
+      "backend_package_devdependencies_tsconfig_paths",
+      "tsconfig_paths"
+    ],
+    "24": [
+      "backend_package_devdependencies_types_jest",
+      "types_jest"
+    ],
+    "25": [
+      "backend_package_devdependencies_types_node",
+      "types_node"
+    ],
+    "26": [
+      "backend_package_devdependencies_types_supertest",
+      "types_supertest"
+    ],
+    "27": [
+      "backend_package_devdependencies_typescript",
+      "typescript"
+    ],
+    "28": [
+      "backend_package_devdependencies_typescript_eslint",
+      "typescript_eslint"
+    ],
+    "29": [
+      "backend_eslint_config"
+    ]
+  },
+  "cohesion": {
+    "0": 0.08695652173913043,
+    "1": 0.1,
+    "2": 0.19852941176470587,
+    "3": 0.13333333333333333,
+    "4": 0.15384615384615385,
+    "5": 0.25,
+    "6": 0.2857142857142857,
+    "7": 0.3333333333333333,
+    "8": 1.0,
+    "9": 1.0,
+    "10": 1.0,
+    "11": 1.0,
+    "12": 1.0,
+    "13": 1.0,
+    "14": 1.0,
+    "15": 1.0,
+    "16": 1.0,
+    "17": 1.0,
+    "18": 1.0,
+    "19": 1.0,
+    "20": 1.0,
+    "21": 1.0,
+    "22": 1.0,
+    "23": 1.0,
+    "24": 1.0,
+    "25": 1.0,
+    "26": 1.0,
+    "27": 1.0,
+    "28": 1.0,
+    "29": 1.0
+  },
+  "gods": [
+    {
+      "id": "backend_tsconfig_compileroptions",
+      "label": "compilerOptions",
+      "degree": 22
+    },
+    {
+      "id": "backend_package_scripts",
+      "label": "scripts",
+      "degree": 13
+    },
+    {
+      "id": "backend_package_jest",
+      "label": "jest",
+      "degree": 8
+    },
+    {
+      "id": "backend_src_app_service_appservice",
+      "label": "AppService",
+      "degree": 7
+    },
+    {
+      "id": "backend_src_app_controller_appcontroller",
+      "label": "AppController",
+      "degree": 6
+    },
+    {
+      "id": "backend_tsconfig_build_exclude",
+      "label": "exclude",
+      "degree": 5
+    },
+    {
+      "id": "backend_package_jest_modulefileextensions",
+      "label": "moduleFileExtensions",
+      "degree": 4
+    },
+    {
+      "id": "backend_src_app_module_appmodule",
+      "label": "AppModule",
+      "degree": 4
+    },
+    {
+      "id": "backend_nest_cli_compileroptions",
+      "label": "compilerOptions",
+      "degree": 2
+    },
+    {
+      "id": "backend_package_dependencies_nestjs_common",
+      "label": "@nestjs/common",
+      "degree": 2
+    }
+  ],
+  "surprises": [],
+  "tokens": {
+    "input": 0,
+    "output": 0
+  }
+}
