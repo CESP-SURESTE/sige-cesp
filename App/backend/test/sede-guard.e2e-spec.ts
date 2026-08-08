@@ -6,6 +6,7 @@ import { AppModule } from '../src/app.module';
 import { SEDE_GUARD_ENV_OVERRIDE } from '../src/common/guards/sede.guard';
 import { loadEnv } from '../src/load-env';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { configureApp } from '../src/setup-app';
 
 loadEnv();
 
@@ -75,6 +76,7 @@ describe('SedeGuard (e2e)', () => {
       .compile();
 
     app = moduleFixture.createNestApplication();
+    configureApp(app);
     await app.init();
 
     prisma = moduleFixture.get(PrismaService);

@@ -101,7 +101,12 @@ export class AuthService {
   }
 
   /**
-   * Valida el body a mano (no hay `ValidationPipe` global todavía — Día 9).
+   * Valida el body a mano — capa independiente del `ValidationPipe` global
+   * (agregado en Día 9, ver `setup-app.ts`), que ya cubre `LoginDto`
+   * (`@IsEmail`, `@IsString`+`@IsNotEmpty`) antes de llegar aquí. Se deja
+   * esta segunda validación a propósito: no depende de que el controller
+   * siga usando `LoginDto` tal cual, y es la que decide el mensaje/código
+   * de error de negocio (`VALIDATION_ERROR`) específico de login.
    * Solo valida presencia/formato, nunca decide autenticación acá.
    */
   private validarCredenciales(

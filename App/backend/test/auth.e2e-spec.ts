@@ -3,9 +3,12 @@ import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { ThrottlerStorage } from '@nestjs/throttler';
+import type { ThrottlerStorageService } from '@nestjs/throttler';
 import { AppModule } from '../src/app.module';
 import { AUTH_SUPABASE_CLIENT_OVERRIDE } from '../src/auth/auth.service';
 import { loadEnv } from '../src/load-env';
+import { configureApp } from '../src/setup-app';
 
 loadEnv();
 
@@ -39,6 +42,7 @@ interface LoginBody {
 describe('AuthController — POST /auth/login (e2e)', () => {
   let app: INestApplication<App>;
   let signInWithPassword: jest.Mock;
+  let throttlerStorage: ThrottlerStorageService;
 
   beforeAll(async () => {
     signInWithPassword = jest.fn();
@@ -54,11 +58,22 @@ describe('AuthController — POST /auth/login (e2e)', () => {
       .compile();
 
     app = moduleFixture.createNestApplication();
+    configureApp(app);
     await app.init();
+
+    // `LoginThrottlerGuard` (Día 9) comparte una sola instancia de storage
+    // (Map en memoria) para toda la vida de `app`. Sin resetearla entre
+    // tests, los ~9 `it` de este describe (todos pegándole a
+    // `POST /auth/login` desde la misma IP de supertest) chocarían con el
+    // límite real de 5/min y el suite quedaría flaky — no es "ajustar el
+    // límite para que el test pase", es aislar cada test del rate limit de
+    // los demás, igual que `signInWithPassword.mockReset()`.
+    throttlerStorage = moduleFixture.get(ThrottlerStorage);
   });
 
   afterEach(() => {
     signInWithPassword.mockReset();
+    throttlerStorage.storage.clear();
   });
 
   afterAll(async () => {
@@ -193,5 +208,51 @@ describe('AuthController — POST /auth/login (e2e)', () => {
 
     expect(res.status).toBe(400);
     expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+  });
+
+  it('body con propiedad extra no declarada en el DTO -> 400 VALIDATION_ERROR (forbidNonWhitelisted)', async () => {
+    const res = await request(app.getHttpServer()).post('/auth/login').send({
+      email: 'admin@cesp.edu.mx',
+      password: 'password-correcto',
+      rol: 'SUPER_ADMIN',
+    });
+
+    expect(res.status).toBe(400);
+    expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+    expect(signInWithPassword).not.toHaveBeenCalled();
+  });
+
+  it('6to intento en la misma ventana -> 429 RATE_LIMIT_EXCEEDED (LoginThrottlerGuard)', async () => {
+    signInWithPassword.mockResolvedValue({
+      data: { user: null, session: null },
+      error: {
+        name: 'AuthApiError',
+        message: 'Invalid login credentials',
+        status: 400,
+        code: 'invalid_credentials',
+      },
+    });
+
+    const credenciales = {
+      email: 'admin@cesp.edu.mx',
+      password: 'password-incorrecto',
+    };
+
+    // Límite configurado: 5 intentos / 60s (ver `auth.module.ts`) — los
+    // primeros 5 pasan el guard (aunque fallen la autenticación real, 401),
+    // el 6to lo bloquea el guard antes de llegar al controller.
+    for (let intento = 0; intento < 5; intento += 1) {
+      const res = await request(app.getHttpServer())
+        .post('/auth/login')
+        .send(credenciales);
+      expect(res.status).toBe(401);
+    }
+
+    const res = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send(credenciales);
+
+    expect(res.status).toBe(429);
+    expect((res.body as ErrorBody).code).toBe('RATE_LIMIT_EXCEEDED');
   });
 });
