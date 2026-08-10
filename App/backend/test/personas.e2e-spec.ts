@@ -48,6 +48,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
   let actorAdminId: string;
   let actorAuxiliarId: string;
   let actorSuperAdminId: string;
+  let actorSinPerfilId: string;
   let createUser: jest.Mock;
   let deleteUser: jest.Mock;
   let privateKey: CryptoKey;
@@ -86,6 +87,17 @@ describe('PersonasController — POST /personas (e2e)', () => {
         rol: RolUsuario.ADMINISTRATIVO,
       },
       actorAuxiliarId,
+    );
+  }
+
+  async function tokenSinPerfil(): Promise<string> {
+    return firmarToken(
+      {
+        role: 'authenticated',
+        sede_id: sedeMeridaId,
+        rol: RolUsuario.ADMINISTRATIVO,
+      },
+      actorSinPerfilId,
     );
   }
 
@@ -231,6 +243,24 @@ describe('PersonasController — POST /personas (e2e)', () => {
       },
     });
     actorSuperAdminId = superAdmin.id;
+
+    // Fixture nuevo (pendiente de QA — Día 11, re-auditoría de correcciones:
+    // "el branch actor ADMINISTRATIVO SIN fila en PerfilAdministrativo no
+    // tiene cobertura e2e dedicada"). A diferencia de `auxiliar` arriba (que
+    // SÍ tiene fila con `nivelPermiso: AUXILIAR`), este usuario tiene `rol:
+    // ADMINISTRATIVO` en `usuarios` pero deliberadamente NO tiene fila en
+    // `PerfilAdministrativo` — ejercita el fallback real de
+    // `verificarJerarquiaNivelPermiso` (`perfilActor?.nivelPermiso ??
+    // NivelPermiso.AUXILIAR`), no solo el camino de un AUXILIAR con fila.
+    const sinPerfil = await prisma.usuario.create({
+      data: {
+        id: randomUUID(),
+        email: `fixture.sinperfil.${randomUUID()}@cesp-merida.edu.mx`,
+        rol: RolUsuario.ADMINISTRATIVO,
+        sedeId: sedeMeridaId,
+      },
+    });
+    actorSinPerfilId = sinPerfil.id;
   });
 
   afterEach(() => {
@@ -462,6 +492,21 @@ describe('PersonasController — POST /personas (e2e)', () => {
       .set('Authorization', `Bearer ${await tokenAuxiliar()}`)
       .send({
         email: `auxiliar.intenta.crear.${randomUUID()}@cesp-merida.edu.mx`,
+        rol: RolUsuario.ADMINISTRATIVO,
+        perfilAdministrativo: perfilAdministrativoValido(),
+      });
+
+    expect(res.status).toBe(403);
+    expect((res.body as ErrorBody).code).toBe('NIVEL_PERMISO_INSUFICIENTE');
+    expect(createUser).not.toHaveBeenCalled();
+  });
+
+  it('ADMINISTRATIVO sin fila en PerfilAdministrativo intenta dar de alta un ADMINISTRATIVO -> 403 NIVEL_PERMISO_INSUFICIENTE (fallback a AUXILIAR), sin llamar a Supabase Auth', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/personas')
+      .set('Authorization', `Bearer ${await tokenSinPerfil()}`)
+      .send({
+        email: `sinperfil.intenta.crear.${randomUUID()}@cesp-merida.edu.mx`,
         rol: RolUsuario.ADMINISTRATIVO,
         perfilAdministrativo: perfilAdministrativoValido(),
       });

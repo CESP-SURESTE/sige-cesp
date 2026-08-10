@@ -39,6 +39,14 @@ const ROL_POR_PREFIJO: { prefijo: string; rol: Rol }[] = [
 // sesión (o ninguna), si no, redirigir ahí terminaría en loop.
 const RUTAS_PUBLICAS = ['/login', '/no-autorizado'];
 
+// Dia 12 - primer ingreso obligatorio. `/cambiar-password` NO es publica
+// (necesita sesion real para saber a quien pertenece el cambio), pero queda
+// exenta del forzado de abajo para no hacer loop consigo misma. Tambien
+// sirve para cambio voluntario de password despues del primer ingreso (no
+// solo el forzado), por eso no se retira el acceso una vez que
+// `primer_ingreso` pasa a `false`.
+const RUTA_CAMBIAR_PASSWORD = '/cambiar-password';
+
 function esRolValido(valor: unknown): valor is Rol {
   return typeof valor === 'string' && (ROLES_VALIDOS as string[]).includes(valor);
 }
@@ -52,16 +60,27 @@ export async function proxy(request: NextRequest) {
   // Auth Hook) se trata como no autenticado para efectos de ruteo: no hay
   // ninguna sección de la app a la que darle acceso.
   const autenticado = rol !== null;
+  // `=== true` a proposito, no truthy: el claim viene en `null`/`undefined`
+  // para JWTs sin fila en `usuarios` o emitidos antes de este cambio (Dia
+  // 12, backend) - fail-open es el criterio correcto aqui porque esto es un
+  // check optimista de UX (forzar el flujo de cambio de password), no un
+  // limite de seguridad; RLS/guards del backend no dependen de este claim.
+  const primerIngreso = claims?.primer_ingreso === true;
 
   if (RUTAS_PUBLICAS.includes(pathname)) {
     if (autenticado && pathname === '/login') {
-      return NextResponse.redirect(new URL(HOME_POR_ROL[rol], request.url));
+      const destino = primerIngreso ? RUTA_CAMBIAR_PASSWORD : HOME_POR_ROL[rol];
+      return NextResponse.redirect(new URL(destino, request.url));
     }
     return supabaseResponse;
   }
 
   if (!autenticado) {
     return NextResponse.redirect(new URL('/login', request.url));
+  }
+
+  if (primerIngreso && pathname !== RUTA_CAMBIAR_PASSWORD) {
+    return NextResponse.redirect(new URL(RUTA_CAMBIAR_PASSWORD, request.url));
   }
 
   if (pathname === '/') {

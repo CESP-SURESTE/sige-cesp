@@ -10,10 +10,18 @@ import { NextResponse, type NextRequest } from 'next/server';
  * `PerfilAdministrativo.nivelPermiso` (`SUPER_ADMIN | ADMIN | AUXILIAR`,
  * todavía no sincronizado al JWT, ver Fase 4).
  */
+// `primer_ingreso` (Dia 12, backend) espejo de `usuarios.primer_ingreso`.
+// Igual que `rol`/`sede_id`: viene en `null` si el usuario no tiene fila en
+// `usuarios`. Check optimista (JWT ya emitido, sin roundtrip a la DB) - un
+// JWT emitido antes de un cambio de password puede tardar hasta su proximo
+// refresh en reflejar `primer_ingreso: false`, por eso
+// `app/cambiar-password/page.tsx` fuerza `supabase.auth.refreshSession()`
+// tras un cambio exitoso en vez de esperar el refresh automatico.
 export type SigeJwtClaims = {
   sub: string;
   rol?: string;
   sede_id?: string;
+  primer_ingreso?: boolean | null;
   [key: string]: unknown;
 };
 

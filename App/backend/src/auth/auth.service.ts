@@ -8,6 +8,8 @@ import {
   Optional,
   UnauthorizedException,
 } from '@nestjs/common';
+import { AccionAuditoria } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
 
 /**
  * `@supabase/server` (y `jose`, del que depende) son paquetes ESM-only —
@@ -87,6 +89,7 @@ export interface LoginResult {
 @Injectable()
 export class AuthService {
   constructor(
+    private readonly prisma: PrismaService,
     @Optional()
     @Inject(AUTH_SUPABASE_CLIENT_OVERRIDE)
     private readonly clientOverride?: SupabaseAdminClient,
@@ -190,11 +193,14 @@ export class AuthService {
         // caído, etc.) — no se filtran detalles internos en el mensaje al
         // cliente, pero sí se loguea server-side (regla 12 de CLAUDE.md
         // raíz) para no repetir el 500 indiagnosticable de Día 10.
-        console.error('[AuthService.login] Error no mapeado de Supabase Auth:', {
-          code: error.code,
-          status: error.status,
-          message: error.message,
-        });
+        console.error(
+          '[AuthService.login] Error no mapeado de Supabase Auth:',
+          {
+            code: error.code,
+            status: error.status,
+            message: error.message,
+          },
+        );
         throw new InternalServerErrorException({
           error: 'Error inesperado al iniciar sesión',
           code: 'SERVER_ERROR',
@@ -242,5 +248,148 @@ export class AuthService {
         code: 'SERVER_ERROR',
       });
     }
+  }
+
+  /**
+   * `PATCH /auth/cambiar-password` — Fase 4, Día 12.
+   *
+   * Cualquier usuario autenticado puede cambiar su propia contraseña
+   * (guardado a nivel de ruta con `@UseGuards(SedeGuard)` únicamente, sin
+   * `RolesGuard` — ver `auth.controller.ts`). Orden fijo (encargo de Día
+   * 12), sin transacción distribuida ni compensación (a diferencia del alta
+   * de Día 11 — acá no se crean entidades entre dos sistemas, solo se
+   * modifica una que ya existe):
+   *
+   *   a. Reautentica al actor contra Supabase Auth real
+   *      (`signInWithPassword` con el email del JWT + `passwordActual`) —
+   *      confirma que quien tiene la sesión también conoce la contraseña
+   *      actual antes de cambiarla. Cualquier error acá (credenciales
+   *      inválidas u otro) -> 401 `UNAUTHORIZED`.
+   *   b. Si la reautenticación fue exitosa: `auth.admin.updateUserById`
+   *      (Admin API) cambia la contraseña real en Supabase Auth. Cualquier
+   *      error acá -> 500 `SERVER_ERROR` (logueado completo, regla 12).
+   *   c. `usuarios.primerIngreso = false` (un solo `update`, sin
+   *      transacción — a diferencia de Día 11, es un solo write).
+   *   d. `RegistroAuditoria` (regla 5 — solo inserción, automático).
+   *
+   * Ambigüedad documentada (encargo de Día 12): `AccionAuditoria` es un
+   * enum cerrado (`ALTA | BAJA | EDICION | CAMBIO_PERMISO | CAMBIO_ESTATUS |
+   * ELIMINACION`, ver `prisma/schema.prisma`) sin un valor específico para
+   * "cambio de contraseña". Se usa `EDICION` — el actor edita su propia
+   * fila `Usuario` (`primerIngreso` pasa de `true` a `false`), es el valor
+   * semánticamente más cercano sin inventar uno fuera del enum. Consignado
+   * también en `documentacion_de_agentes/ESTADO.md`.
+   *
+   * Si (c)/(d) fallan DESPUÉS de que la contraseña ya cambió en Supabase
+   * Auth: se loguea completo (regla 12) pero NO se compensa — la
+   * contraseña nueva ya es el estado correcto, no hay nada que revertir
+   * (a diferencia del alta de Día 11, que sí compensa borrando el usuario
+   * de Auth porque ahí la creación completa es lo que debe ser atómico).
+   */
+  async cambiarPassword(
+    actorUsuarioId: string,
+    actorEmail: string,
+    sedeId: string,
+    passwordActualInput: unknown,
+    passwordNuevaInput: unknown,
+  ): Promise<{ ok: true }> {
+    if (
+      typeof passwordActualInput !== 'string' ||
+      passwordActualInput.length === 0
+    ) {
+      throw new BadRequestException({
+        error: 'La contraseña actual es requerida',
+        code: 'VALIDATION_ERROR',
+      });
+    }
+    if (
+      typeof passwordNuevaInput !== 'string' ||
+      passwordNuevaInput.length < 8
+    ) {
+      throw new BadRequestException({
+        error: 'La contraseña nueva debe tener al menos 8 caracteres',
+        code: 'VALIDATION_ERROR',
+      });
+    }
+
+    const client = await this.getClient();
+
+    // a. Reautenticación real — mismo cliente (`createAdminClient()`) que
+    // usa `login()`: `@supabase/server/core` solo expone
+    // `createAdminClient`/`createContextClient` como clientes completos
+    // (ver `node_modules/@supabase/server/dist/core/index.d.mts`);
+    // `createContextClient` requiere un token/keyName de contexto de
+    // request que no aplica acá (esto no es un passthrough de RLS), y el
+    // admin client YA expone `.auth.signInWithPassword` (confirmado en
+    // `login()`, que lo usa desde Día 7) — no hace falta un segundo tipo de
+    // cliente.
+    const { error: reauthError } = await client.auth.signInWithPassword({
+      email: actorEmail,
+      password: passwordActualInput,
+    });
+
+    if (reauthError) {
+      console.error(
+        '[AuthService.cambiarPassword] Falló la reautenticación (contraseña actual incorrecta o error de Supabase Auth):',
+        {
+          code: reauthError.code,
+          status: reauthError.status,
+          message: reauthError.message,
+        },
+      );
+      throw new UnauthorizedException({
+        error: 'La contraseña actual es incorrecta',
+        code: 'UNAUTHORIZED',
+      });
+    }
+
+    // b. Cambia la contraseña real en Supabase Auth (Admin API).
+    const { error: updateError } = await client.auth.admin.updateUserById(
+      actorUsuarioId,
+      { password: passwordNuevaInput },
+    );
+
+    if (updateError) {
+      console.error(
+        '[AuthService.cambiarPassword] Error actualizando la contraseña en Supabase Auth:',
+        {
+          code: updateError.code,
+          status: updateError.status,
+          message: updateError.message,
+        },
+      );
+      throw new InternalServerErrorException({
+        error: 'Error inesperado al cambiar la contraseña',
+        code: 'SERVER_ERROR',
+      });
+    }
+
+    // c + d. La contraseña YA cambió en Supabase Auth en este punto — sin
+    // compensación posible/necesaria si esto falla (ver comentario del
+    // método arriba).
+    try {
+      await this.prisma.usuario.update({
+        where: { id: actorUsuarioId },
+        data: { primerIngreso: false },
+      });
+
+      await this.prisma.registroAuditoria.create({
+        data: {
+          usuarioId: actorUsuarioId,
+          sedeId,
+          accion: AccionAuditoria.EDICION,
+          entidad: 'Usuario',
+          entidadId: actorUsuarioId,
+          detalle: { accion: 'cambio_password' },
+        },
+      });
+    } catch (err) {
+      console.error(
+        '[AuthService.cambiarPassword] La contraseña se actualizó en Supabase Auth, pero falló el update de primerIngreso o el RegistroAuditoria en Postgres — sin compensación (la contraseña nueva ya es el estado correcto):',
+        err,
+      );
+    }
+
+    return { ok: true };
   }
 }
