@@ -154,6 +154,25 @@ describe('AuthController — POST /auth/login (e2e)', () => {
     expect((res.body as ErrorBody).code).toBe('CUENTA_BLOQUEADA');
   });
 
+  it('correo sin confirmar -> 403 CORREO_NO_CONFIRMADO', async () => {
+    signInWithPassword.mockResolvedValueOnce({
+      data: { user: null, session: null },
+      error: {
+        name: 'AuthApiError',
+        message: 'Email not confirmed',
+        status: 400,
+        code: 'email_not_confirmed',
+      },
+    });
+
+    const res = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ email: 'sinconfirmar@cesp.edu.mx', password: 'cualquier-cosa' });
+
+    expect(res.status).toBe(403);
+    expect((res.body as ErrorBody).code).toBe('CORREO_NO_CONFIRMADO');
+  });
+
   it('error inesperado de Supabase -> 500 SERVER_ERROR', async () => {
     signInWithPassword.mockResolvedValueOnce({
       data: { user: null, session: null },

@@ -29,6 +29,7 @@ import { createClient } from '@/lib/supabase/client';
 const MENSAJES_ERROR: Record<string, string> = {
   UNAUTHORIZED: 'Correo o contraseña incorrectos.',
   CUENTA_BLOQUEADA: 'Esta cuenta está bloqueada. Contacta al administrador.',
+  CORREO_NO_CONFIRMADO: 'Debes confirmar tu correo antes de iniciar sesión.',
   RATE_LIMIT_EXCEEDED: 'Demasiados intentos. Espera un minuto e intenta de nuevo.',
   VALIDATION_ERROR: 'Revisa que el correo y la contraseña sean válidos.',
 };

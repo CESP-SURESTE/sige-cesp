@@ -173,8 +173,28 @@ export class AuthService {
           });
         }
 
+        // Correo sin confirmar — cuenta real, pero Supabase Auth bloquea el
+        // login hasta que se confirme (mismo tratamiento que
+        // `CUENTA_BLOQUEADA`: la cuenta existe, el rechazo es por estado,
+        // no por credenciales). Encontrado en vivo probando login real
+        // (Día 10, QA manual) — antes cualquier cuenta sin confirmar caía
+        // al 500 genérico de abajo.
+        if (error.code === 'email_not_confirmed') {
+          throw new ForbiddenException({
+            error: 'Debes confirmar tu correo antes de iniciar sesión',
+            code: 'CORREO_NO_CONFIRMADO',
+          });
+        }
+
         // Cualquier otro error de Supabase Auth (rate limit, proyecto
-        // caído, etc.) — no se filtran detalles internos en el mensaje.
+        // caído, etc.) — no se filtran detalles internos en el mensaje al
+        // cliente, pero sí se loguea server-side (regla 12 de CLAUDE.md
+        // raíz) para no repetir el 500 indiagnosticable de Día 10.
+        console.error('[AuthService.login] Error no mapeado de Supabase Auth:', {
+          code: error.code,
+          status: error.status,
+          message: error.message,
+        });
         throw new InternalServerErrorException({
           error: 'Error inesperado al iniciar sesión',
           code: 'SERVER_ERROR',
@@ -212,6 +232,10 @@ export class AuthService {
       if (err instanceof HttpException) {
         throw err;
       }
+
+      // Regla 12 de CLAUDE.md raíz — loguear antes de responder, aunque el
+      // cliente solo reciba el 500 genérico sin detalles.
+      console.error('[AuthService.login] Excepción no-HTTP:', err);
 
       throw new InternalServerErrorException({
         error: 'Error inesperado al iniciar sesión',
