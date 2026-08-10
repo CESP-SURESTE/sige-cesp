@@ -7,6 +7,7 @@ import { RolesGuardModule } from './common/guards/roles-guard.module';
 import { SedesModule } from './sedes/sedes.module';
 import { AuthModule } from './auth/auth.module';
 import { PruebaRolesModule } from './prueba-roles/prueba-roles.module';
+import { PersonasModule } from './personas/personas.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { PruebaRolesModule } from './prueba-roles/prueba-roles.module';
     SedesModule,
     AuthModule,
     PruebaRolesModule,
+    PersonasModule,
   ],
   controllers: [AppController],
   providers: [AppService],
