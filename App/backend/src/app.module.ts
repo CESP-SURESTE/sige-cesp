@@ -8,6 +8,7 @@ import { SedesModule } from './sedes/sedes.module';
 import { AuthModule } from './auth/auth.module';
 import { PruebaRolesModule } from './prueba-roles/prueba-roles.module';
 import { PersonasModule } from './personas/personas.module';
+import { CarrerasModule } from './carreras/carreras.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { PersonasModule } from './personas/personas.module';
     AuthModule,
     PruebaRolesModule,
     PersonasModule,
+    CarrerasModule,
   ],
   controllers: [AppController],
   providers: [AppService],

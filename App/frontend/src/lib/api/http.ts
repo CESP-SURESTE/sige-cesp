@@ -1,3 +1,5 @@
+import { createClient } from '@/lib/supabase/client';
+
 /**
  * Fetcher genérico del backend NestJS — Fase 2, Día 10.
  *
@@ -60,4 +62,42 @@ export async function apiFetch<T>(
   }
 
   return (body as ApiSuccess<T>).data;
+}
+
+/**
+ * `apiFetchAuth` — Fase 4, Día 14.
+ *
+ * Segundo caso de fetch autenticado del frontend (el primero, `PATCH
+ * /auth/cambiar-password` en Día 12, dejó documentado en
+ * `lib/api/cambiar-password.ts` que valía la pena centralizar esto si
+ * aparecía un segundo caso — este es ese caso, usado por
+ * `lib/api/personas.ts` y `lib/api/carreras.ts`).
+ *
+ * Mismo mecanismo que ya usaba `cambiar-password.ts` a mano: resuelve el
+ * `access_token` de la sesión actual vía `createClient().auth.getSession()`
+ * (cliente de browser, `@supabase/ssr`) y arma `Authorization: Bearer
+ * <token>` antes de delegar en `apiFetch`. Si no hay sesión, falla explícito
+ * en vez de mandar un request sin `Authorization` que el backend rechazaría
+ * con un 401 menos claro — no debería pasar en la práctica porque toda
+ * página que llama esto vive detrás de `src/proxy.ts`, que ya exige sesión.
+ */
+export async function apiFetchAuth<T>(
+  path: string,
+  init?: RequestInit,
+): Promise<T> {
+  const supabase = createClient();
+  const { data: sessionData } = await supabase.auth.getSession();
+  const accessToken = sessionData.session?.access_token;
+
+  if (!accessToken) {
+    throw new Error('No hay una sesión activa. Vuelve a iniciar sesión.');
+  }
+
+  return apiFetch<T>(path, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      ...init?.headers,
+    },
+  });
 }
