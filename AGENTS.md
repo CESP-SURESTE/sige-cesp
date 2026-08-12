@@ -15,6 +15,7 @@ Grep). Las reglas y el contrato API viven en el `CLAUDE.md` raíz, siempre auto-
 | `alumno-coder` | `App/frontend/src/app/alumno/` | Vistas de alumno y maestro |
 | `alumno-debugger` | `App/frontend/src/app/alumno/` | Corregir bug de la vista alumno/maestro |
 | `qa-backend` / `qa-admin` / `qa-alumno` | su dominio | Auditar antes de cerrar; consigna veredicto en `ESTADO.md`, nunca corrige |
+| `qa-frontend` | `proxy.ts`, `app/login/`, `app/cambiar-password/`, `app/no-autorizado/`, `lib/supabase/`, `lib/api/` | Auditar infraestructura de frontend sin dueño de dominio (no la cubren `qa-admin` ni `qa-alumno`); consigna veredicto en `ESTADO.md`, nunca corrige |
 
 ## Reglas operativas
 
