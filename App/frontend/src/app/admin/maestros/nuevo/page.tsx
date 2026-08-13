@@ -3,15 +3,18 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation } from '@tanstack/react-query';
 import { useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { AltaPersonaFormShell } from '@/components/admin/ui/persona-alta/AltaPersonaFormShell';
+import { ContactosFieldset } from '@/components/admin/ui/persona-alta/ContactosFieldset';
 import { CuentaFieldset } from '@/components/admin/ui/persona-alta/CuentaFieldset';
 import { DatosPersonalesFieldset } from '@/components/admin/ui/persona-alta/DatosPersonalesFieldset';
 import { FieldError } from '@/components/admin/ui/persona-alta/FieldError';
 import { INPUT_CLASS, LABEL_CLASS } from '@/components/admin/ui/persona-alta/estilos';
+import { InfoMedicaFieldset } from '@/components/admin/ui/persona-alta/InfoMedicaFieldset';
 import { resolverMensajeError } from '@/components/admin/ui/persona-alta/mensajes-error';
 import { ResultadoAltaPersona } from '@/components/admin/ui/persona-alta/ResultadoAltaPersona';
+import { contactosSchema, infoMedicaSchema } from '@/components/admin/ui/persona-alta/schemas';
 import { crearMaestro, type AltaPersonaResult } from '@/lib/api/personas';
 
 /**
@@ -20,8 +23,10 @@ import { crearMaestro, type AltaPersonaResult } from '@/lib/api/personas';
  * usando el componente de formulario base
  * (`components/admin/ui/persona-alta/`) — `CuentaFieldset` y
  * `DatosPersonalesFieldset` se reutilizan tal cual; el fieldset "Datos
- * laborales" (`cedulaProfesional`, `fechaContratacion`, `estatus`) es
- * específico de este rol.
+ * laborales" (`cedulaProfesional`, `fechaContratacion`) es específico de
+ * este rol. Sin campo `estatus` — el backend fuerza siempre `ACTIVO` en la
+ * creación (corrección de QA manual, 2026-08-12, ver nota en
+ * `crear-persona.dto.ts`); cambiar el estatus después es un flujo aparte.
  *
  * Schema de validación en cliente (`maestroSchema`) es espejo de
  * `CrearPersonaDto` + `PerfilMaestroDto`
@@ -37,9 +42,12 @@ import { crearMaestro, type AltaPersonaResult } from '@/lib/api/personas';
  *
  * Día 13 (emails de bienvenida) sigue BLOQUEADO — la `temporaryPassword` se
  * muestra en pantalla tras el alta, igual que en alumno/administrativo.
+ *
+ * `contactos`/`infoMedica` (extensión 2026-08-12, misma transacción que el
+ * alta, decisión del usuario) — `ContactosFieldset` (sin `mostrarTipo`, ese
+ * campo es exclusivo de alumno) e `InfoMedicaFieldset`, ver esos componentes
+ * en `components/admin/ui/persona-alta/`.
  */
-
-const ESTATUS_OPCIONES = ['ACTIVO', 'BAJA', 'LICENCIA'] as const;
 
 const maestroSchema = z.object({
   email: z
@@ -61,7 +69,8 @@ const maestroSchema = z.object({
     fechaContratacion: z
       .string()
       .min(1, 'La fecha de contratación es requerida'),
-    estatus: z.enum(ESTATUS_OPCIONES).optional().or(z.literal('')),
+    contactos: contactosSchema,
+    infoMedica: infoMedicaSchema,
   }),
 });
 
@@ -79,7 +88,14 @@ const DEFAULT_VALUES: MaestroFormValues = {
     correoPersonal: '',
     telefono: '',
     fechaContratacion: '',
-    estatus: '',
+    contactos: [{ nombre: '', telefono: '', correo: '', parentesco: '' }],
+    infoMedica: {
+      tieneCondicionMedica: false,
+      padecimiento: '',
+      medicamentos: '',
+      alergias: '',
+      tratamientoAdicional: '',
+    },
   },
 };
 
@@ -90,10 +106,16 @@ export default function NuevoMaestroPage() {
     register,
     handleSubmit,
     reset,
+    control,
     formState: { errors },
   } = useForm<MaestroFormValues>({
     resolver: zodResolver(maestroSchema),
     defaultValues: DEFAULT_VALUES,
+  });
+
+  const tieneCondicionMedica = useWatch({
+    control,
+    name: 'perfilMaestro.infoMedica.tieneCondicionMedica',
   });
 
   const mutation = useMutation({
@@ -105,7 +127,20 @@ export default function NuevoMaestroPage() {
           ...values.perfilMaestro,
           apellidoMaterno: values.perfilMaestro.apellidoMaterno || undefined,
           cedulaProfesional: values.perfilMaestro.cedulaProfesional || undefined,
-          estatus: values.perfilMaestro.estatus || undefined,
+          contactos: values.perfilMaestro.contactos.map((contacto) => ({
+            ...contacto,
+            correo: contacto.correo || undefined,
+          })),
+          infoMedica: values.perfilMaestro.infoMedica.tieneCondicionMedica
+            ? {
+                tieneCondicionMedica: true,
+                padecimiento: values.perfilMaestro.infoMedica.padecimiento || undefined,
+                medicamentos: values.perfilMaestro.infoMedica.medicamentos || undefined,
+                alergias: values.perfilMaestro.infoMedica.alergias || undefined,
+                tratamientoAdicional:
+                  values.perfilMaestro.infoMedica.tratamientoAdicional || undefined,
+              }
+            : { tieneCondicionMedica: false },
         },
       }),
     onSuccess: (data) => {
@@ -151,7 +186,7 @@ export default function NuevoMaestroPage() {
       />
 
       <fieldset className="space-y-4">
-        <legend className="text-sm font-semibold text-gray-900">Datos laborales</legend>
+        <legend className="text-sm font-semibold text-ink">Datos laborales</legend>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label htmlFor="cedulaProfesional" className={LABEL_CLASS}>
@@ -179,27 +214,24 @@ export default function NuevoMaestroPage() {
             />
             <FieldError message={errors.perfilMaestro?.fechaContratacion?.message} />
           </div>
-          <div>
-            <label htmlFor="estatus" className={LABEL_CLASS}>
-              Estatus (opcional, por defecto ACTIVO)
-            </label>
-            <select
-              id="estatus"
-              disabled={mutation.isPending}
-              className={INPUT_CLASS}
-              {...register('perfilMaestro.estatus')}
-            >
-              <option value="">ACTIVO (por defecto)</option>
-              {ESTATUS_OPCIONES.map((valor) => (
-                <option key={valor} value={valor}>
-                  {valor}
-                </option>
-              ))}
-            </select>
-            <FieldError message={errors.perfilMaestro?.estatus?.message} />
-          </div>
         </div>
       </fieldset>
+
+      <ContactosFieldset
+        control={control}
+        register={register}
+        errors={errors}
+        disabled={mutation.isPending}
+        prefix="perfilMaestro"
+      />
+
+      <InfoMedicaFieldset
+        register={register}
+        errors={errors}
+        disabled={mutation.isPending}
+        prefix="perfilMaestro"
+        tieneCondicionMedica={Boolean(tieneCondicionMedica)}
+      />
     </AltaPersonaFormShell>
   );
 }

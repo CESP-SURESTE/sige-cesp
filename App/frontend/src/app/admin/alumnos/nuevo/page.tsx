@@ -3,15 +3,21 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { AltaPersonaFormShell } from '@/components/admin/ui/persona-alta/AltaPersonaFormShell';
+import { ContactosFieldset } from '@/components/admin/ui/persona-alta/ContactosFieldset';
 import { CuentaFieldset } from '@/components/admin/ui/persona-alta/CuentaFieldset';
 import { DatosPersonalesFieldset } from '@/components/admin/ui/persona-alta/DatosPersonalesFieldset';
 import { FieldError } from '@/components/admin/ui/persona-alta/FieldError';
 import { INPUT_CLASS, LABEL_CLASS } from '@/components/admin/ui/persona-alta/estilos';
+import { InfoMedicaFieldset } from '@/components/admin/ui/persona-alta/InfoMedicaFieldset';
 import { resolverMensajeError } from '@/components/admin/ui/persona-alta/mensajes-error';
 import { ResultadoAltaPersona } from '@/components/admin/ui/persona-alta/ResultadoAltaPersona';
+import {
+  contactosAlumnoSchema,
+  infoMedicaSchema,
+} from '@/components/admin/ui/persona-alta/schemas';
 import { listarCarreras } from '@/lib/api/carreras';
 import { crearAlumno, type AltaPersonaResult } from '@/lib/api/personas';
 
@@ -45,6 +51,15 @@ import { crearAlumno, type AltaPersonaResult } from '@/lib/api/personas';
  * (`lib/api/carreras.ts`, Día 14) — si devuelve error, el formulario sigue
  * siendo usable (solo el `<select>` queda sin opciones y se muestra un
  * aviso), no rompe el resto.
+ *
+ * `contactos`/`infoMedica` (extensión 2026-08-12, misma transacción que el
+ * alta, decisión del usuario) — `ContactosFieldset` (con `mostrarTipo`,
+ * exclusivo de alumno) e `InfoMedicaFieldset`, ver esos componentes en
+ * `components/admin/ui/persona-alta/`. Los campos opcionales de
+ * `infoMedica` (`padecimiento`/`medicamentos`/`alergias`/
+ * `tratamientoAdicional`) solo se muestran (y se envían) si
+ * `tieneCondicionMedica` está marcado — criterio de UX documentado en
+ * `InfoMedicaFieldset`.
  */
 
 const alumnoSchema = z.object({
@@ -71,6 +86,8 @@ const alumnoSchema = z.object({
       .int('El semestre debe ser un número entero')
       .min(1, 'El semestre debe ser al menos 1'),
     telefono: z.string().optional(),
+    contactos: contactosAlumnoSchema,
+    infoMedica: infoMedicaSchema,
   }),
 });
 
@@ -102,6 +119,25 @@ const DEFAULT_VALUES: AlumnoFormInput = {
     periodoIngreso: '',
     semestreActual: 1,
     telefono: '',
+    contactos: [
+      {
+        nombre: '',
+        telefono: '',
+        correo: '',
+        parentesco: '',
+        // Cast necesario porque `tipo` es requerido (sin `.optional()` en el
+        // schema) — mismo patrón que `puesto` en la página de administrativo
+        // para un `<select>` que arranca sin selección.
+        tipo: '' as AlumnoFormInput['perfilAlumno']['contactos'][number]['tipo'],
+      },
+    ],
+    infoMedica: {
+      tieneCondicionMedica: false,
+      padecimiento: '',
+      medicamentos: '',
+      alergias: '',
+      tratamientoAdicional: '',
+    },
   },
 };
 
@@ -121,10 +157,16 @@ export default function NuevoAlumnoPage() {
     register,
     handleSubmit,
     reset,
+    control,
     formState: { errors },
   } = useForm<AlumnoFormInput, unknown, AlumnoFormOutput>({
     resolver: zodResolver(alumnoSchema),
     defaultValues: DEFAULT_VALUES,
+  });
+
+  const tieneCondicionMedica = useWatch({
+    control,
+    name: 'perfilAlumno.infoMedica.tieneCondicionMedica',
   });
 
   const mutation = useMutation({
@@ -137,6 +179,20 @@ export default function NuevoAlumnoPage() {
           apellidoMaterno: values.perfilAlumno.apellidoMaterno || undefined,
           curp: values.perfilAlumno.curp || undefined,
           telefono: values.perfilAlumno.telefono || undefined,
+          contactos: values.perfilAlumno.contactos.map((contacto) => ({
+            ...contacto,
+            correo: contacto.correo || undefined,
+          })),
+          infoMedica: values.perfilAlumno.infoMedica.tieneCondicionMedica
+            ? {
+                tieneCondicionMedica: true,
+                padecimiento: values.perfilAlumno.infoMedica.padecimiento || undefined,
+                medicamentos: values.perfilAlumno.infoMedica.medicamentos || undefined,
+                alergias: values.perfilAlumno.infoMedica.alergias || undefined,
+                tratamientoAdicional:
+                  values.perfilAlumno.infoMedica.tratamientoAdicional || undefined,
+              }
+            : { tieneCondicionMedica: false },
         },
       }),
     onSuccess: (data) => {
@@ -180,7 +236,7 @@ export default function NuevoAlumnoPage() {
       />
 
       <fieldset className="space-y-4">
-        <legend className="text-sm font-semibold text-gray-900">Datos académicos</legend>
+        <legend className="text-sm font-semibold text-ink">Datos académicos</legend>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label htmlFor="matricula" className={LABEL_CLASS}>
@@ -228,7 +284,7 @@ export default function NuevoAlumnoPage() {
               ))}
             </select>
             {carrerasQuery.isError && (
-              <p className="mt-1 text-xs text-amber-600">
+              <p className="mt-1 text-xs text-terracota">
                 No se pudieron cargar las carreras. Intenta de nuevo más tarde.
               </p>
             )}
@@ -265,6 +321,23 @@ export default function NuevoAlumnoPage() {
           </div>
         </div>
       </fieldset>
+
+      <ContactosFieldset
+        control={control}
+        register={register}
+        errors={errors}
+        disabled={mutation.isPending}
+        prefix="perfilAlumno"
+        mostrarTipo
+      />
+
+      <InfoMedicaFieldset
+        register={register}
+        errors={errors}
+        disabled={mutation.isPending}
+        prefix="perfilAlumno"
+        tieneCondicionMedica={Boolean(tieneCondicionMedica)}
+      />
     </AltaPersonaFormShell>
   );
 }

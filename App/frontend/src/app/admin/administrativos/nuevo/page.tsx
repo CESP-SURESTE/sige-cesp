@@ -3,15 +3,18 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation } from '@tanstack/react-query';
 import { useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { AltaPersonaFormShell } from '@/components/admin/ui/persona-alta/AltaPersonaFormShell';
+import { ContactosFieldset } from '@/components/admin/ui/persona-alta/ContactosFieldset';
 import { CuentaFieldset } from '@/components/admin/ui/persona-alta/CuentaFieldset';
 import { DatosPersonalesFieldset } from '@/components/admin/ui/persona-alta/DatosPersonalesFieldset';
 import { FieldError } from '@/components/admin/ui/persona-alta/FieldError';
 import { INPUT_CLASS, LABEL_CLASS } from '@/components/admin/ui/persona-alta/estilos';
+import { InfoMedicaFieldset } from '@/components/admin/ui/persona-alta/InfoMedicaFieldset';
 import { resolverMensajeError } from '@/components/admin/ui/persona-alta/mensajes-error';
 import { ResultadoAltaPersona } from '@/components/admin/ui/persona-alta/ResultadoAltaPersona';
+import { contactosSchema, infoMedicaSchema } from '@/components/admin/ui/persona-alta/schemas';
 import { crearAdministrativo, type AltaPersonaResult } from '@/lib/api/personas';
 
 /**
@@ -37,9 +40,16 @@ import { crearAdministrativo, type AltaPersonaResult } from '@/lib/api/personas'
  *
  * Día 13 (emails de bienvenida) sigue BLOQUEADO — la `temporaryPassword` se
  * muestra en pantalla tras el alta, igual que en alumno/maestro.
+ *
+ * Sin campo `estatus` — el backend fuerza siempre `ACTIVO` en la creación
+ * (corrección de QA manual, 2026-08-12, ver nota en `crear-persona.dto.ts`);
+ * cambiar el estatus después es un flujo aparte.
+ *
+ * `contactos`/`infoMedica` (extensión 2026-08-12, misma transacción que el
+ * alta, decisión del usuario) — `ContactosFieldset` (sin `mostrarTipo`, ese
+ * campo es exclusivo de alumno) e `InfoMedicaFieldset`, ver esos componentes
+ * en `components/admin/ui/persona-alta/`.
  */
-
-const ESTATUS_OPCIONES = ['ACTIVO', 'BAJA', 'LICENCIA'] as const;
 
 const PUESTO_OPCIONES = [
   'DIRECTOR',
@@ -76,11 +86,12 @@ const administrativoSchema = z.object({
     fechaContratacion: z
       .string()
       .min(1, 'La fecha de contratación es requerida'),
-    estatus: z.enum(ESTATUS_OPCIONES).optional().or(z.literal('')),
     puesto: z.enum(PUESTO_OPCIONES, {
       message: 'Selecciona un puesto',
     }),
     nivelPermiso: z.enum(NIVEL_PERMISO_OPCIONES).optional().or(z.literal('')),
+    contactos: contactosSchema,
+    infoMedica: infoMedicaSchema,
   }),
 });
 
@@ -97,9 +108,16 @@ const DEFAULT_VALUES: AdministrativoFormValues = {
     correoPersonal: '',
     telefono: '',
     fechaContratacion: '',
-    estatus: '',
     puesto: '' as AdministrativoFormValues['perfilAdministrativo']['puesto'],
     nivelPermiso: '',
+    contactos: [{ nombre: '', telefono: '', correo: '', parentesco: '' }],
+    infoMedica: {
+      tieneCondicionMedica: false,
+      padecimiento: '',
+      medicamentos: '',
+      alergias: '',
+      tratamientoAdicional: '',
+    },
   },
 };
 
@@ -110,10 +128,16 @@ export default function NuevoAdministrativoPage() {
     register,
     handleSubmit,
     reset,
+    control,
     formState: { errors },
   } = useForm<AdministrativoFormValues>({
     resolver: zodResolver(administrativoSchema),
     defaultValues: DEFAULT_VALUES,
+  });
+
+  const tieneCondicionMedica = useWatch({
+    control,
+    name: 'perfilAdministrativo.infoMedica.tieneCondicionMedica',
   });
 
   const mutation = useMutation({
@@ -124,8 +148,23 @@ export default function NuevoAdministrativoPage() {
         perfilAdministrativo: {
           ...values.perfilAdministrativo,
           apellidoMaterno: values.perfilAdministrativo.apellidoMaterno || undefined,
-          estatus: values.perfilAdministrativo.estatus || undefined,
           nivelPermiso: values.perfilAdministrativo.nivelPermiso || undefined,
+          contactos: values.perfilAdministrativo.contactos.map((contacto) => ({
+            ...contacto,
+            correo: contacto.correo || undefined,
+          })),
+          infoMedica: values.perfilAdministrativo.infoMedica.tieneCondicionMedica
+            ? {
+                tieneCondicionMedica: true,
+                padecimiento:
+                  values.perfilAdministrativo.infoMedica.padecimiento || undefined,
+                medicamentos:
+                  values.perfilAdministrativo.infoMedica.medicamentos || undefined,
+                alergias: values.perfilAdministrativo.infoMedica.alergias || undefined,
+                tratamientoAdicional:
+                  values.perfilAdministrativo.infoMedica.tratamientoAdicional || undefined,
+              }
+            : { tieneCondicionMedica: false },
         },
       }),
     onSuccess: (data) => {
@@ -171,7 +210,7 @@ export default function NuevoAdministrativoPage() {
       />
 
       <fieldset className="space-y-4">
-        <legend className="text-sm font-semibold text-gray-900">Datos laborales</legend>
+        <legend className="text-sm font-semibold text-ink">Datos laborales</legend>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label htmlFor="fechaContratacion" className={LABEL_CLASS}>
@@ -185,25 +224,6 @@ export default function NuevoAdministrativoPage() {
               {...register('perfilAdministrativo.fechaContratacion')}
             />
             <FieldError message={errors.perfilAdministrativo?.fechaContratacion?.message} />
-          </div>
-          <div>
-            <label htmlFor="estatus" className={LABEL_CLASS}>
-              Estatus (opcional, por defecto ACTIVO)
-            </label>
-            <select
-              id="estatus"
-              disabled={mutation.isPending}
-              className={INPUT_CLASS}
-              {...register('perfilAdministrativo.estatus')}
-            >
-              <option value="">ACTIVO (por defecto)</option>
-              {ESTATUS_OPCIONES.map((valor) => (
-                <option key={valor} value={valor}>
-                  {valor}
-                </option>
-              ))}
-            </select>
-            <FieldError message={errors.perfilAdministrativo?.estatus?.message} />
           </div>
           <div>
             <label htmlFor="puesto" className={LABEL_CLASS}>
@@ -241,14 +261,30 @@ export default function NuevoAdministrativoPage() {
                 </option>
               ))}
             </select>
-            <p className="mt-1 text-xs text-gray-500">
+            <p className="mt-1 text-xs text-ink/60">
               Solo puedes asignar un nivel igual o menor al tuyo — el backend rechaza la
-              solicitud con `NIVEL_PERMISO_INSUFICIENTE` si intentas asignar más.
+              solicitud con <code>NIVEL_PERMISO_INSUFICIENTE</code> si intentas asignar más.
             </p>
             <FieldError message={errors.perfilAdministrativo?.nivelPermiso?.message} />
           </div>
         </div>
       </fieldset>
+
+      <ContactosFieldset
+        control={control}
+        register={register}
+        errors={errors}
+        disabled={mutation.isPending}
+        prefix="perfilAdministrativo"
+      />
+
+      <InfoMedicaFieldset
+        register={register}
+        errors={errors}
+        disabled={mutation.isPending}
+        prefix="perfilAdministrativo"
+        tieneCondicionMedica={Boolean(tieneCondicionMedica)}
+      />
     </AltaPersonaFormShell>
   );
 }

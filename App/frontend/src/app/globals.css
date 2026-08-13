@@ -1,26 +1,51 @@
 @import "tailwindcss";
 
+/**
+ * Tokens de diseño de SIGE — pasada ligera de diseño (2026-08-12).
+ *
+ * Paleta anclada en Yucatán, no en el azul/violeta genérico de SaaS: `maya`
+ * es una referencia directa al "azul maya", el pigmento histórico
+ * (índigo + paligorskita) usado en los murales de Chichén Itzá y arrojado
+ * como ofrenda al Cenote Sagrado — un acento con identidad real de la
+ * región, no decorativo. `paper` evoca el sascab (piedra caliza molida) de
+ * la construcción yucateca en vez de un blanco de interfaz genérico.
+ * `terracota` queda disponible pero de uso mínimo (evitar sobrecargar); los
+ * colores semánticos de error/éxito siguen siendo rojo/verde estándar de
+ * Tailwind por legibilidad, no se reinventan.
+ *
+ * Sin modo oscuro: ningún componente construido hasta hoy usa `dark:`
+ * (confirmado por grep) — el bloque `prefers-color-scheme` del scaffold de
+ * create-next-app estaba muerto, se retira en vez de mantener una mitad de
+ * sistema sin implementar.
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --paper: #f7f3ea;
+  --ink: #211e1b;
+  --maya: #1d6e78;
+  --maya-deep: #143f45;
+  --linea: #dfd6c2;
+  --terracota: #b5562f;
+
+  --background: var(--paper);
+  --foreground: var(--ink);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --color-paper: var(--paper);
+  --color-ink: var(--ink);
+  --color-maya: var(--maya);
+  --color-maya-deep: var(--maya-deep);
+  --color-linea: var(--linea);
+  --color-terracota: var(--terracota);
+  --font-sans: var(--font-public-sans);
+  --font-display: var(--font-fraunces);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
 }

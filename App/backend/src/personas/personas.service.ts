@@ -16,7 +16,7 @@ import {
   RolUsuario,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { CrearPersonaDto } from './dto/crear-persona.dto';
+import { CrearPersonaDto, InfoMedicaDto } from './dto/crear-persona.dto';
 import { generateTemporaryPassword } from './temporary-password';
 
 /**
@@ -119,6 +119,43 @@ export class PersonasService {
     }
     const createAdminClient = await getCreateAdminClient();
     return createAdminClient();
+  }
+
+  /**
+   * Contactos de emergencia + datos de salud — extensión del alta transaccional
+   * (decisión explícita del usuario, 2026-08-12: "que sea en la misma
+   * transacción ya que todo se debe cargar a la vez"). Regla 4 de CLAUDE.md
+   * raíz: lógica compartida en un service, no duplicada 3 veces por rol.
+   *
+   * Prisma no permite pasar el nombre de un modelo como variable sin perder
+   * el tipado (`tx[nombreModelo]` no compila con seguridad de tipos, y un
+   * callback genérico `(data: TData) => tx.contactoX.create({ data })`
+   * tampoco infiere bien el `XOR<...CreateInput, ...UncheckedCreateInput>`
+   * que genera Prisma por modelo — se intentó y `tsc` lo rechaza). El
+   * approach que sí queda limpio y sigue evitando la triplicación: un solo
+   * helper (`conOrdenSecuencial`) centraliza la única lógica realmente
+   * compartida — asignar `orden` secuencial a partir de la posición en el
+   * array (regla 1, nunca lo manda el cliente) — y cada caller solo hace el
+   * `for` + el `create` con el delegate real de su propio modelo.
+   */
+  private conOrdenSecuencial<T>(items: T[]): Array<T & { orden: number }> {
+    return items.map((item, i) => ({ ...item, orden: i + 1 }));
+  }
+
+  /**
+   * `InfoMedicaAlumno`/`InfoMedicaMaestro`/`InfoMedicaAdministrativo` son
+   * idénticos entre sí en `schema.prisma` — un solo helper que arma los
+   * campos comunes; cada caller le agrega solo la FK (`alumnoId`/
+   * `maestroId`/`administrativoId`) que sí difiere entre modelos.
+   */
+  private datosInfoMedica(infoMedica: InfoMedicaDto) {
+    return {
+      tieneCondicionMedica: infoMedica.tieneCondicionMedica,
+      padecimiento: infoMedica.padecimiento,
+      medicamentos: infoMedica.medicamentos,
+      alergias: infoMedica.alergias,
+      tratamientoAdicional: infoMedica.tratamientoAdicional,
+    };
   }
 
   /**
@@ -329,7 +366,7 @@ export class PersonasService {
         });
 
         if (dto.rol === RolUsuario.ALUMNO && dto.perfilAlumno) {
-          await tx.perfilAlumno.create({
+          const perfilAlumno = await tx.perfilAlumno.create({
             data: {
               usuarioId,
               nombres: dto.perfilAlumno.nombres,
@@ -351,8 +388,31 @@ export class PersonasService {
               telefono: dto.perfilAlumno.telefono,
             },
           });
+
+          for (const contacto of this.conOrdenSecuencial(
+            dto.perfilAlumno.contactos,
+          )) {
+            await tx.contactoAlumno.create({
+              data: {
+                alumnoId: perfilAlumno.id,
+                tipo: contacto.tipo,
+                nombre: contacto.nombre,
+                telefono: contacto.telefono,
+                correo: contacto.correo,
+                parentesco: contacto.parentesco,
+                orden: contacto.orden,
+              },
+            });
+          }
+
+          await tx.infoMedicaAlumno.create({
+            data: {
+              alumnoId: perfilAlumno.id,
+              ...this.datosInfoMedica(dto.perfilAlumno.infoMedica),
+            },
+          });
         } else if (dto.rol === RolUsuario.MAESTRO && dto.perfilMaestro) {
-          await tx.perfilMaestro.create({
+          const perfilMaestro = await tx.perfilMaestro.create({
             data: {
               usuarioId,
               nombres: dto.perfilMaestro.nombres,
@@ -363,14 +423,39 @@ export class PersonasService {
               correoPersonal: dto.perfilMaestro.correoPersonal,
               telefono: dto.perfilMaestro.telefono,
               fechaContratacion: new Date(dto.perfilMaestro.fechaContratacion),
-              estatus: dto.perfilMaestro.estatus ?? EstatusEmpleado.ACTIVO,
+              // Forzado siempre a ACTIVO — no tiene sentido dar de alta a
+              // alguien ya en BAJA/LICENCIA (corrección QA manual,
+              // 2026-08-12). El DTO ya no acepta `estatus` en la creación.
+              estatus: EstatusEmpleado.ACTIVO,
+            },
+          });
+
+          for (const contacto of this.conOrdenSecuencial(
+            dto.perfilMaestro.contactos,
+          )) {
+            await tx.contactoMaestro.create({
+              data: {
+                maestroId: perfilMaestro.id,
+                nombre: contacto.nombre,
+                telefono: contacto.telefono,
+                correo: contacto.correo,
+                parentesco: contacto.parentesco,
+                orden: contacto.orden,
+              },
+            });
+          }
+
+          await tx.infoMedicaMaestro.create({
+            data: {
+              maestroId: perfilMaestro.id,
+              ...this.datosInfoMedica(dto.perfilMaestro.infoMedica),
             },
           });
         } else if (
           dto.rol === RolUsuario.ADMINISTRATIVO &&
           dto.perfilAdministrativo
         ) {
-          await tx.perfilAdministrativo.create({
+          const perfilAdministrativo = await tx.perfilAdministrativo.create({
             data: {
               usuarioId,
               nombres: dto.perfilAdministrativo.nombres,
@@ -382,11 +467,34 @@ export class PersonasService {
               fechaContratacion: new Date(
                 dto.perfilAdministrativo.fechaContratacion,
               ),
-              estatus:
-                dto.perfilAdministrativo.estatus ?? EstatusEmpleado.ACTIVO,
+              // Forzado siempre a ACTIVO, mismo criterio que perfilMaestro
+              // arriba — el DTO ya no acepta `estatus` en la creación.
+              estatus: EstatusEmpleado.ACTIVO,
               puesto: dto.perfilAdministrativo.puesto,
               nivelPermiso:
                 dto.perfilAdministrativo.nivelPermiso ?? NivelPermiso.AUXILIAR,
+            },
+          });
+
+          for (const contacto of this.conOrdenSecuencial(
+            dto.perfilAdministrativo.contactos,
+          )) {
+            await tx.contactoAdministrativo.create({
+              data: {
+                administrativoId: perfilAdministrativo.id,
+                nombre: contacto.nombre,
+                telefono: contacto.telefono,
+                correo: contacto.correo,
+                parentesco: contacto.parentesco,
+                orden: contacto.orden,
+              },
+            });
+          }
+
+          await tx.infoMedicaAdministrativo.create({
+            data: {
+              administrativoId: perfilAdministrativo.id,
+              ...this.datosInfoMedica(dto.perfilAdministrativo.infoMedica),
             },
           });
         }

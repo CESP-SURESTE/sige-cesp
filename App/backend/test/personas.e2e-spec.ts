@@ -3,7 +3,12 @@ import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import type { App } from 'supertest/types';
-import { NivelPermiso, PuestoAdministrativo, RolUsuario } from '@prisma/client';
+import {
+  NivelPermiso,
+  PuestoAdministrativo,
+  RolUsuario,
+  TipoContacto,
+} from '@prisma/client';
 import { AppModule } from '../src/app.module';
 import { SEDE_GUARD_ENV_OVERRIDE } from '../src/common/guards/sede.guard';
 import { PERSONAS_SUPABASE_CLIENT_OVERRIDE } from '../src/personas/personas.service';
@@ -112,6 +117,39 @@ describe('PersonasController — POST /personas (e2e)', () => {
     );
   }
 
+  /**
+   * Contactos de emergencia + datos de salud — extensión del alta
+   * transaccional (decisión explícita del usuario, 2026-08-12: "que sea en
+   * la misma transacción ya que todo se debe cargar a la vez"). Helpers
+   * reutilizados en todos los payloads de este spec — antes de esta
+   * extensión `contactos`/`infoMedica` no existían en el body.
+   */
+  function contactoAlumnoValido(overrides: Record<string, unknown> = {}) {
+    return {
+      tipo: TipoContacto.TUTOR,
+      nombre: 'Contacto Prueba',
+      telefono: '9990004444',
+      parentesco: 'Padre',
+      ...overrides,
+    };
+  }
+
+  function contactoValido(overrides: Record<string, unknown> = {}) {
+    return {
+      nombre: 'Contacto Prueba',
+      telefono: '9990004444',
+      parentesco: 'Padre',
+      ...overrides,
+    };
+  }
+
+  function infoMedicaValida(overrides: Record<string, unknown> = {}) {
+    return {
+      tieneCondicionMedica: false,
+      ...overrides,
+    };
+  }
+
   function perfilAdministrativoValido() {
     return {
       nombres: 'Prueba',
@@ -121,6 +159,38 @@ describe('PersonasController — POST /personas (e2e)', () => {
       telefono: '9990001111',
       fechaContratacion: '2026-01-01',
       puesto: PuestoAdministrativo.RECEPCION,
+      contactos: [contactoValido()],
+      infoMedica: infoMedicaValida(),
+    };
+  }
+
+  function perfilAlumnoValido(overrides: Record<string, unknown> = {}) {
+    return {
+      nombres: 'Prueba',
+      apellidoPaterno: 'Alumno',
+      fechaNacimiento: '2007-05-01',
+      matricula: `MID-2026-${randomUUID().slice(0, 8)}`,
+      correoPersonal: `alumno.personal.${randomUUID()}@example.com`,
+      carreraId: carreraMeridaId,
+      periodoIngreso: '2026-1',
+      semestreActual: 1,
+      contactos: [contactoAlumnoValido()],
+      infoMedica: infoMedicaValida(),
+      ...overrides,
+    };
+  }
+
+  function perfilMaestroValido(overrides: Record<string, unknown> = {}) {
+    return {
+      nombres: 'Prueba',
+      apellidoPaterno: 'Maestro',
+      curp: `CURP${randomUUID().slice(0, 14).toUpperCase()}`,
+      correoPersonal: `maestro.personal.${randomUUID()}@example.com`,
+      telefono: '9990005555',
+      fechaContratacion: '2026-01-01',
+      contactos: [contactoValido()],
+      infoMedica: infoMedicaValida(),
+      ...overrides,
     };
   }
 
@@ -291,6 +361,8 @@ describe('PersonasController — POST /personas (e2e)', () => {
           carreraId: carreraMeridaId,
           periodoIngreso: '2026-1',
           semestreActual: 1,
+          contactos: [contactoAlumnoValido()],
+          infoMedica: infoMedicaValida(),
         },
       });
 
@@ -342,6 +414,8 @@ describe('PersonasController — POST /personas (e2e)', () => {
           carreraId: carreraMeridaId,
           periodoIngreso: '2026-1',
           semestreActual: 1,
+          contactos: [contactoAlumnoValido()],
+          infoMedica: infoMedicaValida(),
         },
       });
 
@@ -378,6 +452,8 @@ describe('PersonasController — POST /personas (e2e)', () => {
           carreraId: carreraMeridaId,
           periodoIngreso: '2026-1',
           semestreActual: 1,
+          contactos: [contactoAlumnoValido()],
+          infoMedica: infoMedicaValida(),
         },
       });
 
@@ -419,6 +495,8 @@ describe('PersonasController — POST /personas (e2e)', () => {
           carreraId: carreraMeridaId,
           periodoIngreso: '2026-1',
           semestreActual: 1,
+          contactos: [contactoAlumnoValido()],
+          infoMedica: infoMedicaValida(),
         },
       });
 
@@ -469,6 +547,8 @@ describe('PersonasController — POST /personas (e2e)', () => {
             carreraId: carreraMeridaId,
             periodoIngreso: '2026-1',
             semestreActual: 1,
+            contactos: [contactoAlumnoValido()],
+            infoMedica: infoMedicaValida(),
           },
         });
 
@@ -553,5 +633,237 @@ describe('PersonasController — POST /personas (e2e)', () => {
     const body = res.body as AltaPersonaBody;
     expect(body.data.usuario.rol).toBe(RolUsuario.ADMINISTRATIVO);
     expect(createUser).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * Extensión (decisión explícita del usuario, 2026-08-12: "que sea en la
+   * misma transacción ya que todo se debe cargar a la vez") — contactos de
+   * emergencia (1-3, `orden` secuencial derivado de la posición en el array)
+   * + datos de salud (`InfoMedica*`, create 1-a-1), insertados en la MISMA
+   * transacción que `Usuario` + perfil + `RegistroAuditoria`.
+   */
+  describe('contactos de emergencia + datos de salud (extensión 2026-08-12)', () => {
+    it('alta de alumno con 1 contacto -> 201, contacto insertado con orden 1', async () => {
+      mockCreateUserExitoso();
+      const email = `alumno.1contacto.${randomUUID()}@cesp-merida.edu.mx`;
+
+      const res = await request(app.getHttpServer())
+        .post('/personas')
+        .set('Authorization', `Bearer ${await tokenAdmin()}`)
+        .send({
+          email,
+          rol: RolUsuario.ALUMNO,
+          perfilAlumno: perfilAlumnoValido({
+            contactos: [contactoAlumnoValido({ nombre: 'Único Contacto' })],
+          }),
+        });
+
+      expect(res.status).toBe(201);
+      const body = res.body as AltaPersonaBody;
+
+      const perfilAlumno = await prisma.perfilAlumno.findUniqueOrThrow({
+        where: { usuarioId: body.data.usuario.id },
+        include: { contactos: true },
+      });
+      expect(perfilAlumno.contactos).toHaveLength(1);
+      expect(perfilAlumno.contactos[0].nombre).toBe('Único Contacto');
+      expect(perfilAlumno.contactos[0].orden).toBe(1);
+      expect(perfilAlumno.contactos[0].tipo).toBe(TipoContacto.TUTOR);
+    });
+
+    it('alta de alumno con 3 contactos -> 201, los 3 insertados con orden secuencial 1-2-3', async () => {
+      mockCreateUserExitoso();
+      const email = `alumno.3contactos.${randomUUID()}@cesp-merida.edu.mx`;
+
+      const res = await request(app.getHttpServer())
+        .post('/personas')
+        .set('Authorization', `Bearer ${await tokenAdmin()}`)
+        .send({
+          email,
+          rol: RolUsuario.ALUMNO,
+          perfilAlumno: perfilAlumnoValido({
+            contactos: [
+              contactoAlumnoValido({ nombre: 'Contacto Uno' }),
+              contactoAlumnoValido({
+                nombre: 'Contacto Dos',
+                tipo: TipoContacto.EMERGENCIA,
+              }),
+              contactoAlumnoValido({ nombre: 'Contacto Tres' }),
+            ],
+          }),
+        });
+
+      expect(res.status).toBe(201);
+      const body = res.body as AltaPersonaBody;
+
+      const perfilAlumno = await prisma.perfilAlumno.findUniqueOrThrow({
+        where: { usuarioId: body.data.usuario.id },
+        include: { contactos: { orderBy: { orden: 'asc' } } },
+      });
+      expect(perfilAlumno.contactos).toHaveLength(3);
+      expect(perfilAlumno.contactos.map((c) => c.orden)).toEqual([1, 2, 3]);
+      expect(perfilAlumno.contactos.map((c) => c.nombre)).toEqual([
+        'Contacto Uno',
+        'Contacto Dos',
+        'Contacto Tres',
+      ]);
+      expect(perfilAlumno.contactos[1].tipo).toBe(TipoContacto.EMERGENCIA);
+    });
+
+    it('alta con 0 contactos -> 400 VALIDATION_ERROR, sin llamar a Supabase Auth', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/personas')
+        .set('Authorization', `Bearer ${await tokenAdmin()}`)
+        .send({
+          email: `alumno.0contactos.${randomUUID()}@cesp-merida.edu.mx`,
+          rol: RolUsuario.ALUMNO,
+          perfilAlumno: perfilAlumnoValido({ contactos: [] }),
+        });
+
+      expect(res.status).toBe(400);
+      expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+      expect(createUser).not.toHaveBeenCalled();
+    });
+
+    it('alta con 4 contactos -> 400 VALIDATION_ERROR, sin llamar a Supabase Auth', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/personas')
+        .set('Authorization', `Bearer ${await tokenAdmin()}`)
+        .send({
+          email: `alumno.4contactos.${randomUUID()}@cesp-merida.edu.mx`,
+          rol: RolUsuario.ALUMNO,
+          perfilAlumno: perfilAlumnoValido({
+            contactos: [
+              contactoAlumnoValido({ nombre: 'Uno' }),
+              contactoAlumnoValido({ nombre: 'Dos' }),
+              contactoAlumnoValido({ nombre: 'Tres' }),
+              contactoAlumnoValido({ nombre: 'Cuatro' }),
+            ],
+          }),
+        });
+
+      expect(res.status).toBe(400);
+      expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+      expect(createUser).not.toHaveBeenCalled();
+    });
+
+    it('alta sin infoMedica -> 400 VALIDATION_ERROR', async () => {
+      const perfil = perfilAlumnoValido();
+      delete (perfil as Record<string, unknown>).infoMedica;
+
+      const res = await request(app.getHttpServer())
+        .post('/personas')
+        .set('Authorization', `Bearer ${await tokenAdmin()}`)
+        .send({
+          email: `alumno.sininfomedica.${randomUUID()}@cesp-merida.edu.mx`,
+          rol: RolUsuario.ALUMNO,
+          perfilAlumno: perfil,
+        });
+
+      expect(res.status).toBe(400);
+      expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+      expect(createUser).not.toHaveBeenCalled();
+    });
+
+    it('datos de salud (infoMedica) guardados correctamente -> ALUMNO', async () => {
+      mockCreateUserExitoso();
+
+      const res = await request(app.getHttpServer())
+        .post('/personas')
+        .set('Authorization', `Bearer ${await tokenAdmin()}`)
+        .send({
+          email: `alumno.infomedica.${randomUUID()}@cesp-merida.edu.mx`,
+          rol: RolUsuario.ALUMNO,
+          perfilAlumno: perfilAlumnoValido({
+            infoMedica: infoMedicaValida({
+              tieneCondicionMedica: true,
+              padecimiento: 'Asma',
+              medicamentos: 'Salbutamol',
+              alergias: 'Polen',
+              tratamientoAdicional: 'Ninguno',
+            }),
+          }),
+        });
+
+      expect(res.status).toBe(201);
+      const body = res.body as AltaPersonaBody;
+
+      const perfilAlumno = await prisma.perfilAlumno.findUniqueOrThrow({
+        where: { usuarioId: body.data.usuario.id },
+        include: { infoMedica: true },
+      });
+      expect(perfilAlumno.infoMedica?.tieneCondicionMedica).toBe(true);
+      expect(perfilAlumno.infoMedica?.padecimiento).toBe('Asma');
+      expect(perfilAlumno.infoMedica?.medicamentos).toBe('Salbutamol');
+      expect(perfilAlumno.infoMedica?.alergias).toBe('Polen');
+      expect(perfilAlumno.infoMedica?.tratamientoAdicional).toBe('Ninguno');
+    });
+
+    it('datos de salud (infoMedica) + contactos guardados correctamente -> MAESTRO', async () => {
+      mockCreateUserExitoso();
+
+      const res = await request(app.getHttpServer())
+        .post('/personas')
+        .set('Authorization', `Bearer ${await tokenAdmin()}`)
+        .send({
+          email: `maestro.infomedica.${randomUUID()}@cesp-merida.edu.mx`,
+          rol: RolUsuario.MAESTRO,
+          perfilMaestro: perfilMaestroValido({
+            contactos: [
+              contactoValido({ nombre: 'Contacto Maestro Uno' }),
+              contactoValido({ nombre: 'Contacto Maestro Dos' }),
+            ],
+            infoMedica: infoMedicaValida({
+              tieneCondicionMedica: true,
+              padecimiento: 'Hipertensión',
+            }),
+          }),
+        });
+
+      expect(res.status).toBe(201);
+      const body = res.body as AltaPersonaBody;
+
+      const perfilMaestro = await prisma.perfilMaestro.findUniqueOrThrow({
+        where: { usuarioId: body.data.usuario.id },
+        include: { contactos: { orderBy: { orden: 'asc' } }, infoMedica: true },
+      });
+      expect(perfilMaestro.contactos).toHaveLength(2);
+      expect(perfilMaestro.contactos.map((c) => c.orden)).toEqual([1, 2]);
+      expect(perfilMaestro.infoMedica?.tieneCondicionMedica).toBe(true);
+      expect(perfilMaestro.infoMedica?.padecimiento).toBe('Hipertensión');
+    });
+
+    it('datos de salud (infoMedica) + contactos guardados correctamente -> ADMINISTRATIVO', async () => {
+      mockCreateUserExitoso();
+
+      const res = await request(app.getHttpServer())
+        .post('/personas')
+        .set('Authorization', `Bearer ${await tokenSuperAdmin()}`)
+        .send({
+          email: `administrativo.infomedica.${randomUUID()}@cesp-merida.edu.mx`,
+          rol: RolUsuario.ADMINISTRATIVO,
+          perfilAdministrativo: {
+            ...perfilAdministrativoValido(),
+            contactos: [contactoValido({ nombre: 'Contacto Administrativo' })],
+            infoMedica: infoMedicaValida({
+              tieneCondicionMedica: false,
+            }),
+          },
+        });
+
+      expect(res.status).toBe(201);
+      const body = res.body as AltaPersonaBody;
+
+      const perfilAdministrativo =
+        await prisma.perfilAdministrativo.findUniqueOrThrow({
+          where: { usuarioId: body.data.usuario.id },
+          include: { contactos: true, infoMedica: true },
+        });
+      expect(perfilAdministrativo.contactos).toHaveLength(1);
+      expect(perfilAdministrativo.contactos[0].nombre).toBe(
+        'Contacto Administrativo',
+      );
+      expect(perfilAdministrativo.infoMedica?.tieneCondicionMedica).toBe(false);
+    });
   });
 });

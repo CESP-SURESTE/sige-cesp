@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { LogoutButton } from '@/components/logout-button';
+import { VolverAlPanel } from '@/components/admin/ui/VolverAlPanel';
 
 /**
  * Shell del área ADMINISTRATIVO. Cuando este layout se renderiza, `src/proxy.ts`
@@ -18,11 +19,17 @@ export default async function AdminLayout(props: LayoutProps<'/admin'>) {
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="border-b border-gray-200 px-6 py-4">
+      <header className="border-b border-linea bg-paper px-6 py-4">
         <div className="flex items-center justify-between">
-          <span className="text-sm font-semibold">SIGE · Panel administrativo</span>
           <div className="flex items-center gap-4">
-            {email && <span className="text-sm text-gray-500">{email}</span>}
+            <span className="font-display text-sm font-semibold tracking-[0.14em] text-maya uppercase">
+              SIGE
+            </span>
+            <span className="text-sm font-medium text-ink/80">Panel administrativo</span>
+            <VolverAlPanel />
+          </div>
+          <div className="flex items-center gap-4">
+            {email && <span className="text-sm text-ink/60">{email}</span>}
             <LogoutButton />
           </div>
         </div>

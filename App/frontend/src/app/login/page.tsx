@@ -73,13 +73,16 @@ export default function LoginPage() {
 
   return (
     <main className="flex min-h-screen items-center justify-center p-8">
-      <div className="w-full max-w-sm">
-        <h1 className="text-xl font-semibold">SIGE · Iniciar sesión</h1>
-        <p className="mt-1 text-sm text-gray-500">Sistema de Gestión Escolar — CESP</p>
+      <div className="w-full max-w-sm rounded-lg border-l-4 border-maya bg-white px-6 py-8 shadow-sm">
+        <p className="font-display text-sm font-semibold tracking-[0.14em] text-maya uppercase">
+          SIGE
+        </p>
+        <h1 className="mt-1 font-display text-2xl font-semibold text-ink">Iniciar sesión</h1>
+        <p className="mt-1 text-sm text-ink/60">Sistema de Gestión Escolar — CESP</p>
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4" noValidate>
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700">
+            <label htmlFor="email" className="block text-sm font-medium text-ink/80">
               Correo
             </label>
             <input
@@ -90,12 +93,12 @@ export default function LoginPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               disabled={mutation.isPending}
-              className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-500 focus:outline-none disabled:opacity-50"
+              className="mt-1 w-full rounded-lg border border-linea px-3 py-2 text-sm text-ink focus:border-maya focus:ring-2 focus:ring-maya/20 focus:outline-none disabled:opacity-50"
             />
           </div>
 
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+            <label htmlFor="password" className="block text-sm font-medium text-ink/80">
               Contraseña
             </label>
             <input
@@ -106,7 +109,7 @@ export default function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               disabled={mutation.isPending}
-              className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-500 focus:outline-none disabled:opacity-50"
+              className="mt-1 w-full rounded-lg border border-linea px-3 py-2 text-sm text-ink focus:border-maya focus:ring-2 focus:ring-maya/20 focus:outline-none disabled:opacity-50"
             />
           </div>
 
@@ -119,7 +122,7 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={mutation.isPending}
-            className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+            className="w-full rounded-lg bg-maya px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-maya-deep disabled:opacity-50"
           >
             {mutation.isPending ? 'Entrando…' : 'Entrar'}
           </button>

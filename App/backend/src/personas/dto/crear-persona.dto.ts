@@ -1,5 +1,8 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsBoolean,
   IsDateString,
   IsDefined,
   IsEmail,
@@ -14,11 +17,81 @@ import {
   ValidateNested,
 } from 'class-validator';
 import {
-  EstatusEmpleado,
   NivelPermiso,
   PuestoAdministrativo,
   RolUsuario,
+  TipoContacto,
 } from '@prisma/client';
+
+/**
+ * Contactos de emergencia + datos de salud — extensión de `POST /personas`
+ * (decisión explícita del usuario, 2026-08-12: "que sea en la misma
+ * transacción ya que todo se debe cargar a la vez"). El modelo ya existía en
+ * `schema.prisma` desde el día 1 (regla 4 de CLAUDE.md raíz), este es el
+ * primer código que lo toca.
+ *
+ * `ContactoDto` (base, sin `tipo`) sirve para `PerfilMaestroDto`/
+ * `PerfilAdministrativoDto` — `ContactoMaestro`/`ContactoAdministrativo` no
+ * tienen ese campo en el schema. `ContactoAlumnoDto` extiende con `tipo`
+ * (`TUTOR`/`EMERGENCIA`), único campo distinto de `ContactoAlumno`.
+ *
+ * `orden` NO se pide al cliente — regla 1 de CLAUDE.md raíz (nunca persistir
+ * algo calculable): es secuencial y se deriva de la posición del contacto en
+ * el array (`PersonasService` lo asigna como `índice + 1` al insertar), no un
+ * campo que el frontend tenga que enviar ni validar por rango.
+ */
+export class ContactoDto {
+  @IsString()
+  @IsNotEmpty({ message: 'nombre del contacto es requerido' })
+  nombre!: string;
+
+  @IsString()
+  @IsNotEmpty({ message: 'telefono del contacto es requerido' })
+  telefono!: string;
+
+  @IsOptional()
+  @IsEmail({}, { message: 'correo del contacto tiene un formato inválido' })
+  correo?: string;
+
+  @IsString()
+  @IsNotEmpty({ message: 'parentesco del contacto es requerido' })
+  parentesco!: string;
+}
+
+export class ContactoAlumnoDto extends ContactoDto {
+  @IsEnum(TipoContacto, {
+    message: 'tipo de contacto debe ser TUTOR o EMERGENCIA',
+  })
+  tipo!: TipoContacto;
+}
+
+/**
+ * `InfoMedicaAlumno`/`InfoMedicaMaestro`/`InfoMedicaAdministrativo` son
+ * idénticos entre sí en `schema.prisma` — un solo DTO reutilizado los 3
+ * roles (1-a-1 con el perfil, mismo espíritu que `MallaCurricular` es
+ * 1-a-1 con `Carrera`, aunque acá es `create` directo dentro de la
+ * transacción de alta, no un `upsert` posterior).
+ */
+export class InfoMedicaDto {
+  @IsBoolean({ message: 'tieneCondicionMedica debe ser booleano' })
+  tieneCondicionMedica!: boolean;
+
+  @IsOptional()
+  @IsString()
+  padecimiento?: string;
+
+  @IsOptional()
+  @IsString()
+  medicamentos?: string;
+
+  @IsOptional()
+  @IsString()
+  alergias?: string;
+
+  @IsOptional()
+  @IsString()
+  tratamientoAdicional?: string;
+}
 
 /**
  * DTOs de `POST /personas` — Fase 4, Día 11.
@@ -47,6 +120,14 @@ import {
  * silencio si vienen por error en el body), pero `@ValidateIf` nunca corre su
  * validación y `PersonasService` los ignora — no se valida activamente que
  * NO vengan, solo que se ignoran si vienen.
+ *
+ * `PerfilMaestroDto`/`PerfilAdministrativoDto` NO tienen campo `estatus`
+ * (corrección de QA manual, sesión 2026-08-12): no tiene sentido dar de alta
+ * a alguien ya en `BAJA`/`LICENCIA` — `PersonasService.altaPersona` fuerza
+ * `estatus: ACTIVO` siempre en la creación. Cambiar el estatus después de la
+ * alta es un flujo distinto (regla 3 de `CLAUDE.md` raíz — baja lógica vía
+ * `PATCH /:id/estatus`), que todavía no existe para `PerfilMaestro`/
+ * `PerfilAdministrativo` — fuera de alcance de esta corrección.
  */
 export class PerfilAlumnoDto {
   @IsString()
@@ -92,6 +173,17 @@ export class PerfilAlumnoDto {
   @IsOptional()
   @IsString()
   telefono?: string;
+
+  @ArrayMinSize(1, { message: 'contactos debe tener al menos 1 elemento' })
+  @ArrayMaxSize(3, { message: 'contactos debe tener máximo 3 elementos' })
+  @ValidateNested({ each: true })
+  @Type(() => ContactoAlumnoDto)
+  contactos!: ContactoAlumnoDto[];
+
+  @IsDefined({ message: 'infoMedica es requerido' })
+  @ValidateNested()
+  @Type(() => InfoMedicaDto)
+  infoMedica!: InfoMedicaDto;
 }
 
 export class PerfilMaestroDto {
@@ -128,10 +220,16 @@ export class PerfilMaestroDto {
   )
   fechaContratacion!: string;
 
-  /** Default `ACTIVO` en `PersonasService` si no viene. */
-  @IsOptional()
-  @IsEnum(EstatusEmpleado)
-  estatus?: EstatusEmpleado;
+  @ArrayMinSize(1, { message: 'contactos debe tener al menos 1 elemento' })
+  @ArrayMaxSize(3, { message: 'contactos debe tener máximo 3 elementos' })
+  @ValidateNested({ each: true })
+  @Type(() => ContactoDto)
+  contactos!: ContactoDto[];
+
+  @IsDefined({ message: 'infoMedica es requerido' })
+  @ValidateNested()
+  @Type(() => InfoMedicaDto)
+  infoMedica!: InfoMedicaDto;
 }
 
 export class PerfilAdministrativoDto {
@@ -164,11 +262,6 @@ export class PerfilAdministrativoDto {
   )
   fechaContratacion!: string;
 
-  /** Default `ACTIVO` en `PersonasService` si no viene. */
-  @IsOptional()
-  @IsEnum(EstatusEmpleado)
-  estatus?: EstatusEmpleado;
-
   @IsEnum(PuestoAdministrativo)
   puesto!: PuestoAdministrativo;
 
@@ -182,6 +275,17 @@ export class PerfilAdministrativoDto {
   @IsOptional()
   @IsEnum(NivelPermiso)
   nivelPermiso?: NivelPermiso;
+
+  @ArrayMinSize(1, { message: 'contactos debe tener al menos 1 elemento' })
+  @ArrayMaxSize(3, { message: 'contactos debe tener máximo 3 elementos' })
+  @ValidateNested({ each: true })
+  @Type(() => ContactoDto)
+  contactos!: ContactoDto[];
+
+  @IsDefined({ message: 'infoMedica es requerido' })
+  @ValidateNested()
+  @Type(() => InfoMedicaDto)
+  infoMedica!: InfoMedicaDto;
 }
 
 export class CrearPersonaDto {

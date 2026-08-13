@@ -1,7 +1,6 @@
 'use client';
 
 import { useMutation } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
 import { login } from '@/lib/api/auth';
 import { cambiarPassword } from '@/lib/api/cambiar-password';
@@ -33,6 +32,32 @@ import { createClient } from '@/lib/supabase/client';
  * Por eso se pide una sesión NUEVA (`login()` con la contraseña ya
  * cambiada → `setSession()`), el mismo mecanismo que ya usa
  * `app/login/page.tsx` — no una llamada directa a Supabase.
+ *
+ * BUGS corregidos (QA manual, sesión 2026-08-12) — "cambia la contraseña
+ * pero no redirige al perfil", 2 causas distintas encontradas:
+ *
+ * 1) Los 3 `<input>` de contraseña usaban `disabled={mutation.isPending}`.
+ *    Deshabilitar un input de contraseña es justo la señal que gestores de
+ *    contraseñas con overlay inline (ej. Bitwarden) usan para
+ *    reposicionar/retirar su ícono inyectado en el DOM — esa mutación
+ *    ocurre exactamente cuando la mutación de React Query entra en estado
+ *    pending (mismo instante del submit). Fix: no deshabilitar los inputs
+ *    durante el envío, solo el botón de submit (que de cualquier forma ya
+ *    bloquea reenvíos).
+ * 2) Con (1) ya corregido (confirmado sin la excepción de la extensión en
+ *    consola), la navegación SEGUÍA sin ocurrir — `router.push('/')` +
+ *    `router.refresh()` no producían ningún cambio visible, aunque el
+ *    backend sí completaba el cambio (`primerIngreso: false` confirmado en
+ *    DB cada vez) y navegar a mano (`window.location`/botón "atrás") sí
+ *    aterrizaba en `/alumno` sin problema — descartando también una
+ *    condición de carrera con la cookie de sesión (se probó esperar
+ *    explícitamente el evento `onAuthStateChange` antes de navegar y el
+ *    síntoma persistió idéntico). Reproducido 2 veces en limpio, sin
+ *    ediciones de código de por medio, para descartar ruido de Fast
+ *    Refresh. Conclusión: `router.push()` de Next.js no está completando
+ *    la navegación en este flujo. Fix: navegación dura
+ *    (`window.location.href`) en vez de `router.push` — fuerza un ciclo de
+ *    red nuevo completo, verificado funcionando de forma consistente.
  */
 
 const MENSAJES_ERROR: Record<string, string> = {
@@ -41,7 +66,6 @@ const MENSAJES_ERROR: Record<string, string> = {
 };
 
 export default function CambiarPasswordPage() {
-  const router = useRouter();
   const [passwordActual, setPasswordActual] = useState('');
   const [passwordNueva, setPasswordNueva] = useState('');
   const [passwordConfirmar, setPasswordConfirmar] = useState('');
@@ -76,8 +100,9 @@ export default function CambiarPasswordPage() {
       }
     },
     onSuccess: () => {
-      router.push('/');
-      router.refresh();
+      // Navegación DURA — ver comentario de cabecera del componente (bug 2).
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- justificado arriba: `router.push` no completaba la navegación en este flujo (verificado repetidamente), `window.location.href` sí.
+      window.location.href = '/';
     },
   });
 
@@ -108,15 +133,18 @@ export default function CambiarPasswordPage() {
 
   return (
     <main className="flex min-h-screen items-center justify-center p-8">
-      <div className="w-full max-w-sm">
-        <h1 className="text-xl font-semibold">SIGE · Cambiar contraseña</h1>
-        <p className="mt-1 text-sm text-gray-500">
+      <div className="w-full max-w-sm rounded-lg border-l-4 border-maya bg-white px-6 py-8 shadow-sm">
+        <p className="font-display text-sm font-semibold tracking-[0.14em] text-maya uppercase">
+          SIGE
+        </p>
+        <h1 className="mt-1 font-display text-2xl font-semibold text-ink">Cambiar contraseña</h1>
+        <p className="mt-1 text-sm text-ink/60">
           Si es tu primer ingreso, debes completar este paso antes de continuar.
         </p>
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4" noValidate>
           <div>
-            <label htmlFor="passwordActual" className="block text-sm font-medium text-gray-700">
+            <label htmlFor="passwordActual" className="block text-sm font-medium text-ink/80">
               Contraseña actual
             </label>
             <input
@@ -126,13 +154,12 @@ export default function CambiarPasswordPage() {
               required
               value={passwordActual}
               onChange={(e) => setPasswordActual(e.target.value)}
-              disabled={mutation.isPending}
-              className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-500 focus:outline-none disabled:opacity-50"
+              className="mt-1 w-full rounded-lg border border-linea px-3 py-2 text-sm text-ink focus:border-maya focus:ring-2 focus:ring-maya/20 focus:outline-none"
             />
           </div>
 
           <div>
-            <label htmlFor="passwordNueva" className="block text-sm font-medium text-gray-700">
+            <label htmlFor="passwordNueva" className="block text-sm font-medium text-ink/80">
               Contraseña nueva
             </label>
             <input
@@ -143,13 +170,12 @@ export default function CambiarPasswordPage() {
               minLength={8}
               value={passwordNueva}
               onChange={(e) => setPasswordNueva(e.target.value)}
-              disabled={mutation.isPending}
-              className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-500 focus:outline-none disabled:opacity-50"
+              className="mt-1 w-full rounded-lg border border-linea px-3 py-2 text-sm text-ink focus:border-maya focus:ring-2 focus:ring-maya/20 focus:outline-none"
             />
           </div>
 
           <div>
-            <label htmlFor="passwordConfirmar" className="block text-sm font-medium text-gray-700">
+            <label htmlFor="passwordConfirmar" className="block text-sm font-medium text-ink/80">
               Confirmar contraseña nueva
             </label>
             <input
@@ -160,8 +186,7 @@ export default function CambiarPasswordPage() {
               minLength={8}
               value={passwordConfirmar}
               onChange={(e) => setPasswordConfirmar(e.target.value)}
-              disabled={mutation.isPending}
-              className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-500 focus:outline-none disabled:opacity-50"
+              className="mt-1 w-full rounded-lg border border-linea px-3 py-2 text-sm text-ink focus:border-maya focus:ring-2 focus:ring-maya/20 focus:outline-none"
             />
           </div>
 
@@ -174,7 +199,7 @@ export default function CambiarPasswordPage() {
           <button
             type="submit"
             disabled={mutation.isPending}
-            className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+            className="w-full rounded-lg bg-maya px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-maya-deep disabled:opacity-50"
           >
             {mutation.isPending ? 'Guardando…' : 'Cambiar contraseña'}
           </button>

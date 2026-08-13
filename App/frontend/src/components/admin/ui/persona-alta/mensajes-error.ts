@@ -10,7 +10,6 @@ import { ApiError } from '@/lib/api/http';
  * `POST /personas`).
  */
 export const MENSAJES_ERROR_COMUNES: Record<string, string> = {
-  CONFLICT: 'El correo, la matrícula o el código externo ya están en uso.',
   VALIDATION_ERROR:
     'Revisa que todos los campos requeridos estén completos y con el formato correcto.',
   ROL_NO_AUTORIZADO: 'No tienes permisos para dar de alta personas.',
@@ -24,11 +23,19 @@ export function resolverMensajeError(
 ): string | null {
   if (!error) return null;
   if (error instanceof ApiError) {
-    return (
-      mensajesEspecificos[error.code] ??
-      MENSAJES_ERROR_COMUNES[error.code] ??
-      MENSAJE_ERROR_GENERICO
-    );
+    if (mensajesEspecificos[error.code]) {
+      return mensajesEspecificos[error.code];
+    }
+    // CONFLICT (encontrado en QA manual, sesión 2026-08-12): a diferencia
+    // de los demás códigos, el backend YA distingue cuál campo colisionó
+    // ("Ya existe un usuario con ese email" / "...esa matrícula" /
+    // "...ese código externo", ver `PersonasService.altaPersona`) — usar
+    // ese texto real en vez de un mensaje genérico fijo que escondía cuál
+    // de los 3 campos era el problema.
+    if (error.code === 'CONFLICT') {
+      return error.message;
+    }
+    return MENSAJES_ERROR_COMUNES[error.code] ?? MENSAJE_ERROR_GENERICO;
   }
   return error instanceof Error ? error.message : MENSAJE_ERROR_GENERICO;
 }

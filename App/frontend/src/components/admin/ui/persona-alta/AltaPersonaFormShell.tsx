@@ -29,9 +29,9 @@ export function AltaPersonaFormShell({
   submitLabel = 'Dar de alta',
 }: AltaPersonaFormShellProps) {
   return (
-    <div className="max-w-2xl">
-      <h1 className="text-xl font-semibold">{titulo}</h1>
-      <p className="mt-1 text-sm text-gray-500">{descripcion}</p>
+    <div className="max-w-2xl rounded-lg border-l-4 border-maya bg-white px-6 py-6 shadow-sm">
+      <h1 className="font-display text-xl font-semibold text-ink">{titulo}</h1>
+      <p className="mt-1 text-sm text-ink/60">{descripcion}</p>
 
       <form onSubmit={onSubmit} className="mt-6 space-y-8" noValidate>
         {children}
@@ -45,7 +45,7 @@ export function AltaPersonaFormShell({
         <button
           type="submit"
           disabled={isPending}
-          className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+          className="rounded-lg bg-maya px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-maya-deep disabled:opacity-50"
         >
           {isPending ? 'Guardando…' : submitLabel}
         </button>

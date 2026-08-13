@@ -9,6 +9,7 @@ import { AuthModule } from './auth/auth.module';
 import { PruebaRolesModule } from './prueba-roles/prueba-roles.module';
 import { PersonasModule } from './personas/personas.module';
 import { CarrerasModule } from './carreras/carreras.module';
+import { PerfilModule } from './perfil/perfil.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { CarrerasModule } from './carreras/carreras.module';
     PruebaRolesModule,
     PersonasModule,
     CarrerasModule,
+    PerfilModule,
   ],
   controllers: [AppController],
   providers: [AppService],

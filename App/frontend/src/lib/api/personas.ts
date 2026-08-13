@@ -11,7 +11,46 @@ import { apiFetchAuth } from './http';
  * mismo criterio que `lib/api/auth.ts` con `LoginResult`. Cada
  * `crear<Rol>()` fija su propio `rol`, no se expone como campo editable en
  * ningún formulario.
+ *
+ * `PerfilMaestroInput`/`PerfilAdministrativoInput` NO tienen `estatus`
+ * (corrección de QA manual, sesión 2026-08-12) — el backend lo fuerza
+ * siempre a `ACTIVO` en la creación, no tiene sentido dar de alta a alguien
+ * ya en `BAJA`/`LICENCIA`. Ver nota espejo en `crear-persona.dto.ts`.
+ *
+ * `contactos`/`infoMedica` (extensión 2026-08-12, decisión del usuario:
+ * misma transacción que el alta) — espejo de `ContactoDto`/
+ * `ContactoAlumnoDto`/`InfoMedicaDto` (`crear-persona.dto.ts`). `orden` NO se
+ * manda (regla 1 de `CLAUDE.md` raíz): se deriva de la posición del contacto
+ * en el array, el backend lo asigna.
  */
+export interface ContactoInput {
+  nombre: string;
+  telefono: string;
+  correo?: string;
+  parentesco: string;
+}
+
+/** Espejo de `TipoContacto` (`schema.prisma`) — exclusivo de `ContactoAlumnoInput`. */
+export type TipoContacto = 'TUTOR' | 'EMERGENCIA';
+
+export interface ContactoAlumnoInput extends ContactoInput {
+  tipo: TipoContacto;
+}
+
+/**
+ * Idéntico para los 3 roles (espejo de `InfoMedicaAlumno`/`InfoMedicaMaestro`/
+ * `InfoMedicaAdministrativo`, `schema.prisma`, y de `InfoMedicaDto`,
+ * backend). Los 4 campos opcionales típicamente solo tienen sentido si
+ * `tieneCondicionMedica` es `true` (criterio de UX en cada `page.tsx`).
+ */
+export interface InfoMedicaInput {
+  tieneCondicionMedica: boolean;
+  padecimiento?: string;
+  medicamentos?: string;
+  alergias?: string;
+  tratamientoAdicional?: string;
+}
+
 export interface PerfilAlumnoInput {
   nombres: string;
   apellidoPaterno: string;
@@ -25,6 +64,9 @@ export interface PerfilAlumnoInput {
   periodoIngreso: string;
   semestreActual: number;
   telefono?: string;
+  /** 1-3 elementos — `ContactoAlumnoDto` (con `tipo`), exclusivo de alumno. */
+  contactos: ContactoAlumnoInput[];
+  infoMedica: InfoMedicaInput;
 }
 
 export interface CrearAlumnoInput {
@@ -32,9 +74,6 @@ export interface CrearAlumnoInput {
   codigoExterno?: string;
   perfilAlumno: PerfilAlumnoInput;
 }
-
-/** Espejo de `EstatusEmpleado` (`schema.prisma`). */
-export type EstatusEmpleado = 'ACTIVO' | 'BAJA' | 'LICENCIA';
 
 /** Espejo de `PuestoAdministrativo` (`schema.prisma`). */
 export type PuestoAdministrativo =
@@ -58,8 +97,9 @@ export interface PerfilMaestroInput {
   telefono: string;
   /** ISO date (`YYYY-MM-DD`). */
   fechaContratacion: string;
-  /** Default `ACTIVO` en el backend si no viene. */
-  estatus?: EstatusEmpleado;
+  /** 1-3 elementos — `ContactoDto` (sin `tipo`). */
+  contactos: ContactoInput[];
+  infoMedica: InfoMedicaInput;
 }
 
 export interface CrearMaestroInput {
@@ -77,8 +117,6 @@ export interface PerfilAdministrativoInput {
   telefono: string;
   /** ISO date (`YYYY-MM-DD`). */
   fechaContratacion: string;
-  /** Default `ACTIVO` en el backend si no viene. */
-  estatus?: EstatusEmpleado;
   puesto: PuestoAdministrativo;
   /**
    * Default `AUXILIAR` (mínimo privilegio) en el backend si no viene.
@@ -87,6 +125,9 @@ export interface PerfilAdministrativoInput {
    * no tiene permiso para asignar el nivel pedido.
    */
   nivelPermiso?: NivelPermiso;
+  /** 1-3 elementos — `ContactoDto` (sin `tipo`). */
+  contactos: ContactoInput[];
+  infoMedica: InfoMedicaInput;
 }
 
 export interface CrearAdministrativoInput {

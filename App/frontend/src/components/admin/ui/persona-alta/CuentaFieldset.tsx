@@ -26,7 +26,7 @@ export function CuentaFieldset<TInput extends PersonaComunFormInput>({
 }: CuentaFieldsetProps<TInput>) {
   return (
     <fieldset className="space-y-4">
-      <legend className="text-sm font-semibold text-gray-900">Cuenta</legend>
+      <legend className="text-sm font-semibold text-ink">Cuenta</legend>
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
           <label htmlFor="email" className={LABEL_CLASS}>

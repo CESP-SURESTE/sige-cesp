@@ -6,5 +6,5 @@
  * formulario base reutilizado entre los 3 tipos").
  */
 export const INPUT_CLASS =
-  'mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-500 focus:outline-none disabled:opacity-50';
-export const LABEL_CLASS = 'block text-sm font-medium text-gray-700';
+  'mt-1 w-full rounded-lg border border-linea px-3 py-2 text-sm text-ink focus:border-maya focus:ring-2 focus:ring-maya/20 focus:outline-none disabled:opacity-50';
+export const LABEL_CLASS = 'block text-sm font-medium text-ink/80';
