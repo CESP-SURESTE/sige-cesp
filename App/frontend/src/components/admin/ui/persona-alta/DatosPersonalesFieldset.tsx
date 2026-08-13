@@ -55,7 +55,7 @@ export function DatosPersonalesFieldset<
 
   return (
     <fieldset className="space-y-4">
-      <legend className="text-sm font-semibold text-ink">Datos personales</legend>
+      <legend className="text-sm font-semibold text-slate">Datos personales</legend>
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
           <label htmlFor={`${prefix}-nombres`} className={LABEL_CLASS}>

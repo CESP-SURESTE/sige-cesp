@@ -1,44 +1,75 @@
 @import "tailwindcss";
 
 /**
- * Tokens de diseño de SIGE — pasada ligera de diseño (2026-08-12).
+ * Tokens de diseño de SIGE — pasada de rebrand (2026-08-13).
  *
- * Paleta anclada en Yucatán, no en el azul/violeta genérico de SaaS: `maya`
- * es una referencia directa al "azul maya", el pigmento histórico
- * (índigo + paligorskita) usado en los murales de Chichén Itzá y arrojado
- * como ofrenda al Cenote Sagrado — un acento con identidad real de la
- * región, no decorativo. `paper` evoca el sascab (piedra caliza molida) de
- * la construcción yucateca en vez de un blanco de interfaz genérico.
- * `terracota` queda disponible pero de uso mínimo (evitar sobrecargar); los
- * colores semánticos de error/éxito siguen siendo rojo/verde estándar de
- * Tailwind por legibilidad, no se reinventan.
+ * Paleta institucional provista por CESP (reemplaza la paleta "azul maya"
+ * de la pasada anterior, 2026-08-12 — esa era una identidad propuesta por
+ * el estudio; esta es la del cliente, tiene prioridad). 6 colores dados:
+ * Navy, Crimson, Bone, Slate, Gold, Mist — se usan literalmente, sin
+ * reinterpretar el hex.
  *
- * Sin modo oscuro: ningún componente construido hasta hoy usa `dark:`
- * (confirmado por grep) — el bloque `prefers-color-scheme` del scaffold de
- * create-next-app estaba muerto, se retira en vez de mantener una mitad de
- * sistema sin implementar.
+ * La paleta del cliente no cubre estados semánticos (no trae verde ni
+ * amarillo) — se agregan 3 derivados ad-hoc, calibrados al mismo peso
+ * tonal (oscuros, desaturados) para no romper la identidad:
+ * - `success`: verde bosque, mismo nivel de saturación que `crimson`/`navy`.
+ * - `warning`: reutiliza la familia `gold` pero en un tono más oscuro
+ *   (`gold` puro no pasa contraste AA como texto sobre `bone`, ~2:1 — ver
+ *   nota de `gold-deep` abajo).
+ * - `error`: reutiliza `crimson` directo (ya en la paleta), solo se agregan
+ *   los tintes de fondo/borde para banners.
+ * `navy-deep`/`gold-deep` son shades (no vienen del cliente) para
+ * hover/active y para texto sobre fondo claro donde el tono base no
+ * alcanza contraste.
+ *
+ * Sin modo oscuro — decisión ya tomada en la pasada anterior (ningún
+ * componente usa `dark:`, ver nota de esa fecha en el historial de este
+ * archivo).
  */
 :root {
-  --paper: #f7f3ea;
-  --ink: #211e1b;
-  --maya: #1d6e78;
-  --maya-deep: #143f45;
-  --linea: #dfd6c2;
-  --terracota: #b5562f;
+  --navy: #1b2a4a;
+  --navy-deep: #101a30;
+  --crimson: #8c1d2b;
+  --crimson-deep: #6c161f;
+  --bone: #f7f6f3;
+  --slate: #3a4256;
+  --gold: #b8985e;
+  --gold-deep: #8f7548;
+  --mist: #dce1ea;
 
-  --background: var(--paper);
-  --foreground: var(--ink);
+  --success: #2f6f52;
+  --success-bg: #eaf3ee;
+  --success-border: #bfddcb;
+  --warning: #8a6d3a;
+  --warning-bg: #fbf3e4;
+  --warning-border: #e9d3a5;
+  --error-bg: #f7e8e9;
+  --error-border: #e3b8bd;
+
+  --background: var(--bone);
+  --foreground: var(--slate);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --color-paper: var(--paper);
-  --color-ink: var(--ink);
-  --color-maya: var(--maya);
-  --color-maya-deep: var(--maya-deep);
-  --color-linea: var(--linea);
-  --color-terracota: var(--terracota);
+  --color-navy: var(--navy);
+  --color-navy-deep: var(--navy-deep);
+  --color-crimson: var(--crimson);
+  --color-crimson-deep: var(--crimson-deep);
+  --color-bone: var(--bone);
+  --color-slate: var(--slate);
+  --color-gold: var(--gold);
+  --color-gold-deep: var(--gold-deep);
+  --color-mist: var(--mist);
+  --color-success: var(--success);
+  --color-success-bg: var(--success-bg);
+  --color-success-border: var(--success-border);
+  --color-warning: var(--warning);
+  --color-warning-bg: var(--warning-bg);
+  --color-warning-border: var(--warning-border);
+  --color-error-bg: var(--error-bg);
+  --color-error-border: var(--error-border);
   --font-sans: var(--font-public-sans);
   --font-display: var(--font-fraunces);
   --font-mono: var(--font-geist-mono);
@@ -47,5 +78,25 @@
 body {
   background: var(--background);
   color: var(--foreground);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+/**
+ * Theming de `sonner` (Día 2026-08-13, toasts nuevos). Solo `--normal-*`
+ * vive acá — el toast default (sin tipo) sí puede tomar el valor de
+ * `:root` porque esos 3 nombres (`--normal-bg`/`--normal-border`/
+ * `--normal-text`) no chocan con ningún token propio. El color por TIPO
+ * (`success`/`error`/`warning`) se resuelve en `providers.tsx` vía
+ * `toastOptions.classNames` con Tailwind, no acá — ver el comentario de ese
+ * archivo: usar `--success-bg`/`--error-bg` como nombre de variable acá
+ * hubiera chocado con los tokens de `:root` del mismo nombre (autorreferencia
+ * cíclica de CSS, encontrado por QA `qa-frontend` el 2026-08-13), y sonner
+ * solo respeta esas variables por tipo con `richColors` activo, que este
+ * proyecto no usa.
+ */
+[data-sonner-toaster] {
+  --normal-bg: var(--bone);
+  --normal-border: var(--mist);
+  --normal-text: var(--slate);
   font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
 }

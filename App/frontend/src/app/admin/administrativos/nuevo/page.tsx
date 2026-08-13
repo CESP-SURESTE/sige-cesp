@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
+import { toast } from 'sonner';
 import { z } from 'zod';
 import { AltaPersonaFormShell } from '@/components/admin/ui/persona-alta/AltaPersonaFormShell';
 import { ContactosFieldset } from '@/components/admin/ui/persona-alta/ContactosFieldset';
@@ -12,7 +13,10 @@ import { DatosPersonalesFieldset } from '@/components/admin/ui/persona-alta/Dato
 import { FieldError } from '@/components/admin/ui/persona-alta/FieldError';
 import { INPUT_CLASS, LABEL_CLASS } from '@/components/admin/ui/persona-alta/estilos';
 import { InfoMedicaFieldset } from '@/components/admin/ui/persona-alta/InfoMedicaFieldset';
-import { resolverMensajeError } from '@/components/admin/ui/persona-alta/mensajes-error';
+import {
+  MENSAJE_ERROR_GENERICO,
+  resolverMensajeError,
+} from '@/components/admin/ui/persona-alta/mensajes-error';
 import { ResultadoAltaPersona } from '@/components/admin/ui/persona-alta/ResultadoAltaPersona';
 import { contactosSchema, infoMedicaSchema } from '@/components/admin/ui/persona-alta/schemas';
 import { crearAdministrativo, type AltaPersonaResult } from '@/lib/api/personas';
@@ -171,13 +175,16 @@ export default function NuevoAdministrativoPage() {
       setResultado(data);
       reset(DEFAULT_VALUES);
     },
+    onError: (error) => {
+      toast.error(
+        resolverMensajeError(error, MENSAJES_ERROR_ADMINISTRATIVO) ?? MENSAJE_ERROR_GENERICO,
+      );
+    },
   });
 
   function onSubmit(values: AdministrativoFormValues) {
     mutation.mutate(values);
   }
-
-  const mensajeError = resolverMensajeError(mutation.error, MENSAJES_ERROR_ADMINISTRATIVO);
 
   if (resultado) {
     return (
@@ -196,7 +203,6 @@ export default function NuevoAdministrativoPage() {
       descripcion="Crea la cuenta y el perfil del administrativo. La contraseña temporal se muestra al terminar — Día 13 (correo de bienvenida) sigue bloqueado, comunícala tú mismo."
       onSubmit={handleSubmit(onSubmit)}
       isPending={mutation.isPending}
-      mensajeError={mensajeError}
     >
       <CuentaFieldset register={register} errors={errors} disabled={mutation.isPending} />
 
@@ -210,7 +216,7 @@ export default function NuevoAdministrativoPage() {
       />
 
       <fieldset className="space-y-4">
-        <legend className="text-sm font-semibold text-ink">Datos laborales</legend>
+        <legend className="text-sm font-semibold text-slate">Datos laborales</legend>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label htmlFor="fechaContratacion" className={LABEL_CLASS}>
@@ -261,7 +267,7 @@ export default function NuevoAdministrativoPage() {
                 </option>
               ))}
             </select>
-            <p className="mt-1 text-xs text-ink/60">
+            <p className="mt-1 text-xs text-slate/60">
               Solo puedes asignar un nivel igual o menor al tuyo — el backend rechaza la
               solicitud con <code>NIVEL_PERMISO_INSUFICIENTE</code> si intentas asignar más.
             </p>

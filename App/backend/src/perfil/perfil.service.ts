@@ -36,6 +36,26 @@ import { PrismaService } from '../prisma/prisma.service';
  * final de este archivo. Reemplaza la nota anterior de Día 16 que decía
  * explícitamente que no se agregaba ningún campo calculable — ese día no
  * había un pedido real; ahora sí lo hay.
+ *
+ * Actualización (gap real reportado por el usuario probando la app,
+ * 2026-08-13): `alumno.contactos` se agregó al `select` — el usuario notó
+ * que el contacto de emergencia/tutor capturado en el alta (`POST
+ * /personas`, extensión 2026-08-12) no se veía en ningún lado después.
+ * Regla 4 de CLAUDE.md raíz (contactos son sub-recurso anidado al perfil):
+ * sigue siendo así, esto NO es una ruta nueva `GET /alumnos/:id/contactos`,
+ * es un `select` anidado más dentro de `GET /perfil`, igual que ya lo es
+ * `carrera`. Se ordena por `orden` ascendente — ese `orden` lo asigna
+ * `PersonasService.conOrdenSecuencial` al momento del alta y es
+ * significativo (el primero, `orden: 1`, es el contacto principal). No se
+ * selecciona `alumnoId` — FK redundante, el cliente ya sabe de quién es su
+ * propio perfil.
+ *
+ * Alcance deliberado de este cambio — SOLO `contactos`, NO `infoMedica`:
+ * el usuario pidió ver el contacto de emergencia/tutor, no datos de salud.
+ * `infoMedica` es más sensible (padecimientos, medicamentos, alergias) y no
+ * hubo un pedido explícito de mostrarla en el perfil — se agrega el día que
+ * haya un encargo real para eso, no antes (mismo criterio de otras
+ * decisiones de alcance de este archivo, ver notas de Día 16/17/18).
  */
 @Injectable()
 export class PerfilService {
@@ -90,6 +110,21 @@ export class PerfilService {
                 rvoe: true,
                 descripcion: true,
               },
+            },
+            // Gap real reportado por el usuario 2026-08-13 (ver comentario de
+            // clase) — SOLO contactos, `infoMedica` queda fuera de alcance a
+            // propósito. `alumnoId` no se selecciona (FK redundante).
+            contactos: {
+              select: {
+                id: true,
+                tipo: true,
+                nombre: true,
+                telefono: true,
+                correo: true,
+                parentesco: true,
+                orden: true,
+              },
+              orderBy: { orden: 'asc' },
             },
           },
         },

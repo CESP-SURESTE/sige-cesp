@@ -26,7 +26,7 @@ export function VolverAlPanel() {
   return (
     <Link
       href="/admin"
-      className="text-sm font-medium text-ink/60 hover:text-maya"
+      className="text-sm font-medium text-slate/60 hover:text-navy"
     >
       ← Volver al panel
     </Link>

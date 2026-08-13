@@ -2,19 +2,26 @@ import type { FormEventHandler, ReactNode } from 'react';
 
 /**
  * Cascarón visual compartido por los 3 formularios de alta de persona
- * (alumno/maestro/administrativo) — título, descripción, `<form>`, banner de
- * error y botón de submit. Los campos en sí (comunes o específicos del rol)
- * van en `children`, inyectados por cada página — ver
+ * (alumno/maestro/administrativo) — título, descripción, `<form>` y botón de
+ * submit. Los campos en sí (comunes o específicos del rol) van en
+ * `children`, inyectados por cada página — ver
  * `CuentaFieldset`/`DatosPersonalesFieldset` para los campos comunes y cada
  * `app/admin/{alumnos,maestros,administrativos}/nuevo/page.tsx` para los
  * específicos del sub-perfil.
+ *
+ * El error de envío (`mensajeError`, resuelto vía `resolverMensajeError`) ya
+ * no se renderiza como banner inline aquí — cada página lo dispara como
+ * `toast.error(...)` (sonner) desde el `onError` de su mutación, deuda
+ * técnica cerrada 2026-08-13 ("Sistema de alertas/notificaciones
+ * estandarizado"). Los errores de campo específico siguen inline vía
+ * `FieldError` (eso sí se queda visible junto al campo, no solo en el toast
+ * — el usuario necesita saber CUÁL campo está mal, no solo que algo falló).
  */
 interface AltaPersonaFormShellProps {
   titulo: string;
   descripcion: string;
   onSubmit: FormEventHandler<HTMLFormElement>;
   isPending: boolean;
-  mensajeError: string | null;
   children: ReactNode;
   submitLabel?: string;
 }
@@ -24,28 +31,21 @@ export function AltaPersonaFormShell({
   descripcion,
   onSubmit,
   isPending,
-  mensajeError,
   children,
   submitLabel = 'Dar de alta',
 }: AltaPersonaFormShellProps) {
   return (
-    <div className="max-w-2xl rounded-lg border-l-4 border-maya bg-white px-6 py-6 shadow-sm">
-      <h1 className="font-display text-xl font-semibold text-ink">{titulo}</h1>
-      <p className="mt-1 text-sm text-ink/60">{descripcion}</p>
+    <div className="max-w-2xl rounded-lg border-l-4 border-navy bg-white px-6 py-6 shadow-sm">
+      <h1 className="font-display text-xl font-semibold text-slate">{titulo}</h1>
+      <p className="mt-1 text-sm text-slate/60">{descripcion}</p>
 
       <form onSubmit={onSubmit} className="mt-6 space-y-8" noValidate>
         {children}
 
-        {mensajeError && (
-          <p role="alert" className="text-sm text-red-600">
-            {mensajeError}
-          </p>
-        )}
-
         <button
           type="submit"
           disabled={isPending}
-          className="rounded-lg bg-maya px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-maya-deep disabled:opacity-50"
+          className="rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-navy-deep disabled:opacity-50"
         >
           {isPending ? 'Guardando…' : submitLabel}
         </button>

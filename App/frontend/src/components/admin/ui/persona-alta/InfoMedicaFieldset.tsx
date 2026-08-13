@@ -64,18 +64,18 @@ export function InfoMedicaFieldset<
 
   return (
     <fieldset className="space-y-4">
-      <legend className="text-sm font-semibold text-ink">Datos de salud</legend>
+      <legend className="text-sm font-semibold text-slate">Datos de salud</legend>
 
       <div>
         <label
           htmlFor={`${prefix}-tieneCondicionMedica`}
-          className="flex items-center gap-2 text-sm text-ink/80"
+          className="flex items-center gap-2 text-sm text-slate/80"
         >
           <input
             id={`${prefix}-tieneCondicionMedica`}
             type="checkbox"
             disabled={disabled}
-            className="h-4 w-4 rounded border-linea text-maya focus:ring-maya/20"
+            className="h-4 w-4 rounded border-mist text-navy focus:ring-navy/20"
             {...register(path('tieneCondicionMedica'))}
           />
           Tiene alguna condición médica relevante

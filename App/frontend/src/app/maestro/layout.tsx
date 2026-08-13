@@ -21,17 +21,17 @@ export default async function MaestroLayout(props: LayoutProps<'/maestro'>) {
   const email = typeof data?.claims?.email === 'string' ? data.claims.email : null;
 
   return (
-    <div className="flex min-h-screen flex-col bg-paper text-ink">
-      <header className="border-b border-linea px-6 py-4">
+    <div className="flex min-h-screen flex-col bg-bone text-slate">
+      <header className="border-b border-mist px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-baseline gap-3">
-            <span className="font-display text-xs font-semibold tracking-[0.14em] text-maya uppercase">
+            <span className="font-display text-xs font-semibold tracking-[0.14em] text-navy uppercase">
               SIGE
             </span>
-            <span className="text-sm font-medium text-ink">Panel del maestro</span>
+            <span className="text-sm font-medium text-slate">Panel del maestro</span>
           </div>
           <div className="flex items-center gap-4">
-            {email && <span className="text-sm text-ink/60">{email}</span>}
+            {email && <span className="text-sm text-slate/60">{email}</span>}
             <LogoutButton />
           </div>
         </div>

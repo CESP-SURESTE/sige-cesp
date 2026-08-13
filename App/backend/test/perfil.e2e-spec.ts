@@ -3,7 +3,7 @@ import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import type { App } from 'supertest/types';
-import { RolUsuario } from '@prisma/client';
+import { RolUsuario, TipoContacto } from '@prisma/client';
 import { AppModule } from '../src/app.module';
 import { SEDE_GUARD_ENV_OVERRIDE } from '../src/common/guards/sede.guard';
 import { loadEnv } from '../src/load-env';
@@ -48,6 +48,15 @@ interface PerfilBody {
       semestreActual: number;
       telefono: string | null;
       esMenorDeEdad: boolean;
+      contactos: {
+        id: string;
+        tipo: 'TUTOR' | 'EMERGENCIA';
+        nombre: string;
+        telefono: string;
+        correo: string | null;
+        parentesco: string;
+        orden: number;
+      }[];
       carrera: {
         id: string;
         nombre: string;
@@ -144,7 +153,7 @@ describe('PerfilController — GET /perfil (e2e)', () => {
         sedeId: sedeMeridaId,
       },
     });
-    await prisma.perfilAlumno.create({
+    const alumnoMenorPerfil = await prisma.perfilAlumno.create({
       data: {
         usuarioId: alumnoMenor.id,
         nombres: 'Fixture',
@@ -159,6 +168,33 @@ describe('PerfilController — GET /perfil (e2e)', () => {
       },
     });
     alumnoMenorId = alumnoMenor.id;
+
+    // Fixture nuevo (gap real reportado por el usuario 2026-08-13,
+    // `alumno.contactos`) — este fixture no traía contactos desde la
+    // extensión del 12-ago, se agregan acá: 2 contactos (`TUTOR` primero,
+    // `orden: 1`, obligatorio por ser menor de edad; `EMERGENCIA` segundo,
+    // `orden: 2`) para ejercitar el orden ascendente real.
+    await prisma.contactoAlumno.createMany({
+      data: [
+        {
+          alumnoId: alumnoMenorPerfil.id,
+          tipo: TipoContacto.TUTOR,
+          nombre: 'Fixture Tutor',
+          telefono: '9990001111',
+          correo: 'fixture.tutor@example.com',
+          parentesco: 'Madre',
+          orden: 1,
+        },
+        {
+          alumnoId: alumnoMenorPerfil.id,
+          tipo: TipoContacto.EMERGENCIA,
+          nombre: 'Fixture Emergencia',
+          telefono: '9990002222',
+          parentesco: 'Tía',
+          orden: 2,
+        },
+      ],
+    });
   });
 
   afterAll(async () => {
@@ -206,6 +242,16 @@ describe('PerfilController — GET /perfil (e2e)', () => {
     // ya es mayor de edad a la fecha en que corre este test.
     expect(body.alumno?.esMenorDeEdad).toBe(false);
 
+    // `contactos` — gap real reportado por el usuario 2026-08-13. `luis.chan`
+    // trae 1 contacto sembrado por `prisma/seed.ts` (tipo EMERGENCIA,
+    // orden 1). Solo `contactos`, `infoMedica` queda fuera de alcance a
+    // propósito (ver comentario de `PerfilService`).
+    expect(body.alumno?.contactos).toHaveLength(1);
+    expect(body.alumno?.contactos[0].tipo).toBe('EMERGENCIA');
+    expect(body.alumno?.contactos[0].orden).toBe(1);
+    expect(body.alumno?.contactos[0].nombre).toBe('Contacto de prueba');
+    expect(body.alumno).not.toHaveProperty('infoMedica');
+
     // Carrera / plan de estudios (roadmap Día 16).
     expect(body.alumno?.carrera.clave).toBe('LAE-MID');
     expect(body.alumno?.carrera.nombre).toBe('Licenciatura en Administración');
@@ -229,6 +275,16 @@ describe('PerfilController — GET /perfil (e2e)', () => {
     expect(res.status).toBe(200);
     const body = (res.body as PerfilBody).data;
     expect(body.alumno?.esMenorDeEdad).toBe(true);
+
+    // `contactos` — el fixture es menor de edad, el `TUTOR` es obligatorio
+    // en el alta real; acá se confirma que viene ordenado (`orden`
+    // ascendente, `TUTOR` primero) y que `infoMedica` sigue fuera de alcance.
+    expect(body.alumno?.contactos).toHaveLength(2);
+    expect(body.alumno?.contactos[0].tipo).toBe('TUTOR');
+    expect(body.alumno?.contactos[0].orden).toBe(1);
+    expect(body.alumno?.contactos[1].tipo).toBe('EMERGENCIA');
+    expect(body.alumno?.contactos[1].orden).toBe(2);
+    expect(body.alumno).not.toHaveProperty('infoMedica');
   });
 
   it('rol ADMINISTRATIVO (seed real) -> 200, alumno queda null (no le aplica)', async () => {

@@ -3,6 +3,7 @@
 import { useMutation } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
+import { toast } from 'sonner';
 import { login } from '@/lib/api/auth';
 import { ApiError } from '@/lib/api/http';
 import { createClient } from '@/lib/supabase/client';
@@ -57,6 +58,13 @@ export default function LoginPage() {
       router.push('/');
       router.refresh();
     },
+    onError: (err) => {
+      const mensaje =
+        err instanceof ApiError
+          ? (MENSAJES_ERROR[err.code] ?? 'Ocurrió un error inesperado. Intenta de nuevo.')
+          : err.message;
+      toast.error(mensaje);
+    },
   });
 
   function handleSubmit(e: FormEvent) {
@@ -65,24 +73,18 @@ export default function LoginPage() {
     mutation.mutate();
   }
 
-  const mensajeError = mutation.error
-    ? mutation.error instanceof ApiError
-      ? (MENSAJES_ERROR[mutation.error.code] ?? 'Ocurrió un error inesperado. Intenta de nuevo.')
-      : mutation.error.message
-    : null;
-
   return (
     <main className="flex min-h-screen items-center justify-center p-8">
-      <div className="w-full max-w-sm rounded-lg border-l-4 border-maya bg-white px-6 py-8 shadow-sm">
-        <p className="font-display text-sm font-semibold tracking-[0.14em] text-maya uppercase">
+      <div className="w-full max-w-sm rounded-lg border-l-4 border-navy bg-white px-6 py-8 shadow-sm">
+        <p className="font-display text-sm font-semibold tracking-[0.14em] text-navy uppercase">
           SIGE
         </p>
-        <h1 className="mt-1 font-display text-2xl font-semibold text-ink">Iniciar sesión</h1>
-        <p className="mt-1 text-sm text-ink/60">Sistema de Gestión Escolar — CESP</p>
+        <h1 className="mt-1 font-display text-2xl font-semibold text-slate">Iniciar sesión</h1>
+        <p className="mt-1 text-sm text-slate/60">Sistema de Gestión Escolar — CESP</p>
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4" noValidate>
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-ink/80">
+            <label htmlFor="email" className="block text-sm font-medium text-slate/80">
               Correo
             </label>
             <input
@@ -93,12 +95,12 @@ export default function LoginPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               disabled={mutation.isPending}
-              className="mt-1 w-full rounded-lg border border-linea px-3 py-2 text-sm text-ink focus:border-maya focus:ring-2 focus:ring-maya/20 focus:outline-none disabled:opacity-50"
+              className="mt-1 w-full rounded-lg border border-mist px-3 py-2 text-sm text-slate focus:border-navy focus:ring-2 focus:ring-navy/20 focus:outline-none disabled:opacity-50"
             />
           </div>
 
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-ink/80">
+            <label htmlFor="password" className="block text-sm font-medium text-slate/80">
               Contraseña
             </label>
             <input
@@ -109,20 +111,14 @@ export default function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               disabled={mutation.isPending}
-              className="mt-1 w-full rounded-lg border border-linea px-3 py-2 text-sm text-ink focus:border-maya focus:ring-2 focus:ring-maya/20 focus:outline-none disabled:opacity-50"
+              className="mt-1 w-full rounded-lg border border-mist px-3 py-2 text-sm text-slate focus:border-navy focus:ring-2 focus:ring-navy/20 focus:outline-none disabled:opacity-50"
             />
           </div>
-
-          {mensajeError && (
-            <p role="alert" className="text-sm text-red-600">
-              {mensajeError}
-            </p>
-          )}
 
           <button
             type="submit"
             disabled={mutation.isPending}
-            className="w-full rounded-lg bg-maya px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-maya-deep disabled:opacity-50"
+            className="w-full rounded-lg bg-navy px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-navy-deep disabled:opacity-50"
           >
             {mutation.isPending ? 'Entrando…' : 'Entrar'}
           </button>

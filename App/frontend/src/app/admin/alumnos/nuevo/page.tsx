@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
+import { toast } from 'sonner';
 import { z } from 'zod';
 import { AltaPersonaFormShell } from '@/components/admin/ui/persona-alta/AltaPersonaFormShell';
 import { ContactosFieldset } from '@/components/admin/ui/persona-alta/ContactosFieldset';
@@ -12,7 +13,10 @@ import { DatosPersonalesFieldset } from '@/components/admin/ui/persona-alta/Dato
 import { FieldError } from '@/components/admin/ui/persona-alta/FieldError';
 import { INPUT_CLASS, LABEL_CLASS } from '@/components/admin/ui/persona-alta/estilos';
 import { InfoMedicaFieldset } from '@/components/admin/ui/persona-alta/InfoMedicaFieldset';
-import { resolverMensajeError } from '@/components/admin/ui/persona-alta/mensajes-error';
+import {
+  MENSAJE_ERROR_GENERICO,
+  resolverMensajeError,
+} from '@/components/admin/ui/persona-alta/mensajes-error';
 import { ResultadoAltaPersona } from '@/components/admin/ui/persona-alta/ResultadoAltaPersona';
 import {
   contactosAlumnoSchema,
@@ -199,13 +203,14 @@ export default function NuevoAlumnoPage() {
       setResultado(data);
       reset(DEFAULT_VALUES);
     },
+    onError: (error) => {
+      toast.error(resolverMensajeError(error, MENSAJES_ERROR_ALUMNO) ?? MENSAJE_ERROR_GENERICO);
+    },
   });
 
   function onSubmit(values: AlumnoFormOutput) {
     mutation.mutate(values);
   }
-
-  const mensajeError = resolverMensajeError(mutation.error, MENSAJES_ERROR_ALUMNO);
 
   if (resultado) {
     return (
@@ -224,7 +229,6 @@ export default function NuevoAlumnoPage() {
       descripcion="Crea la cuenta y el perfil del alumno. La contraseña temporal se muestra al terminar — Día 13 (correo de bienvenida) sigue bloqueado, comunícala tú mismo."
       onSubmit={handleSubmit(onSubmit)}
       isPending={mutation.isPending}
-      mensajeError={mensajeError}
     >
       <CuentaFieldset register={register} errors={errors} disabled={mutation.isPending} />
 
@@ -236,7 +240,7 @@ export default function NuevoAlumnoPage() {
       />
 
       <fieldset className="space-y-4">
-        <legend className="text-sm font-semibold text-ink">Datos académicos</legend>
+        <legend className="text-sm font-semibold text-slate">Datos académicos</legend>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label htmlFor="matricula" className={LABEL_CLASS}>
@@ -284,7 +288,7 @@ export default function NuevoAlumnoPage() {
               ))}
             </select>
             {carrerasQuery.isError && (
-              <p className="mt-1 text-xs text-terracota">
+              <p className="mt-1 text-xs text-crimson">
                 No se pudieron cargar las carreras. Intenta de nuevo más tarde.
               </p>
             )}

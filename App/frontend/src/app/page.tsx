@@ -5,7 +5,7 @@
 export default function Home() {
   return (
     <main className="flex min-h-screen items-center justify-center p-8">
-      <p className="font-display text-sm font-semibold tracking-[0.14em] text-maya uppercase">
+      <p className="font-display text-sm font-semibold tracking-[0.14em] text-navy uppercase">
         SIGE
       </p>
     </main>

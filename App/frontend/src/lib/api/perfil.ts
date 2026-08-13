@@ -18,6 +18,20 @@ import { apiFetchAuth } from './http';
  * estable de cara a Día 17/18, reservado en el backend, no implementado
  * todavía) porque este agente cubre alumno/maestro pero el entregable de hoy
  * es explícitamente la vista de alumno.
+ *
+ * `alumno.esMenorDeEdad` (2026-08-13, gap de Día 16 extendido cerrado) —
+ * espejo del campo derivado que ya devuelve `PerfilService.obtenerPerfilPropio`
+ * (`App/backend/src/perfil/perfil.service.ts`, regla 1: calculado al vuelo
+ * desde `fechaNacimiento`, nunca persistido). El tipo estaba desactualizado
+ * desde que el backend lo agregó — el backend nunca dejó de mandarlo, solo
+ * no estaba declarado acá.
+ *
+ * `alumno.contactos` (2026-08-13, gap real reportado por el usuario probando
+ * la app — el tutor/contacto de emergencia capturado en el alta no se veía
+ * en ningún lado después). Array de 1 a 3 `ContactoAlumno`, ordenado por
+ * `orden` ascendente (el `orden: 1` es el contacto principal). Alcance
+ * deliberado: SOLO contactos, sin `infoMedica` (más sensible — no hay
+ * pedido explícito de mostrar datos de salud en el perfil todavía).
  */
 
 /** Espejo de `RolUsuario` (`schema.prisma`). */
@@ -38,6 +52,19 @@ export type ModalidadCarrera = 'PRESENCIAL' | 'SEMIPRESENCIAL' | 'EN_LINEA';
 
 /** Espejo de `EstatusCarrera` (`schema.prisma`). */
 export type EstatusCarrera = 'ACTIVA' | 'INACTIVA';
+
+/** Espejo de `TipoContacto` (`schema.prisma`). */
+export type TipoContacto = 'TUTOR' | 'EMERGENCIA';
+
+export interface ContactoAlumno {
+  id: string;
+  tipo: TipoContacto;
+  nombre: string;
+  telefono: string;
+  correo: string | null;
+  parentesco: string;
+  orden: number;
+}
 
 export interface PerfilSede {
   id: string;
@@ -76,6 +103,13 @@ export interface PerfilAlumno {
   semestreActual: number;
   telefono: string | null;
   carrera: PerfilCarrera;
+  /** Derivado al vuelo por el backend desde `fechaNacimiento` — nunca
+   * persistido (regla 1 de `CLAUDE.md` raíz). */
+  esMenorDeEdad: boolean;
+  /** 1 a 3 elementos, ordenados por `orden` ascendente. Cuando
+   * `esMenorDeEdad` es `true` siempre incluye al menos un contacto
+   * `tipo: 'TUTOR'` (obligatorio en el alta para menores). */
+  contactos: ContactoAlumno[];
 }
 
 export interface Perfil {

@@ -2,10 +2,16 @@
 
 import { useMutation } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
+import { toast } from 'sonner';
 import { login } from '@/lib/api/auth';
 import { cambiarPassword } from '@/lib/api/cambiar-password';
 import { ApiError } from '@/lib/api/http';
 import { createClient } from '@/lib/supabase/client';
+import { PasswordStrengthMeter } from '@/components/PasswordStrengthMeter';
+import {
+  POLITICA_PASSWORD_HABILITADA,
+  primerRequisitoFaltante,
+} from '@/lib/password-policy';
 
 /**
  * UI de cambio de contraseña — Fase 4, Día 12.
@@ -58,6 +64,16 @@ import { createClient } from '@/lib/supabase/client';
  *    la navegación en este flujo. Fix: navegación dura
  *    (`window.location.href`) en vez de `router.push` — fuerza un ciclo de
  *    red nuevo completo, verificado funcionando de forma consistente.
+ *
+ * Medidor de fortaleza + política robusta (2026-08-13, pedido del usuario,
+ * "no ahora, o si puedes habilitado después") — gateado por
+ * `POLITICA_PASSWORD_HABILITADA` (`lib/password-policy.ts`, default
+ * `false`). Con el flag apagado esto es cosmético cero: no se renderiza el
+ * medidor y el único piso sigue siendo el `minLength(8)` de siempre. Prender
+ * el flag en local es la forma fácil de probarlo ahora sin afectarle nada a
+ * nadie más — recordar prender también el espejo del backend
+ * (`App/backend/src/auth/password-policy.ts`) antes de la entrega, son 2
+ * flags independientes que hay que sincronizar a mano.
  */
 
 const MENSAJES_ERROR: Record<string, string> = {
@@ -69,7 +85,6 @@ export default function CambiarPasswordPage() {
   const [passwordActual, setPasswordActual] = useState('');
   const [passwordNueva, setPasswordNueva] = useState('');
   const [passwordConfirmar, setPasswordConfirmar] = useState('');
-  const [errorLocal, setErrorLocal] = useState<string | null>(null);
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -104,47 +119,52 @@ export default function CambiarPasswordPage() {
       // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- justificado arriba: `router.push` no completaba la navegación en este flujo (verificado repetidamente), `window.location.href` sí.
       window.location.href = '/';
     },
+    onError: (err) => {
+      const mensaje =
+        err instanceof ApiError
+          ? (MENSAJES_ERROR[err.code] ?? 'Ocurrió un error inesperado. Intenta de nuevo.')
+          : err.message;
+      toast.error(mensaje);
+    },
   });
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    setErrorLocal(null);
     mutation.reset();
 
     if (passwordNueva.length < 8) {
-      setErrorLocal('La nueva contraseña debe tener al menos 8 caracteres.');
+      toast.error('La nueva contraseña debe tener al menos 8 caracteres.');
       return;
     }
+    if (POLITICA_PASSWORD_HABILITADA) {
+      const faltante = primerRequisitoFaltante(passwordNueva);
+      if (faltante) {
+        toast.error(faltante);
+        return;
+      }
+    }
     if (passwordNueva !== passwordConfirmar) {
-      setErrorLocal('Las contraseñas nuevas no coinciden.');
+      toast.error('Las contraseñas nuevas no coinciden.');
       return;
     }
 
     mutation.mutate();
   }
 
-  const mensajeError =
-    errorLocal ??
-    (mutation.error
-      ? mutation.error instanceof ApiError
-        ? (MENSAJES_ERROR[mutation.error.code] ?? 'Ocurrió un error inesperado. Intenta de nuevo.')
-        : mutation.error.message
-      : null);
-
   return (
     <main className="flex min-h-screen items-center justify-center p-8">
-      <div className="w-full max-w-sm rounded-lg border-l-4 border-maya bg-white px-6 py-8 shadow-sm">
-        <p className="font-display text-sm font-semibold tracking-[0.14em] text-maya uppercase">
+      <div className="w-full max-w-sm rounded-lg border-l-4 border-navy bg-white px-6 py-8 shadow-sm">
+        <p className="font-display text-sm font-semibold tracking-[0.14em] text-navy uppercase">
           SIGE
         </p>
-        <h1 className="mt-1 font-display text-2xl font-semibold text-ink">Cambiar contraseña</h1>
-        <p className="mt-1 text-sm text-ink/60">
+        <h1 className="mt-1 font-display text-2xl font-semibold text-slate">Cambiar contraseña</h1>
+        <p className="mt-1 text-sm text-slate/60">
           Si es tu primer ingreso, debes completar este paso antes de continuar.
         </p>
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4" noValidate>
           <div>
-            <label htmlFor="passwordActual" className="block text-sm font-medium text-ink/80">
+            <label htmlFor="passwordActual" className="block text-sm font-medium text-slate/80">
               Contraseña actual
             </label>
             <input
@@ -154,12 +174,12 @@ export default function CambiarPasswordPage() {
               required
               value={passwordActual}
               onChange={(e) => setPasswordActual(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-linea px-3 py-2 text-sm text-ink focus:border-maya focus:ring-2 focus:ring-maya/20 focus:outline-none"
+              className="mt-1 w-full rounded-lg border border-mist px-3 py-2 text-sm text-slate focus:border-navy focus:ring-2 focus:ring-navy/20 focus:outline-none"
             />
           </div>
 
           <div>
-            <label htmlFor="passwordNueva" className="block text-sm font-medium text-ink/80">
+            <label htmlFor="passwordNueva" className="block text-sm font-medium text-slate/80">
               Contraseña nueva
             </label>
             <input
@@ -170,12 +190,15 @@ export default function CambiarPasswordPage() {
               minLength={8}
               value={passwordNueva}
               onChange={(e) => setPasswordNueva(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-linea px-3 py-2 text-sm text-ink focus:border-maya focus:ring-2 focus:ring-maya/20 focus:outline-none"
+              className="mt-1 w-full rounded-lg border border-mist px-3 py-2 text-sm text-slate focus:border-navy focus:ring-2 focus:ring-navy/20 focus:outline-none"
             />
+            {POLITICA_PASSWORD_HABILITADA && (
+              <PasswordStrengthMeter password={passwordNueva} />
+            )}
           </div>
 
           <div>
-            <label htmlFor="passwordConfirmar" className="block text-sm font-medium text-ink/80">
+            <label htmlFor="passwordConfirmar" className="block text-sm font-medium text-slate/80">
               Confirmar contraseña nueva
             </label>
             <input
@@ -186,20 +209,14 @@ export default function CambiarPasswordPage() {
               minLength={8}
               value={passwordConfirmar}
               onChange={(e) => setPasswordConfirmar(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-linea px-3 py-2 text-sm text-ink focus:border-maya focus:ring-2 focus:ring-maya/20 focus:outline-none"
+              className="mt-1 w-full rounded-lg border border-mist px-3 py-2 text-sm text-slate focus:border-navy focus:ring-2 focus:ring-navy/20 focus:outline-none"
             />
           </div>
-
-          {mensajeError && (
-            <p role="alert" className="text-sm text-red-600">
-              {mensajeError}
-            </p>
-          )}
 
           <button
             type="submit"
             disabled={mutation.isPending}
-            className="w-full rounded-lg bg-maya px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-maya-deep disabled:opacity-50"
+            className="w-full rounded-lg bg-navy px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-navy-deep disabled:opacity-50"
           >
             {mutation.isPending ? 'Guardando…' : 'Cambiar contraseña'}
           </button>

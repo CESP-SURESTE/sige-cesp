@@ -97,10 +97,10 @@ export function ContactosFieldset<
 
   return (
     <fieldset className="space-y-4">
-      <legend className="text-sm font-semibold text-ink">
+      <legend className="text-sm font-semibold text-slate">
         Contactos de emergencia
       </legend>
-      <p className="text-xs text-ink/60">
+      <p className="text-xs text-slate/60">
         Al menos 1 contacto, máximo 3.
       </p>
       <FieldError message={arrayErrorMessage} />
@@ -113,16 +113,16 @@ export function ContactosFieldset<
           const fieldErrors = contactosItemErrors?.[index];
 
           return (
-            <div key={field.id} className="rounded-lg border border-linea p-4">
+            <div key={field.id} className="rounded-lg border border-mist p-4">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-medium text-ink/60">
+                <p className="text-xs font-medium text-slate/60">
                   Contacto {index + 1}
                 </p>
                 <button
                   type="button"
                   disabled={disabled || fields.length <= MIN_CONTACTOS}
                   onClick={() => remove(index)}
-                  className="text-xs font-medium text-red-600 hover:underline disabled:opacity-50 disabled:no-underline"
+                  className="text-xs font-medium text-crimson hover:underline disabled:opacity-50 disabled:no-underline"
                 >
                   Quitar
                 </button>
@@ -230,7 +230,7 @@ export function ContactosFieldset<
               : { nombre: '', telefono: '', correo: '', parentesco: '' }) as never,
           )
         }
-        className="rounded-lg border border-linea px-3 py-1.5 text-xs font-medium text-ink/80 hover:bg-paper disabled:opacity-50"
+        className="rounded-lg border border-mist px-3 py-1.5 text-xs font-medium text-slate/80 hover:bg-bone disabled:opacity-50"
       >
         Agregar contacto
       </button>

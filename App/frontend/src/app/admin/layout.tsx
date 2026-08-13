@@ -19,17 +19,17 @@ export default async function AdminLayout(props: LayoutProps<'/admin'>) {
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="border-b border-linea bg-paper px-6 py-4">
+      <header className="border-b border-mist bg-bone px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <span className="font-display text-sm font-semibold tracking-[0.14em] text-maya uppercase">
+            <span className="font-display text-sm font-semibold tracking-[0.14em] text-navy uppercase">
               SIGE
             </span>
-            <span className="text-sm font-medium text-ink/80">Panel administrativo</span>
+            <span className="text-sm font-medium text-slate/80">Panel administrativo</span>
             <VolverAlPanel />
           </div>
           <div className="flex items-center gap-4">
-            {email && <span className="text-sm text-ink/60">{email}</span>}
+            {email && <span className="text-sm text-slate/60">{email}</span>}
             <LogoutButton />
           </div>
         </div>
