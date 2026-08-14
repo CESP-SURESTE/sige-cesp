@@ -124,6 +124,19 @@ model SedeResponsable {
   @@map("sede_responsables")
 }
 
+model AdminPlataforma {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  nombre       String
+  activo       Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  registrosAuditoria RegistroAuditoria[]
+
+  @@map("admin_plataforma")
+}
+
 model Salon {
   id        String   @id @default(uuid())
   sedeId    String   @map("sede_id")
@@ -475,16 +488,18 @@ model InfoMedicaPersonalServicios {
 // ============================
 
 model RegistroAuditoria {
-  id        String          @id @default(uuid())
-  usuarioId String          @map("usuario_id")
-  usuario   Usuario         @relation(fields: [usuarioId], references: [id])
-  sedeId    String          @map("sede_id")
-  sede      Sede            @relation(fields: [sedeId], references: [id])
-  accion    AccionAuditoria
-  entidad   String
-  entidadId String          @map("entidad_id")
-  detalle   Json?
-  fecha     DateTime        @default(now())
+  id                String           @id @default(uuid())
+  usuarioId         String?          @map("usuario_id")
+  usuario           Usuario?         @relation(fields: [usuarioId], references: [id])
+  adminPlataformaId String?          @map("admin_plataforma_id")
+  adminPlataforma   AdminPlataforma? @relation(fields: [adminPlataformaId], references: [id])
+  sedeId            String           @map("sede_id")
+  sede              Sede             @relation(fields: [sedeId], references: [id])
+  accion            AccionAuditoria
+  entidad           String
+  entidadId         String           @map("entidad_id")
+  detalle           Json?
+  fecha             DateTime         @default(now())
 
   @@map("registro_auditoria")
 }
