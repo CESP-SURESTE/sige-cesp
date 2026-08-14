@@ -1,33 +1,74 @@
-import { Controller, Get, Param, UseGuards } from '@nestjs/common';
-import { SedeGuard } from '../common/guards/sede.guard';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
+import { PlatformAdminActual } from '../common/decorators/platform-admin-actual.decorator';
 import { SedeActual } from '../common/decorators/sede-actual.decorator';
+import { PlatformAdminGuard } from '../common/guards/platform-admin.guard';
+import { SedeGuard } from '../common/guards/sede.guard';
+import { ActualizarSedeDto } from './dto/actualizar-sede.dto';
+import { CrearSedeDto } from './dto/crear-sede.dto';
 import { SedesService } from './sedes.service';
 
 /**
- * Controller de prueba para el `SedeGuard` — Fase 1, Día 6.
+ * `GET /sedes/:sedeId` — Fase 1, Día 6. Controller de prueba original del
+ * `SedeGuard`, sin cambios de comportamiento.
  *
- * `GET /sedes/:sedeId` es intencionalmente el endpoint más simple posible:
- * su único propósito es demostrar, de punta a punta, que el guard extrae
- * `sede_id` del JWT y que una request cross-sede (pidiendo el `:sedeId` de
- * OTRA sede) responde 403 — no que se necesite. El CRUD real de `Sede`
- * (Fase 6 del roadmap) se construye más adelante.
+ * `POST/GET/PATCH /sedes` — Fase 6, Día 20. CRUD real, actor
+ * `AdminPlataforma` (`PlatformAdminGuard`, ver nota de diseño en
+ * `docs/roadmap.md`: crear una sede es una acción sin sede, no encaja en
+ * `SedeGuard`). El guard se declara por MÉTODO, no a nivel de `@Controller`
+ * — mezclar 2 actores en el mismo controller exige esto: si quedara
+ * `@UseGuards(SedeGuard)` a nivel de clase, bloquearía silenciosamente las 3
+ * rutas nuevas (esperan el JWT de plataforma, no el de Supabase).
  */
 @Controller('sedes')
-@UseGuards(SedeGuard)
 export class SedesController {
   constructor(private readonly sedesService: SedesService) {}
 
   @Get(':sedeId')
+  @UseGuards(SedeGuard)
   async obtenerPorId(
     @Param('sedeId') sedeId: string,
     @SedeActual() sedeActual: string,
   ) {
-    // `SedeGuard` ya rechazó con 403 cualquier :sedeId que no coincidiera
-    // con el JWT antes de llegar aquí — este assert documenta esa garantía
-    // en vez de confiar en ella silenciosamente.
     void sedeActual;
-
     const sede = await this.sedesService.obtenerPorId(sedeId);
     return { data: sede };
+  }
+
+  @Post()
+  @HttpCode(201)
+  @UseGuards(PlatformAdminGuard)
+  async crear(
+    @Body() body: CrearSedeDto,
+    @PlatformAdminActual() actorId: string,
+  ) {
+    const data = await this.sedesService.crear(body, actorId);
+    return { data };
+  }
+
+  @Get()
+  @UseGuards(PlatformAdminGuard)
+  async listar() {
+    const data = await this.sedesService.listar();
+    return { data };
+  }
+
+  @Patch(':id')
+  @UseGuards(PlatformAdminGuard)
+  async actualizar(
+    @Param('id') id: string,
+    @Body() body: ActualizarSedeDto,
+    @PlatformAdminActual() actorId: string,
+  ) {
+    const data = await this.sedesService.actualizar(id, body, actorId);
+    return { data };
   }
 }
