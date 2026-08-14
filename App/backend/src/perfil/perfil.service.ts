@@ -3,7 +3,7 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
-import { RolUsuario } from '@prisma/client';
+import { NivelPermiso, RolUsuario } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 /**
@@ -56,6 +56,48 @@ import { PrismaService } from '../prisma/prisma.service';
  * hubo un pedido explícito de mostrarla en el perfil — se agrega el día que
  * haya un encargo real para eso, no antes (mismo criterio de otras
  * decisiones de alcance de este archivo, ver notas de Día 16/17/18).
+ *
+ * Día 17 (roadmap, "Perfil de maestro — mismo patrón, campos propios de
+ * maestro"): `maestro` deja de ser siempre `null` — cuando
+ * `usuario.rol === MAESTRO` trae los campos propios de `PerfilMaestro` +
+ * `contactos` (`ContactoMaestro`, ordenados por `orden` ascendente, mismo
+ * criterio recién aplicado a `alumno.contactos`). NO se selecciona
+ * `usuarioId` (FK redundante) ni `createdAt`/`updatedAt` (no aportan al
+ * perfil que ve el propio usuario). `ContactoMaestro` NO tiene el campo
+ * `tipo` (eso es exclusivo de `ContactoAlumno` — un maestro no tiene
+ * distinción tutor/emergencia, solo contactos genéricos), tampoco se
+ * selecciona `maestroId` (FK redundante). Igual que `alumno`, `infoMedica`
+ * queda fuera de alcance a propósito — sin pedido explícito de mostrarla.
+ * `PerfilMaestro` NO tiene `fechaNacimiento` en el schema (a diferencia de
+ * `PerfilAlumno`), por lo que NO existe un `esMenorDeEdad` equivalente para
+ * maestro — no aplica y no hay columna fuente para derivarlo.
+ *
+ * Día 18 (roadmap, "Perfil de administrativo — campos propios + indicador
+ * visual de su nivel de permiso"): `administrativo` deja de ser siempre
+ * `null` — cuando `usuario.rol === ADMINISTRATIVO` trae los campos propios de
+ * `PerfilAdministrativo` + `contactos` (`ContactoAdministrativo`, ordenados
+ * por `orden` ascendente, mismo criterio de `alumno`/`maestro`). NO se
+ * selecciona `usuarioId` (FK redundante) ni `createdAt`/`updatedAt`. Igual
+ * que los otros 2 roles, `infoMedica` queda fuera de alcance a propósito —
+ * sin pedido explícito. Tampoco se selecciona `permisos`
+ * (`PermisoAdministrativo[]`, la matriz de secciones por AUXILIAR) — decisión
+ * de alcance deliberada: el roadmap de hoy pide el indicador de nivel de
+ * permiso (singular), no la matriz completa, que `CLAUDE.md` raíz ya lista
+ * aparte, en la tabla "CRUD por tipo de entidad", como su propia feature de
+ * negocio sin día asignado todavía.
+ *
+ * `puedeDarAltaAdministrativos` (regla 1 de CLAUDE.md raíz — nunca persistir
+ * algo calculable) — booleano derivado al vuelo desde `nivelPermiso`, MISMO
+ * criterio exacto que `PersonasService.verificarJerarquiaNivelPermiso`
+ * (`src/personas/personas.service.ts`, regla 7 de CLAUDE.md raíz): un
+ * `AUXILIAR` no puede dar de alta a ningún `ADMINISTRATIVO`, `ADMIN` y
+ * `SUPER_ADMIN` sí pueden (con tope de jerarquía entre ellos, pero eso ya es
+ * un detalle de la ruta de alta, no de este indicador de solo lectura). Por
+ * eso acá basta con `nivelPermiso !== AUXILIAR` — no se reimplementa la
+ * jerarquía completa (`JERARQUIA_NIVEL_PERMISO`) porque este indicador no
+ * necesita comparar contra el nivel de un tercero, solo reflejar la regla
+ * "AUXILIAR no da de alta, ADMIN/SUPER_ADMIN sí" tal cual existe hoy en
+ * `personas.service.ts`.
  */
 @Injectable()
 export class PerfilService {
@@ -128,6 +170,62 @@ export class PerfilService {
             },
           },
         },
+        // Día 17 — campos propios de `PerfilMaestro` + `contactos`, ver
+        // comentario de clase. `usuarioId` no se selecciona (FK redundante).
+        perfilMaestro: {
+          select: {
+            id: true,
+            nombres: true,
+            apellidoPaterno: true,
+            apellidoMaterno: true,
+            curp: true,
+            cedulaProfesional: true,
+            correoPersonal: true,
+            telefono: true,
+            fechaContratacion: true,
+            estatus: true,
+            contactos: {
+              select: {
+                id: true,
+                nombre: true,
+                telefono: true,
+                correo: true,
+                parentesco: true,
+                orden: true,
+              },
+              orderBy: { orden: 'asc' },
+            },
+          },
+        },
+        // Día 18 — campos propios de `PerfilAdministrativo` + `contactos`,
+        // ver comentario de clase. `usuarioId` no se selecciona (FK
+        // redundante). `permisos` (matriz completa) queda fuera de alcance.
+        perfilAdministrativo: {
+          select: {
+            id: true,
+            nombres: true,
+            apellidoPaterno: true,
+            apellidoMaterno: true,
+            curp: true,
+            correoPersonal: true,
+            telefono: true,
+            fechaContratacion: true,
+            estatus: true,
+            puesto: true,
+            nivelPermiso: true,
+            contactos: {
+              select: {
+                id: true,
+                nombre: true,
+                telefono: true,
+                correo: true,
+                parentesco: true,
+                orden: true,
+              },
+              orderBy: { orden: 'asc' },
+            },
+          },
+        },
       },
     });
 
@@ -162,7 +260,48 @@ export class PerfilService {
       });
     }
 
-    const { perfilAlumno, ...usuarioComun } = usuario;
+    if (usuario.rol === RolUsuario.MAESTRO && !usuario.perfilMaestro) {
+      // Mismo criterio defensivo que el bloque de ALUMNO — la alta
+      // transaccional (regla 9 de CLAUDE.md raíz) garantiza que un
+      // `Usuario` con `rol: MAESTRO` siempre tiene su `PerfilMaestro`.
+      console.error(
+        '[PerfilService.obtenerPerfilPropio] Usuario con rol MAESTRO sin PerfilMaestro — inconsistencia de datos:',
+        { actorUsuarioId },
+      );
+      throw new InternalServerErrorException({
+        error: 'El perfil de este usuario está incompleto',
+        code: 'SERVER_ERROR',
+      });
+    }
+
+    if (
+      usuario.rol === RolUsuario.ADMINISTRATIVO &&
+      !usuario.perfilAdministrativo
+    ) {
+      // Mismo criterio defensivo que ALUMNO/MAESTRO — la alta transaccional
+      // (regla 9 de CLAUDE.md raíz) garantiza que un `Usuario` con
+      // `rol: ADMINISTRATIVO` siempre tiene su `PerfilAdministrativo`. Si
+      // esto pasa, es una inconsistencia de datos real, NO el criterio de
+      // "tratar como AUXILIAR" de `verificarJerarquiaNivelPermiso` — ese es
+      // para el flujo de alta (decidir si el actor puede dar de alta a
+      // otro), no aplica acá (el actor está viendo SU PROPIO perfil, que
+      // debería existir siempre).
+      console.error(
+        '[PerfilService.obtenerPerfilPropio] Usuario con rol ADMINISTRATIVO sin PerfilAdministrativo — inconsistencia de datos:',
+        { actorUsuarioId },
+      );
+      throw new InternalServerErrorException({
+        error: 'El perfil de este usuario está incompleto',
+        code: 'SERVER_ERROR',
+      });
+    }
+
+    const {
+      perfilAlumno,
+      perfilMaestro,
+      perfilAdministrativo,
+      ...usuarioComun
+    } = usuario;
 
     return {
       ...usuarioComun,
@@ -182,13 +321,34 @@ export class PerfilService {
               ),
             }
           : null,
-      // Reservados — se llenan en Día 17 (`PerfilMaestro`) y Día 18
-      // (`PerfilAdministrativo` + indicador de `nivelPermiso`). No se
-      // selecciona ese `include` todavía (nada que mostrar hoy); se dejan
-      // explícitos en `null` en vez de omitir la clave, para que el shape de
-      // la respuesta ya sea estable de cara al frontend desde hoy.
-      maestro: null,
-      administrativo: null,
+      // Día 17 — `PerfilMaestro` + `contactos`. `PerfilMaestro` no tiene
+      // `fechaNacimiento` en el schema, por eso no hay `esMenorDeEdad` (ni
+      // equivalente) acá — a diferencia de `alumno`, no aplica.
+      maestro:
+        usuario.rol === RolUsuario.MAESTRO && perfilMaestro
+          ? perfilMaestro
+          : null,
+      // Día 18 — `PerfilAdministrativo` + `contactos` + indicador derivado
+      // de `nivelPermiso`. `PerfilAdministrativo` no tiene `fechaNacimiento`
+      // en el schema, por lo que tampoco aplica `esMenorDeEdad` acá.
+      administrativo:
+        usuario.rol === RolUsuario.ADMINISTRATIVO && perfilAdministrativo
+          ? {
+              ...perfilAdministrativo,
+              // `puedeDarAltaAdministrativos` — regla 1 de CLAUDE.md raíz
+              // (nunca persistir algo calculable): replica SOLO la primera
+              // compuerta de `PersonasService.verificarJerarquiaNivelPermiso`
+              // (`src/personas/personas.service.ts`, regla 7) — un AUXILIAR
+              // nunca puede dar de alta administrativos, ADMIN/SUPER_ADMIN
+              // sí. NO replica la segunda compuerta de esa misma función (un
+              // ADMIN no puede asignar SUPER_ADMIN) — hallazgo de QA
+              // (`qa-backend`, 2026-08-13): sin impacto real, este campo es
+              // solo informativo acá, `POST /personas` sigue validando la
+              // jerarquía completa por su cuenta. Ver comentario de clase.
+              puedeDarAltaAdministrativos:
+                perfilAdministrativo.nivelPermiso !== NivelPermiso.AUXILIAR,
+            }
+          : null,
     };
   }
 }

@@ -32,6 +32,29 @@ import { apiFetchAuth } from './http';
  * `orden` ascendente (el `orden: 1` es el contacto principal). Alcance
  * deliberado: SOLO contactos, sin `infoMedica` (más sensible — no hay
  * pedido explícito de mostrar datos de salud en el perfil todavía).
+ *
+ * `maestro` (Día 17, 2026-08-13) — mismo patrón que `alumno`: campos propios
+ * de `PerfilMaestro` + `contactos` (`ContactoMaestro`, ordenados por `orden`,
+ * SIN `tipo` — a diferencia de `ContactoAlumno`, un maestro no distingue
+ * tutor/emergencia). Sin `infoMedica` (mismo criterio de alcance). Sin
+ * `esMenorDeEdad` — no aplica, `PerfilMaestro` no tiene `fechaNacimiento` en
+ * el schema.
+ *
+ * `administrativo` (Día 18, 2026-08-13) — mismo patrón: campos propios de
+ * `PerfilAdministrativo` + `contactos` (`ContactoAdministrativo`, sin
+ * `tipo`, igual que maestro). Sin `infoMedica`. Sin `permisos`
+ * (`PermisoAdministrativo[]`, la matriz completa por sección de un
+ * `AUXILIAR`) — alcance deliberado, el roadmap de Día 18 pide el indicador
+ * de nivel de permiso (singular), no la matriz completa (feature propia,
+ * sin día asignado). `puedeDarAltaAdministrativos` es un `boolean`
+ * derivado al vuelo por el backend desde `nivelPermiso` (regla 1) — replica
+ * SOLO la primera compuerta de `PersonasService.verificarJerarquiaNivelPermiso`
+ * (regla 7 de `CLAUDE.md` raíz): `true` si `ADMIN`/`SUPER_ADMIN`, `false` si
+ * `AUXILIAR`. NO replica la segunda compuerta (un `ADMIN` no puede asignar
+ * `SUPER_ADMIN` al dar de alta) — hallazgo de QA (`qa-backend`,
+ * 2026-08-13), sin impacto real: este campo es solo informativo en el
+ * perfil, `POST /personas` sigue validando la jerarquía completa por su
+ * cuenta.
  */
 
 /** Espejo de `RolUsuario` (`schema.prisma`). */
@@ -59,6 +82,44 @@ export type TipoContacto = 'TUTOR' | 'EMERGENCIA';
 export interface ContactoAlumno {
   id: string;
   tipo: TipoContacto;
+  nombre: string;
+  telefono: string;
+  correo: string | null;
+  parentesco: string;
+  orden: number;
+}
+
+/** Espejo de `EstatusEmpleado` (`schema.prisma`) — usado por `maestro` y
+ * `administrativo`. */
+export type EstatusEmpleado = 'ACTIVO' | 'BAJA' | 'LICENCIA';
+
+/** Igual que `ContactoAlumno` pero sin `tipo` — `ContactoMaestro` no
+ * distingue tutor/emergencia, es un contacto genérico. */
+export interface ContactoMaestro {
+  id: string;
+  nombre: string;
+  telefono: string;
+  correo: string | null;
+  parentesco: string;
+  orden: number;
+}
+
+/** Espejo de `PuestoAdministrativo` (`schema.prisma`). */
+export type PuestoAdministrativo =
+  | 'DIRECTOR'
+  | 'COORDINADOR_ACADEMICO'
+  | 'COORDINADOR_ADMINISTRATIVO'
+  | 'AUXILIAR'
+  | 'RECEPCION'
+  | 'OTRO';
+
+/** Espejo de `NivelPermiso` (`schema.prisma`) — jerarquía `SUPER_ADMIN >
+ * ADMIN > AUXILIAR` (regla 7 de `CLAUDE.md` raíz). */
+export type NivelPermiso = 'SUPER_ADMIN' | 'ADMIN' | 'AUXILIAR';
+
+/** Mismo shape que `ContactoMaestro` (sin `tipo`). */
+export interface ContactoAdministrativo {
+  id: string;
   nombre: string;
   telefono: string;
   correo: string | null;
@@ -112,6 +173,48 @@ export interface PerfilAlumno {
   contactos: ContactoAlumno[];
 }
 
+export interface PerfilMaestro {
+  id: string;
+  nombres: string;
+  apellidoPaterno: string;
+  apellidoMaterno: string | null;
+  curp: string;
+  cedulaProfesional: string | null;
+  correoPersonal: string;
+  telefono: string;
+  /** ISO 8601 (`Date` de Prisma serializado por Express). */
+  fechaContratacion: string;
+  estatus: EstatusEmpleado;
+  /** Ordenados por `orden` ascendente. Sin rango 1-3 documentado a
+   * propósito distinto al de alumno — el alta de maestro también exige
+   * 1 a 3, pero no hay un tipo obligatorio como el tutor de un menor. */
+  contactos: ContactoMaestro[];
+}
+
+export interface PerfilAdministrativo {
+  id: string;
+  nombres: string;
+  apellidoPaterno: string;
+  apellidoMaterno: string | null;
+  curp: string;
+  correoPersonal: string;
+  telefono: string;
+  /** ISO 8601 (`Date` de Prisma serializado por Express). */
+  fechaContratacion: string;
+  estatus: EstatusEmpleado;
+  puesto: PuestoAdministrativo;
+  nivelPermiso: NivelPermiso;
+  contactos: ContactoAdministrativo[];
+  /** Derivado al vuelo por el backend desde `nivelPermiso` — nunca
+   * persistido (regla 1 de `CLAUDE.md` raíz). Replica SOLO la primera
+   * compuerta de `PersonasService.verificarJerarquiaNivelPermiso` (regla
+   * 7): un `AUXILIAR` nunca puede dar de alta personal `ADMINISTRATIVO`.
+   * NO replica la segunda compuerta (tope de jerarquía sobre A QUIÉN se
+   * puede asignar) — informativo únicamente, `POST /personas` sigue
+   * validando eso por su cuenta. */
+  puedeDarAltaAdministrativos: boolean;
+}
+
 export interface Perfil {
   id: string;
   email: string;
@@ -125,10 +228,10 @@ export interface Perfil {
   sede: PerfilSede;
   /** Lleno solo si `rol === 'ALUMNO'`; `null` para los otros 2 roles. */
   alumno: PerfilAlumno | null;
-  /** Reservado — se llena en Día 17 (perfil de maestro). Siempre `null` hoy. */
-  maestro: null;
-  /** Reservado — se llena en Día 18 (perfil de administrativo). Siempre `null` hoy. */
-  administrativo: null;
+  /** Lleno solo si `rol === 'MAESTRO'`; `null` para los otros 2 roles. */
+  maestro: PerfilMaestro | null;
+  /** Lleno solo si `rol === 'ADMINISTRATIVO'`; `null` para los otros 2 roles. */
+  administrativo: PerfilAdministrativo | null;
 }
 
 export function obtenerPerfil(): Promise<Perfil> {

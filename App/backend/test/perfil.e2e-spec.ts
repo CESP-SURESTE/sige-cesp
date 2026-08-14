@@ -3,7 +3,13 @@ import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import type { App } from 'supertest/types';
-import { RolUsuario, TipoContacto } from '@prisma/client';
+import {
+  RolUsuario,
+  TipoContacto,
+  EstatusEmpleado,
+  NivelPermiso,
+  PuestoAdministrativo,
+} from '@prisma/client';
 import { AppModule } from '../src/app.module';
 import { SEDE_GUARD_ENV_OVERRIDE } from '../src/common/guards/sede.guard';
 import { loadEnv } from '../src/load-env';
@@ -69,8 +75,48 @@ interface PerfilBody {
         descripcion: string;
       };
     } | null;
-    maestro: null;
-    administrativo: null;
+    maestro: {
+      id: string;
+      nombres: string;
+      apellidoPaterno: string;
+      apellidoMaterno: string | null;
+      curp: string;
+      cedulaProfesional: string | null;
+      correoPersonal: string;
+      telefono: string;
+      fechaContratacion: string;
+      estatus: string;
+      contactos: {
+        id: string;
+        nombre: string;
+        telefono: string;
+        correo: string | null;
+        parentesco: string;
+        orden: number;
+      }[];
+    } | null;
+    administrativo: {
+      id: string;
+      nombres: string;
+      apellidoPaterno: string;
+      apellidoMaterno: string | null;
+      curp: string;
+      correoPersonal: string;
+      telefono: string;
+      fechaContratacion: string;
+      estatus: string;
+      puesto: string;
+      nivelPermiso: 'SUPER_ADMIN' | 'ADMIN' | 'AUXILIAR';
+      puedeDarAltaAdministrativos: boolean;
+      contactos: {
+        id: string;
+        nombre: string;
+        telefono: string;
+        correo: string | null;
+        parentesco: string;
+        orden: number;
+      }[];
+    } | null;
   };
 }
 
@@ -88,6 +134,8 @@ describe('PerfilController — GET /perfil (e2e)', () => {
   let prisma: PrismaService;
   let sedeMeridaId: string;
   let alumnoMenorId: string;
+  let maestroId: string;
+  let administrativoAuxiliarId: string;
   let privateKey: CryptoKey;
   let jose: typeof import('jose');
   const kid = 'test-key-1';
@@ -195,6 +243,105 @@ describe('PerfilController — GET /perfil (e2e)', () => {
         },
       ],
     });
+
+    // Fixture nuevo (Día 17, `maestro`) — `prisma/seed.ts` no siembra ningún
+    // usuario con `rol: MAESTRO` todavía (Fase 4 solo cubrió alumno y
+    // administrativo), así que se crea directo por Prisma acá, mismo patrón
+    // que `alumnoMenor` arriba: 2 contactos (`orden` 1 y 2, sin `tipo` —
+    // `ContactoMaestro` no lo tiene) para ejercitar el orden ascendente.
+    const maestroUsuario = await prisma.usuario.create({
+      data: {
+        id: randomUUID(),
+        email: `fixture.maestro.${randomUUID()}@cesp-merida.edu.mx`,
+        rol: RolUsuario.MAESTRO,
+        sedeId: sedeMeridaId,
+      },
+    });
+    const maestroPerfil = await prisma.perfilMaestro.create({
+      data: {
+        usuarioId: maestroUsuario.id,
+        nombres: 'Fixture',
+        apellidoPaterno: 'Maestro',
+        apellidoMaterno: 'Prueba',
+        curp: 'FIMA800101HYNXXX05',
+        cedulaProfesional: '1234567',
+        correoPersonal: `fixture.maestro.personal.${randomUUID()}@example.com`,
+        telefono: '9990003333',
+        fechaContratacion: new Date('2024-08-01'),
+        estatus: EstatusEmpleado.ACTIVO,
+      },
+    });
+    await prisma.contactoMaestro.createMany({
+      data: [
+        {
+          maestroId: maestroPerfil.id,
+          nombre: 'Fixture Contacto Uno',
+          telefono: '9990004444',
+          correo: 'fixture.contacto1@example.com',
+          parentesco: 'Esposo/a',
+          orden: 1,
+        },
+        {
+          maestroId: maestroPerfil.id,
+          nombre: 'Fixture Contacto Dos',
+          telefono: '9990005555',
+          parentesco: 'Hermano/a',
+          orden: 2,
+        },
+      ],
+    });
+    maestroId = maestroUsuario.id;
+
+    // Fixture nuevo (Día 18, `administrativo`) — `prisma/seed.ts` solo siembra
+    // un administrativo con `nivelPermiso: ADMIN` (`ana.canul`, reusado en el
+    // test de "ADMIN -> puedeDarAltaAdministrativos true" más abajo). Ningún
+    // `AUXILIAR` sembrado — se crea directo por Prisma acá, mismo patrón que
+    // `maestroUsuario` arriba, para ejercitar el branch
+    // `puedeDarAltaAdministrativos: false`.
+    const administrativoAuxiliarUsuario = await prisma.usuario.create({
+      data: {
+        id: randomUUID(),
+        email: `fixture.administrativo.auxiliar.${randomUUID()}@cesp-merida.edu.mx`,
+        rol: RolUsuario.ADMINISTRATIVO,
+        sedeId: sedeMeridaId,
+      },
+    });
+    const administrativoAuxiliarPerfil =
+      await prisma.perfilAdministrativo.create({
+        data: {
+          usuarioId: administrativoAuxiliarUsuario.id,
+          nombres: 'Fixture',
+          apellidoPaterno: 'Auxiliar',
+          apellidoMaterno: 'Prueba',
+          curp: 'FIAX800101HYNXXX09',
+          correoPersonal: `fixture.administrativo.auxiliar.personal.${randomUUID()}@example.com`,
+          telefono: '9990006666',
+          fechaContratacion: new Date('2024-09-01'),
+          estatus: EstatusEmpleado.ACTIVO,
+          puesto: PuestoAdministrativo.AUXILIAR,
+          nivelPermiso: NivelPermiso.AUXILIAR,
+        },
+      });
+    await prisma.contactoAdministrativo.createMany({
+      data: [
+        {
+          administrativoId: administrativoAuxiliarPerfil.id,
+          nombre: 'Fixture Contacto Admin Uno',
+          telefono: '9990007777',
+          correo: 'fixture.contacto.admin1@example.com',
+          parentesco: 'Padre',
+          orden: 1,
+        },
+        {
+          administrativoId: administrativoAuxiliarPerfil.id,
+          nombre: 'Fixture Contacto Admin Dos',
+          telefono: '9990008888',
+          parentesco: 'Hermano/a',
+          orden: 2,
+        },
+      ],
+    });
+    administrativoAuxiliarId = administrativoAuxiliarUsuario.id;
   });
 
   afterAll(async () => {
@@ -287,7 +434,47 @@ describe('PerfilController — GET /perfil (e2e)', () => {
     expect(body.alumno).not.toHaveProperty('infoMedica');
   });
 
-  it('rol ADMINISTRATIVO (seed real) -> 200, alumno queda null (no le aplica)', async () => {
+  it('rol MAESTRO (fixture) -> 200, maestro lleno con contactos ordenados, alumno/administrativo null', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/perfil')
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(maestroId, RolUsuario.MAESTRO, sedeMeridaId)}`,
+      );
+
+    expect(res.status).toBe(200);
+    const body = (res.body as PerfilBody).data;
+
+    expect(body.id).toBe(maestroId);
+    expect(body.rol).toBe('MAESTRO');
+    expect(body.sede.id).toBe(sedeMeridaId);
+
+    // Sub-objeto de rol MAESTRO (Día 17, entregable de hoy).
+    expect(body.maestro).not.toBeNull();
+    expect(body.maestro?.nombres).toBe('Fixture');
+    expect(body.maestro?.apellidoPaterno).toBe('Maestro');
+    expect(body.maestro?.apellidoMaterno).toBe('Prueba');
+    expect(body.maestro?.curp).toBe('FIMA800101HYNXXX05');
+    expect(body.maestro?.cedulaProfesional).toBe('1234567');
+    expect(body.maestro?.estatus).toBe('ACTIVO');
+    expect(body.maestro).not.toHaveProperty('usuarioId');
+    expect(body.maestro).not.toHaveProperty('infoMedica');
+
+    // `contactos` — ordenados ascendente por `orden`, sin campo `tipo`
+    // (exclusivo de `ContactoAlumno`).
+    expect(body.maestro?.contactos).toHaveLength(2);
+    expect(body.maestro?.contactos[0].orden).toBe(1);
+    expect(body.maestro?.contactos[0].nombre).toBe('Fixture Contacto Uno');
+    expect(body.maestro?.contactos[0]).not.toHaveProperty('tipo');
+    expect(body.maestro?.contactos[1].orden).toBe(2);
+    expect(body.maestro?.contactos[1].nombre).toBe('Fixture Contacto Dos');
+
+    // No le aplican los otros sub-objetos de rol.
+    expect(body.alumno).toBeNull();
+    expect(body.administrativo).toBeNull();
+  });
+
+  it('rol ADMINISTRATIVO nivelPermiso ADMIN (seed real, ana.canul) -> 200, administrativo lleno, puedeDarAltaAdministrativos true', async () => {
     const adminUsuario = await prisma.usuario.findUniqueOrThrow({
       where: { email: 'ana.canul@cesp-merida.edu.mx' },
     });
@@ -307,7 +494,74 @@ describe('PerfilController — GET /perfil (e2e)', () => {
     expect(body.sede.id).toBe(sedeMeridaId);
     expect(body.alumno).toBeNull();
     expect(body.maestro).toBeNull();
-    expect(body.administrativo).toBeNull();
+
+    // Sub-objeto de rol ADMINISTRATIVO (Día 18, entregable de hoy).
+    expect(body.administrativo).not.toBeNull();
+    expect(body.administrativo?.nivelPermiso).toBe('ADMIN');
+    expect(body.administrativo?.puesto).toBe('COORDINADOR_ADMINISTRATIVO');
+    expect(body.administrativo).not.toHaveProperty('usuarioId');
+    expect(body.administrativo).not.toHaveProperty('infoMedica');
+    expect(body.administrativo).not.toHaveProperty('permisos');
+
+    // `puedeDarAltaAdministrativos` — replica solo la primera compuerta de
+    // `PersonasService.verificarJerarquiaNivelPermiso`: ADMIN sí puede dar
+    // de alta administrativos (no captura el tope de jerarquía sobre A
+    // QUIÉN, ver nota en `perfil.service.ts`).
+    expect(body.administrativo?.puedeDarAltaAdministrativos).toBe(true);
+
+    // `contactos` — sembrado por `prisma/seed.ts`, 1 contacto (`orden: 1`).
+    expect(body.administrativo?.contactos).toHaveLength(1);
+    expect(body.administrativo?.contactos[0].orden).toBe(1);
+    expect(body.administrativo?.contactos[0].nombre).toBe('Contacto de prueba');
+    expect(body.administrativo?.contactos[0]).not.toHaveProperty('tipo');
+  });
+
+  it('rol ADMINISTRATIVO nivelPermiso AUXILIAR (fixture) -> 200, puedeDarAltaAdministrativos false, contactos ordenados', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/perfil')
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(
+          administrativoAuxiliarId,
+          RolUsuario.ADMINISTRATIVO,
+          sedeMeridaId,
+        )}`,
+      );
+
+    expect(res.status).toBe(200);
+    const body = (res.body as PerfilBody).data;
+
+    expect(body.id).toBe(administrativoAuxiliarId);
+    expect(body.rol).toBe('ADMINISTRATIVO');
+    expect(body.administrativo).not.toBeNull();
+    expect(body.administrativo?.nombres).toBe('Fixture');
+    expect(body.administrativo?.apellidoPaterno).toBe('Auxiliar');
+    expect(body.administrativo?.apellidoMaterno).toBe('Prueba');
+    expect(body.administrativo?.curp).toBe('FIAX800101HYNXXX09');
+    expect(body.administrativo?.estatus).toBe('ACTIVO');
+    expect(body.administrativo?.puesto).toBe('AUXILIAR');
+    expect(body.administrativo?.nivelPermiso).toBe('AUXILIAR');
+
+    // `puedeDarAltaAdministrativos` — AUXILIAR nunca puede dar de alta
+    // administrativos (regla 7 de CLAUDE.md raíz, mismo criterio que
+    // `verificarJerarquiaNivelPermiso`).
+    expect(body.administrativo?.puedeDarAltaAdministrativos).toBe(false);
+
+    // `contactos` — ordenados ascendente por `orden`, sin campo `tipo`.
+    expect(body.administrativo?.contactos).toHaveLength(2);
+    expect(body.administrativo?.contactos[0].orden).toBe(1);
+    expect(body.administrativo?.contactos[0].nombre).toBe(
+      'Fixture Contacto Admin Uno',
+    );
+    expect(body.administrativo?.contactos[0]).not.toHaveProperty('tipo');
+    expect(body.administrativo?.contactos[1].orden).toBe(2);
+    expect(body.administrativo?.contactos[1].nombre).toBe(
+      'Fixture Contacto Admin Dos',
+    );
+
+    // No le aplican los otros sub-objetos de rol.
+    expect(body.alumno).toBeNull();
+    expect(body.maestro).toBeNull();
   });
 
   it('actor sin fila en `usuarios` (JWT válido pero sub inexistente) -> 404 NOT_FOUND', async () => {
