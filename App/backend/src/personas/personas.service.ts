@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import {
   AccionAuditoria,
+  EstatusAcademico,
   EstatusEmpleado,
   NivelPermiso,
   Prisma,
@@ -17,7 +18,37 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CrearPersonaDto, InfoMedicaDto } from './dto/crear-persona.dto';
+import { ListarPersonasQueryDto } from './dto/listar-personas.query.dto';
 import { generateTemporaryPassword } from './temporary-password';
+
+export interface PersonaListItemAlumno {
+  usuarioId: string;
+  nombres: string;
+  apellidoPaterno: string;
+  apellidoMaterno: string | null;
+  matricula: string;
+  carrera: { id: string; nombre: string };
+  estatusAcademico: EstatusAcademico;
+  semestreActual: number;
+  activo: boolean;
+}
+
+export interface PersonaListItemMaestro {
+  usuarioId: string;
+  nombres: string;
+  apellidoPaterno: string;
+  apellidoMaterno: string | null;
+  cedulaProfesional: string | null;
+  estatus: EstatusEmpleado;
+  activo: boolean;
+}
+
+export interface ListarPersonasResult {
+  data: PersonaListItemAlumno[] | PersonaListItemMaestro[];
+  page: number;
+  limit: number;
+  total: number;
+}
 
 /**
  * `@supabase/server` (y `jose`, del que depende) son paquetes ESM-only —
@@ -586,5 +617,201 @@ export class PersonasService {
         code: 'SERVER_ERROR',
       });
     }
+  }
+
+  /**
+   * `GET /personas?rol=ALUMNO|MAESTRO&...` — Fase 5, Día 19.
+   *
+   * "Listados PARA administrativos" = listados que un ADMINISTRATIVO
+   * consulta, de ALUMNO y MAESTRO — NO un listado de ADMINISTRATIVO mismos
+   * (fuera de alcance, ver encargo del día).
+   *
+   * `sedeId` SIEMPRE viene de `@SedeActual()` (JWT, regla 2 de CLAUDE.md
+   * raíz) — el controller nunca lo toma de query. El filtro de sede se
+   * aplica vía la relación `usuario.sedeId` (ni `PerfilAlumno` ni
+   * `PerfilMaestro` tienen `sedeId` propio en el schema, viven en `Usuario`).
+   *
+   * `estatus` se valida acá (no en el DTO, ver comentario de
+   * `ListarPersonasQueryDto`) contra el enum que corresponde al `rol`
+   * pedido — reutiliza `VALIDATION_ERROR`, sin código nuevo.
+   *
+   * Campos mínimos para tabla (mismo criterio que
+   * `CarrerasService.listarPorSede`) — sin `contactos`/`infoMedica`, eso es
+   * `GET /perfil` (perfil completo del propio usuario, Días 16-18), no este
+   * listado resumen.
+   */
+  async listarPorSedeYRol(
+    sedeId: string,
+    query: ListarPersonasQueryDto,
+  ): Promise<ListarPersonasResult> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const skip = (page - 1) * limit;
+
+    if (query.rol === RolUsuario.ALUMNO) {
+      if (
+        query.estatus &&
+        !Object.values(EstatusAcademico).includes(
+          query.estatus as EstatusAcademico,
+        )
+      ) {
+        throw new BadRequestException({
+          error: 'estatus inválido para rol ALUMNO',
+          code: 'VALIDATION_ERROR',
+        });
+      }
+
+      const where: Prisma.PerfilAlumnoWhereInput = {
+        usuario: { sedeId },
+        ...(query.estatus
+          ? { estatusAcademico: query.estatus as EstatusAcademico }
+          : {}),
+        ...(query.buscar
+          ? {
+              OR: [
+                { nombres: { contains: query.buscar, mode: 'insensitive' } },
+                {
+                  apellidoPaterno: {
+                    contains: query.buscar,
+                    mode: 'insensitive',
+                  },
+                },
+                {
+                  apellidoMaterno: {
+                    contains: query.buscar,
+                    mode: 'insensitive',
+                  },
+                },
+                {
+                  matricula: { contains: query.buscar, mode: 'insensitive' },
+                },
+              ],
+            }
+          : {}),
+      };
+
+      const [total, alumnos] = await this.prisma.$transaction([
+        this.prisma.perfilAlumno.count({ where }),
+        this.prisma.perfilAlumno.findMany({
+          where,
+          select: {
+            usuarioId: true,
+            nombres: true,
+            apellidoPaterno: true,
+            apellidoMaterno: true,
+            matricula: true,
+            estatusAcademico: true,
+            semestreActual: true,
+            carrera: { select: { id: true, nombre: true } },
+            usuario: { select: { activo: true } },
+          },
+          orderBy: [
+            { apellidoPaterno: 'asc' },
+            { apellidoMaterno: 'asc' },
+            { nombres: 'asc' },
+          ],
+          skip,
+          take: limit,
+        }),
+      ]);
+
+      return {
+        data: alumnos.map((alumno) => ({
+          usuarioId: alumno.usuarioId,
+          nombres: alumno.nombres,
+          apellidoPaterno: alumno.apellidoPaterno,
+          apellidoMaterno: alumno.apellidoMaterno,
+          matricula: alumno.matricula,
+          carrera: alumno.carrera,
+          estatusAcademico: alumno.estatusAcademico,
+          semestreActual: alumno.semestreActual,
+          activo: alumno.usuario.activo,
+        })),
+        page,
+        limit,
+        total,
+      };
+    }
+
+    // query.rol === RolUsuario.MAESTRO — el DTO (`@IsIn`) ya descarta
+    // cualquier otro valor (incluido ADMINISTRATIVO) con 400 VALIDATION_ERROR
+    // antes de llegar acá.
+    if (
+      query.estatus &&
+      !Object.values(EstatusEmpleado).includes(query.estatus as EstatusEmpleado)
+    ) {
+      throw new BadRequestException({
+        error: 'estatus inválido para rol MAESTRO',
+        code: 'VALIDATION_ERROR',
+      });
+    }
+
+    const where: Prisma.PerfilMaestroWhereInput = {
+      usuario: { sedeId },
+      ...(query.estatus ? { estatus: query.estatus as EstatusEmpleado } : {}),
+      ...(query.buscar
+        ? {
+            OR: [
+              { nombres: { contains: query.buscar, mode: 'insensitive' } },
+              {
+                apellidoPaterno: {
+                  contains: query.buscar,
+                  mode: 'insensitive',
+                },
+              },
+              {
+                apellidoMaterno: {
+                  contains: query.buscar,
+                  mode: 'insensitive',
+                },
+              },
+              {
+                cedulaProfesional: {
+                  contains: query.buscar,
+                  mode: 'insensitive',
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+
+    const [total, maestros] = await this.prisma.$transaction([
+      this.prisma.perfilMaestro.count({ where }),
+      this.prisma.perfilMaestro.findMany({
+        where,
+        select: {
+          usuarioId: true,
+          nombres: true,
+          apellidoPaterno: true,
+          apellidoMaterno: true,
+          cedulaProfesional: true,
+          estatus: true,
+          usuario: { select: { activo: true } },
+        },
+        orderBy: [
+          { apellidoPaterno: 'asc' },
+          { apellidoMaterno: 'asc' },
+          { nombres: 'asc' },
+        ],
+        skip,
+        take: limit,
+      }),
+    ]);
+
+    return {
+      data: maestros.map((maestro) => ({
+        usuarioId: maestro.usuarioId,
+        nombres: maestro.nombres,
+        apellidoPaterno: maestro.apellidoPaterno,
+        apellidoMaterno: maestro.apellidoMaterno,
+        cedulaProfesional: maestro.cedulaProfesional,
+        estatus: maestro.estatus,
+        activo: maestro.usuario.activo,
+      })),
+      page,
+      limit,
+      total,
+    };
   }
 }

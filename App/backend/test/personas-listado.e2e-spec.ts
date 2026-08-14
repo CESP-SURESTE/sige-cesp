@@ -1,0 +1,529 @@
+import { randomUUID } from 'node:crypto';
+import { INestApplication } from '@nestjs/common';
+import { Test, TestingModule } from '@nestjs/testing';
+import request from 'supertest';
+import type { App } from 'supertest/types';
+import { EstatusEmpleado, RolUsuario } from '@prisma/client';
+import { AppModule } from '../src/app.module';
+import { SEDE_GUARD_ENV_OVERRIDE } from '../src/common/guards/sede.guard';
+import { loadEnv } from '../src/load-env';
+import { PrismaService } from '../src/prisma/prisma.service';
+import { configureApp } from '../src/setup-app';
+
+loadEnv();
+
+interface ErrorBody {
+  error: string;
+  code: string;
+}
+
+interface AlumnoListItem {
+  usuarioId: string;
+  nombres: string;
+  apellidoPaterno: string;
+  apellidoMaterno: string | null;
+  matricula: string;
+  carrera: { id: string; nombre: string };
+  estatusAcademico: string;
+  semestreActual: number;
+  activo: boolean;
+}
+
+interface MaestroListItem {
+  usuarioId: string;
+  nombres: string;
+  apellidoPaterno: string;
+  apellidoMaterno: string | null;
+  cedulaProfesional: string | null;
+  estatus: string;
+  activo: boolean;
+}
+
+interface ListadoBody<T> {
+  data: T[];
+  page: number;
+  limit: number;
+  total: number;
+}
+
+/**
+ * Test de integración — Fase 5, Día 19 (`GET /personas`).
+ *
+ * "Listados PARA administrativos" (de ALUMNO/MAESTRO, no de ADMINISTRATIVO
+ * mismos, ver encargo del día). Contra la app real (`AppModule` completo,
+ * `PrismaService` conectado a la DB real de Supabase) — mismo criterio que
+ * `test/carreras.e2e-spec.ts`/`test/perfil.e2e-spec.ts`: ruta de solo
+ * lectura contra Postgres, no hace falta mockear Supabase Auth, solo el
+ * JWKS de prueba (`SEDE_GUARD_ENV_OVERRIDE`).
+ *
+ * `prisma/seed.ts` no siembra ningún `MAESTRO` (Fase 4 solo cubrió alumno y
+ * administrativo, ver `test/perfil.e2e-spec.ts`) — se crean fixtures propios
+ * directo por Prisma, mismo patrón ya establecido en el resto del proyecto.
+ * Cada fixture usa un `marker` único (`randomUUID().slice(0, 8)`) embebido
+ * en `nombres`/`cedulaProfesional` para que las aserciones de `buscar` y
+ * `total` sean exactas sin importar cuántas otras filas ya existan en la
+ * sede por corridas previas de este u otros specs (este proyecto no limpia
+ * fixtures en `afterAll`, mismo criterio ya establecido en
+ * `test/personas.e2e-spec.ts`).
+ */
+describe('PersonasController — GET /personas (e2e)', () => {
+  let app: INestApplication<App>;
+  let prisma: PrismaService;
+  let sedeMeridaId: string;
+  let sedeValladolidId: string;
+  let carreraMeridaId: string;
+  let adminMeridaId: string;
+  let adminValladolidId: string;
+  let alumnoMeridaId: string;
+  let markerMerida: string;
+  let markerValladolid: string;
+  let privateKey: CryptoKey;
+  let jose: typeof import('jose');
+  const kid = 'test-key-1';
+  const alg = 'ES256';
+
+  async function firmarToken(
+    sub: string,
+    rol: RolUsuario,
+    sedeId: string,
+  ): Promise<string> {
+    return new jose.SignJWT({
+      role: 'authenticated',
+      sede_id: sedeId,
+      rol,
+    })
+      .setProtectedHeader({ alg, kid })
+      .setSubject(sub)
+      .setIssuedAt()
+      .setExpirationTime('1h')
+      .sign(privateKey);
+  }
+
+  beforeAll(async () => {
+    jose = await import('jose');
+    const keyPair = await jose.generateKeyPair(alg, { extractable: true });
+    privateKey = keyPair.privateKey;
+    const publicJwk = await jose.exportJWK(keyPair.publicKey);
+    publicJwk.kid = kid;
+    publicJwk.alg = alg;
+    publicJwk.use = 'sig';
+
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    })
+      .overrideProvider(SEDE_GUARD_ENV_OVERRIDE)
+      .useValue({ jwks: { keys: [publicJwk] } })
+      .compile();
+
+    app = moduleFixture.createNestApplication();
+    configureApp(app);
+    await app.init();
+
+    prisma = moduleFixture.get(PrismaService);
+
+    const merida = await prisma.sede.findUniqueOrThrow({
+      where: { nombre: 'CESP Mérida' },
+    });
+    sedeMeridaId = merida.id;
+    const valladolid = await prisma.sede.findUniqueOrThrow({
+      where: { nombre: 'CESP Valladolid' },
+    });
+    sedeValladolidId = valladolid.id;
+
+    const carreraMerida = await prisma.carrera.findUniqueOrThrow({
+      where: { clave: 'LAE-MID' },
+    });
+    carreraMeridaId = carreraMerida.id;
+
+    const adminMerida = await prisma.usuario.findUniqueOrThrow({
+      where: { email: 'ana.canul@cesp-merida.edu.mx' },
+    });
+    adminMeridaId = adminMerida.id;
+    const adminValladolid = await prisma.usuario.findUniqueOrThrow({
+      where: { email: 'jorge.ek@cesp-valladolid.edu.mx' },
+    });
+    adminValladolidId = adminValladolid.id;
+
+    const alumnoMerida = await prisma.usuario.findUniqueOrThrow({
+      where: { email: 'luis.chan@cesp-merida.edu.mx' },
+    });
+    alumnoMeridaId = alumnoMerida.id;
+
+    // --- Fixtures MAESTRO en Mérida (búsqueda/estatus/paginación) ---
+    markerMerida = `QA19MID${randomUUID().slice(0, 8)}`;
+
+    async function crearMaestroFixture(params: {
+      sedeId: string;
+      apellidoPaterno: string;
+      nombres: string;
+      estatus: EstatusEmpleado;
+      cedulaProfesional?: string;
+    }) {
+      const usuario = await prisma.usuario.create({
+        data: {
+          id: randomUUID(),
+          email: `fixture.listado.${randomUUID()}@example.com`,
+          rol: RolUsuario.MAESTRO,
+          sedeId: params.sedeId,
+        },
+      });
+      await prisma.perfilMaestro.create({
+        data: {
+          usuarioId: usuario.id,
+          nombres: params.nombres,
+          apellidoPaterno: params.apellidoPaterno,
+          curp: `FX${randomUUID().slice(0, 16).toUpperCase()}`,
+          cedulaProfesional: params.cedulaProfesional,
+          correoPersonal: `fixture.listado.personal.${randomUUID()}@example.com`,
+          telefono: '9990009999',
+          fechaContratacion: new Date('2024-01-01'),
+          estatus: params.estatus,
+        },
+      });
+      return usuario.id;
+    }
+
+    // 3 maestros con el mismo marker en `nombres`, apellidoPaterno distinto
+    // (orden esperado ascendente: Aaron, Beltran, Castro) y estatus variado.
+    await crearMaestroFixture({
+      sedeId: sedeMeridaId,
+      apellidoPaterno: 'Aaron',
+      nombres: `Fixture ${markerMerida}`,
+      estatus: EstatusEmpleado.ACTIVO,
+    });
+    await crearMaestroFixture({
+      sedeId: sedeMeridaId,
+      apellidoPaterno: 'Beltran',
+      nombres: `Fixture ${markerMerida}`,
+      estatus: EstatusEmpleado.BAJA,
+    });
+    await crearMaestroFixture({
+      sedeId: sedeMeridaId,
+      apellidoPaterno: 'Castro',
+      nombres: `Fixture ${markerMerida}`,
+      estatus: EstatusEmpleado.LICENCIA,
+    });
+    // Maestro con la cédula marcada, para probar la búsqueda por
+    // `cedulaProfesional` (nombre/apellido sin relación con el marker).
+    await crearMaestroFixture({
+      sedeId: sedeMeridaId,
+      apellidoPaterno: 'Zeta',
+      nombres: 'Sin relación con el marker',
+      estatus: EstatusEmpleado.ACTIVO,
+      cedulaProfesional: `CED-${markerMerida}`,
+    });
+
+    // --- Fixture MAESTRO en Valladolid (aislamiento por sede) ---
+    markerValladolid = `QA19VLD${randomUUID().slice(0, 8)}`;
+    await crearMaestroFixture({
+      sedeId: sedeValladolidId,
+      apellidoPaterno: 'Uno',
+      nombres: `Fixture ${markerValladolid}`,
+      estatus: EstatusEmpleado.ACTIVO,
+    });
+    // Timeout explícito (default de Jest, 5000 ms, no alcanza) — este
+    // `beforeAll` hace más round-trips de DB que el resto de los specs de
+    // este dominio (5 lookups + 5 fixtures de MAESTRO, cada una con su
+    // propio `Usuario` + `PerfilMaestro`), sobre la DB real de Supabase.
+  }, 30000);
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('rol=ALUMNO -> 200, solo alumnos (seed real, luis.chan) con el shape esperado', async () => {
+    // `buscar` por matrícula exacta — aísla el resultado de cualquier otro
+    // alumno acumulado en la sede por corridas previas de este u otros
+    // specs (este proyecto no limpia fixtures en `afterAll`).
+    const res = await request(app.getHttpServer())
+      .get('/personas')
+      .query({ rol: 'ALUMNO', buscar: 'MID-2026-0001' })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(adminMeridaId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+
+    expect(res.status).toBe(200);
+    const body = res.body as ListadoBody<AlumnoListItem>;
+    const luis = body.data.find((a) => a.matricula === 'MID-2026-0001');
+    expect(luis).toBeDefined();
+    expect(luis?.nombres).toBe('Luis Fernando');
+    expect(luis?.apellidoPaterno).toBe('Chan');
+    expect(luis?.carrera).toEqual({
+      id: carreraMeridaId,
+      nombre: 'Licenciatura en Administración',
+    });
+    expect(luis?.estatusAcademico).toBe('INSCRITO');
+    expect(luis?.semestreActual).toBe(1);
+    expect(luis?.activo).toBe(true);
+    expect(Object.keys(luis!).sort()).toEqual(
+      [
+        'usuarioId',
+        'nombres',
+        'apellidoPaterno',
+        'apellidoMaterno',
+        'matricula',
+        'carrera',
+        'estatusAcademico',
+        'semestreActual',
+        'activo',
+      ].sort(),
+    );
+  });
+
+  it('rol=MAESTRO -> 200, solo trae los maestros del marker (búsqueda + orden alfabético apellidoPaterno asc)', async () => {
+    // `buscar` matchea `markerMerida` tanto en `nombres` (3 fixtures) como
+    // en `cedulaProfesional` del fixture `Zeta` (`CED-${markerMerida}`) —
+    // comportamiento esperado, `buscar` cubre `cedulaProfesional` para
+    // rol=MAESTRO (ver contrato del endpoint), por eso el total es 4.
+    const res = await request(app.getHttpServer())
+      .get('/personas')
+      .query({ rol: 'MAESTRO', buscar: markerMerida, limit: 100 })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(adminMeridaId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+
+    expect(res.status).toBe(200);
+    const body = res.body as ListadoBody<MaestroListItem>;
+    expect(body.total).toBe(4);
+    expect(body.data.map((m) => m.apellidoPaterno)).toEqual([
+      'Aaron',
+      'Beltran',
+      'Castro',
+      'Zeta',
+    ]);
+    expect(body.data.map((m) => m.estatus)).toEqual([
+      'ACTIVO',
+      'BAJA',
+      'LICENCIA',
+      'ACTIVO',
+    ]);
+    for (const maestro of body.data) {
+      expect(Object.keys(maestro).sort()).toEqual(
+        [
+          'usuarioId',
+          'nombres',
+          'apellidoPaterno',
+          'apellidoMaterno',
+          'cedulaProfesional',
+          'estatus',
+          'activo',
+        ].sort(),
+      );
+    }
+  });
+
+  it('buscar por cedulaProfesional (rol=MAESTRO) -> 200, encuentra el fixture correcto', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/personas')
+      .query({ rol: 'MAESTRO', buscar: `CED-${markerMerida}` })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(adminMeridaId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+
+    expect(res.status).toBe(200);
+    const body = res.body as ListadoBody<MaestroListItem>;
+    expect(body.total).toBe(1);
+    expect(body.data[0].apellidoPaterno).toBe('Zeta');
+    expect(body.data[0].cedulaProfesional).toBe(`CED-${markerMerida}`);
+  });
+
+  it('filtro estatus válido (rol=MAESTRO) -> 200, solo el maestro con ese estatus', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/personas')
+      .query({ rol: 'MAESTRO', buscar: markerMerida, estatus: 'BAJA' })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(adminMeridaId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+
+    expect(res.status).toBe(200);
+    const body = res.body as ListadoBody<MaestroListItem>;
+    expect(body.total).toBe(1);
+    expect(body.data[0].apellidoPaterno).toBe('Beltran');
+  });
+
+  it('estatus inválido para rol=MAESTRO (valor de EstatusAcademico, no de EstatusEmpleado) -> 400 VALIDATION_ERROR', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/personas')
+      .query({ rol: 'MAESTRO', estatus: 'INSCRITO' })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(adminMeridaId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+
+    expect(res.status).toBe(400);
+    expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+  });
+
+  it('estatus inválido para rol=ALUMNO (valor de EstatusEmpleado, no de EstatusAcademico) -> 400 VALIDATION_ERROR', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/personas')
+      .query({ rol: 'ALUMNO', estatus: 'ACTIVO' })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(adminMeridaId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+
+    expect(res.status).toBe(400);
+    expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+  });
+
+  it('paginación (rol=MAESTRO, limit=2) -> page 1 y page 2 correctas, mismo total', async () => {
+    const resPagina1 = await request(app.getHttpServer())
+      .get('/personas')
+      .query({ rol: 'MAESTRO', buscar: markerMerida, page: 1, limit: 2 })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(adminMeridaId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+
+    expect(resPagina1.status).toBe(200);
+    const body1 = resPagina1.body as ListadoBody<MaestroListItem>;
+    expect(body1.page).toBe(1);
+    expect(body1.limit).toBe(2);
+    // `total` = 4 — `markerMerida` matchea 3 fixtures por `nombres` + el
+    // fixture `Zeta` por `cedulaProfesional`, ver test anterior.
+    expect(body1.total).toBe(4);
+    expect(body1.data.map((m) => m.apellidoPaterno)).toEqual([
+      'Aaron',
+      'Beltran',
+    ]);
+
+    const resPagina2 = await request(app.getHttpServer())
+      .get('/personas')
+      .query({ rol: 'MAESTRO', buscar: markerMerida, page: 2, limit: 2 })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(adminMeridaId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+
+    expect(resPagina2.status).toBe(200);
+    const body2 = resPagina2.body as ListadoBody<MaestroListItem>;
+    expect(body2.page).toBe(2);
+    expect(body2.total).toBe(4);
+    expect(body2.data.map((m) => m.apellidoPaterno)).toEqual([
+      'Castro',
+      'Zeta',
+    ]);
+  });
+
+  it('limit fuera de rango (101) -> 400 VALIDATION_ERROR', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/personas')
+      .query({ rol: 'MAESTRO', limit: 101 })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(adminMeridaId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+
+    expect(res.status).toBe(400);
+    expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+  });
+
+  it('page fuera de rango (0) -> 400 VALIDATION_ERROR', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/personas')
+      .query({ rol: 'MAESTRO', page: 0 })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(adminMeridaId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+
+    expect(res.status).toBe(400);
+    expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+  });
+
+  it('rol ausente -> 400 VALIDATION_ERROR', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/personas')
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(adminMeridaId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+
+    expect(res.status).toBe(400);
+    expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+  });
+
+  it('rol=ADMINISTRATIVO (no válido para este endpoint, Día 19 excluye administrativos) -> 400 VALIDATION_ERROR', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/personas')
+      .query({ rol: 'ADMINISTRATIVO' })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(adminMeridaId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+
+    expect(res.status).toBe(400);
+    expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+  });
+
+  it('aislamiento por sede -> admin de Valladolid no ve los fixtures sembrados en Mérida', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/personas')
+      .query({ rol: 'MAESTRO', buscar: markerMerida })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(adminValladolidId, RolUsuario.ADMINISTRATIVO, sedeValladolidId)}`,
+      );
+
+    expect(res.status).toBe(200);
+    const body = res.body as ListadoBody<MaestroListItem>;
+    expect(body.total).toBe(0);
+    expect(body.data).toHaveLength(0);
+  });
+
+  it('aislamiento por sede -> admin de Mérida no ve el fixture sembrado en Valladolid', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/personas')
+      .query({ rol: 'MAESTRO', buscar: markerValladolid })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(adminMeridaId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+
+    expect(res.status).toBe(200);
+    const body = res.body as ListadoBody<MaestroListItem>;
+    expect(body.total).toBe(0);
+  });
+
+  it('aislamiento por sede -> admin de Valladolid SÍ ve su propio fixture (confirma el filtro, no solo la ausencia)', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/personas')
+      .query({ rol: 'MAESTRO', buscar: markerValladolid })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(adminValladolidId, RolUsuario.ADMINISTRATIVO, sedeValladolidId)}`,
+      );
+
+    expect(res.status).toBe(200);
+    const body = res.body as ListadoBody<MaestroListItem>;
+    expect(body.total).toBe(1);
+    expect(body.data[0].apellidoPaterno).toBe('Uno');
+  });
+
+  it('rol distinto de ADMINISTRATIVO (ALUMNO real, luis.chan) -> 403 ROL_NO_AUTORIZADO', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/personas')
+      .query({ rol: 'ALUMNO' })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(alumnoMeridaId, RolUsuario.ALUMNO, sedeMeridaId)}`,
+      );
+
+    expect(res.status).toBe(403);
+    expect((res.body as ErrorBody).code).toBe('ROL_NO_AUTORIZADO');
+  });
+
+  it('sin Authorization -> 401 UNAUTHORIZED', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/personas')
+      .query({ rol: 'ALUMNO' });
+
+    expect(res.status).toBe(401);
+    expect((res.body as ErrorBody).code).toBe('UNAUTHORIZED');
+  });
+});

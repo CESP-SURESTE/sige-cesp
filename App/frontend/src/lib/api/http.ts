@@ -30,10 +30,29 @@ export class ApiError extends Error {
 type ApiSuccess<T> = { data: T };
 type ApiFailure = { error: string; code: string };
 
-export async function apiFetch<T>(
-  path: string,
-  init?: RequestInit,
-): Promise<T> {
+/**
+ * `ApiListaPaginada` — Fase 5, Día 19.
+ *
+ * Shape base del contrato de listas paginadas (`CLAUDE.md` raíz, sección
+ * "Contrato de API": "Éxito: `{ data: ... }` (+ `page`/`limit`/`total` en
+ * listas paginadas)") — usado por primera vez por `GET /personas`
+ * (`lib/api/personas.ts`, `listarAlumnos`/`listarMaestros`), pero el shape es
+ * genérico para cualquier lista futura que siga el mismo contrato.
+ */
+export interface ApiListaPaginada<T> {
+  data: T[];
+  page: number;
+  limit: number;
+  total: number;
+}
+
+/**
+ * Núcleo compartido entre `apiFetch` (devuelve solo `data`) y
+ * `apiFetchPaginado`/`apiFetchAuthPaginado` (devuelven el body completo,
+ * `page`/`limit`/`total` incluidos) — mismo manejo de errores en los 3 casos,
+ * sin duplicar el `fetch`/parseo/`ApiError` tres veces.
+ */
+async function apiFetchRaw(path: string, init?: RequestInit): Promise<unknown> {
   if (!API_URL) {
     // Falla rápido y explícito en vez de pegarle a una URL relativa
     // equivocada — evita debugging silencioso si falta la env var.
@@ -61,7 +80,50 @@ export async function apiFetch<T>(
     );
   }
 
+  return body;
+}
+
+export async function apiFetch<T>(
+  path: string,
+  init?: RequestInit,
+): Promise<T> {
+  const body = await apiFetchRaw(path, init);
   return (body as ApiSuccess<T>).data;
+}
+
+/**
+ * Variante de `apiFetch` que preserva `page`/`limit`/`total` en vez de
+ * quedarse solo con `data` — para consumir listas paginadas del contrato de
+ * API (ver `ApiListaPaginada` arriba).
+ */
+export async function apiFetchPaginado<T>(
+  path: string,
+  init?: RequestInit,
+): Promise<ApiListaPaginada<T>> {
+  const body = await apiFetchRaw(path, init);
+  return body as ApiListaPaginada<T>;
+}
+
+/** Compartido entre `apiFetchAuth` y `apiFetchAuthPaginado` — resuelve el
+ * mismo `Authorization: Bearer <token>` una sola vez. */
+async function resolveAuthHeaders(
+  init?: RequestInit,
+): Promise<RequestInit> {
+  const supabase = createClient();
+  const { data: sessionData } = await supabase.auth.getSession();
+  const accessToken = sessionData.session?.access_token;
+
+  if (!accessToken) {
+    throw new Error('No hay una sesión activa. Vuelve a iniciar sesión.');
+  }
+
+  return {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      ...init?.headers,
+    },
+  };
 }
 
 /**
@@ -85,19 +147,20 @@ export async function apiFetchAuth<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
-  const supabase = createClient();
-  const { data: sessionData } = await supabase.auth.getSession();
-  const accessToken = sessionData.session?.access_token;
+  return apiFetch<T>(path, await resolveAuthHeaders(init));
+}
 
-  if (!accessToken) {
-    throw new Error('No hay una sesión activa. Vuelve a iniciar sesión.');
-  }
-
-  return apiFetch<T>(path, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      ...init?.headers,
-    },
-  });
+/**
+ * `apiFetchAuthPaginado` — Fase 5, Día 19.
+ *
+ * Igual que `apiFetchAuth`, pero para listas paginadas (`GET /personas` —
+ * primer consumidor, `lib/api/personas.ts`): preserva `page`/`limit`/`total`
+ * en vez de quedarse solo con `data` (ver `ApiListaPaginada`/`apiFetchPaginado`
+ * arriba).
+ */
+export async function apiFetchAuthPaginado<T>(
+  path: string,
+  init?: RequestInit,
+): Promise<ApiListaPaginada<T>> {
+  return apiFetchPaginado<T>(path, await resolveAuthHeaders(init));
 }

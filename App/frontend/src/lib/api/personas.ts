@@ -1,4 +1,4 @@
-import { apiFetchAuth } from './http';
+import { apiFetchAuth, apiFetchAuthPaginado, type ApiListaPaginada } from './http';
 
 /**
  * `POST /personas` — Fase 4, Día 14 (alta de alumno) + Día 15 (alta de
@@ -176,4 +176,103 @@ export function crearAdministrativo(
     method: 'POST',
     body: JSON.stringify({ ...input, rol: 'ADMINISTRATIVO' }),
   });
+}
+
+/**
+ * `GET /personas?rol=ALUMNO|MAESTRO&...` — Fase 5, Día 19.
+ *
+ * "Listados PARA administrativos" (que un `ADMINISTRATIVO` consulta, de
+ * `ALUMNO`/`MAESTRO` — NO un listado de `ADMINISTRATIVO` mismos, fuera de
+ * alcance de este día). Shape espejo de
+ * `App/backend/src/personas/personas.service.ts`
+ * (`PersonaListItemAlumno`/`PersonaListItemMaestro`/`ListarPersonasResult`) —
+ * mantener en sync a mano, mismo criterio que el resto de este archivo.
+ *
+ * Mismo patrón que `crearAlumno`/`crearMaestro`/`crearAdministrativo` arriba:
+ * cada `listar<Rol>()` fija su propio `rol`, no se expone como parámetro
+ * editable — evita que el caller arme un `rol=ADMINISTRATIVO` inválido
+ * (el backend lo rechazaría con 400 `VALIDATION_ERROR`, pero mejor no dejar
+ * ni la posibilidad en el tipo).
+ *
+ * `sedeId` NO es un parámetro acá — igual que `listarCarreras`
+ * (`lib/api/carreras.ts`), el backend lo saca del JWT (`@SedeActual()`,
+ * regla 2 de `CLAUDE.md` raíz), nunca de query.
+ *
+ * Sin `contactos`/`infoMedica` — listado resumen para tabla, no el perfil
+ * completo (eso es `GET /perfil`, `lib/api/perfil.ts`).
+ */
+export interface ListarPersonasParams {
+  buscar?: string;
+  /** Valor del enum correspondiente al rol (`EstatusAcademico` para
+   * `listarAlumnos`, `EstatusEmpleado` para `listarMaestros`) — se manda tal
+   * cual como `string`, el backend valida contra el enum real. */
+  estatus?: string;
+  /** Default backend: 1. */
+  page?: number;
+  /** Default backend: 20, máximo 100. */
+  limit?: number;
+}
+
+/** Espejo de `EstatusAcademico` (`schema.prisma`) — duplicado a propósito de
+ * `lib/api/perfil.ts` (mismo criterio que `PuestoAdministrativo`/
+ * `NivelPermiso` ya duplicados en este archivo: cada `lib/api/*.ts` mantiene
+ * su propia copia en vez de cruzar imports entre módulos de API). */
+export type EstatusAcademico =
+  | 'INSCRITO'
+  | 'BAJA_TEMPORAL'
+  | 'BAJA_DEFINITIVA'
+  | 'EGRESADO';
+
+/** Espejo de `EstatusEmpleado` (`schema.prisma`) — usado por `listarMaestros`. */
+export type EstatusEmpleado = 'ACTIVO' | 'BAJA' | 'LICENCIA';
+
+export interface PersonaListItemAlumno {
+  usuarioId: string;
+  nombres: string;
+  apellidoPaterno: string;
+  apellidoMaterno: string | null;
+  matricula: string;
+  carrera: { id: string; nombre: string };
+  estatusAcademico: EstatusAcademico;
+  semestreActual: number;
+  /** `Usuario.activo` (regla 3 de `CLAUDE.md` raíz — baja lógica, nunca se
+   * oculta la fila, se muestra distinguida). */
+  activo: boolean;
+}
+
+export interface PersonaListItemMaestro {
+  usuarioId: string;
+  nombres: string;
+  apellidoPaterno: string;
+  apellidoMaterno: string | null;
+  cedulaProfesional: string | null;
+  estatus: EstatusEmpleado;
+  activo: boolean;
+}
+
+function construirQueryString(
+  params: Record<string, string | number | undefined>,
+): string {
+  const sp = new URLSearchParams();
+  for (const [clave, valor] of Object.entries(params)) {
+    if (valor !== undefined && valor !== '') {
+      sp.set(clave, String(valor));
+    }
+  }
+  const query = sp.toString();
+  return query ? `?${query}` : '';
+}
+
+export function listarAlumnos(
+  params: ListarPersonasParams,
+): Promise<ApiListaPaginada<PersonaListItemAlumno>> {
+  const query = construirQueryString({ rol: 'ALUMNO', ...params });
+  return apiFetchAuthPaginado<PersonaListItemAlumno>(`/personas${query}`);
+}
+
+export function listarMaestros(
+  params: ListarPersonasParams,
+): Promise<ApiListaPaginada<PersonaListItemMaestro>> {
+  const query = construirQueryString({ rol: 'MAESTRO', ...params });
+  return apiFetchAuthPaginado<PersonaListItemMaestro>(`/personas${query}`);
 }

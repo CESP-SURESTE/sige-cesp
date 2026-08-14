@@ -1,0 +1,100 @@
+/**
+ * Íconos del shell admin — rediseño de navegación (panel lateral), pedido
+ * explícito del usuario vía `/frontend-design`, 2026-08-14.
+ *
+ * SVG inline a mano, sin librería nueva (`lucide-react` y similares no
+ * estaban instalados — CLAUDE.md global del usuario: "no agregar
+ * dependencias nuevas si algo se resuelve con lo que ya está instalado").
+ * Todos comparten `strokeWidth`/tamaño/`viewBox` para verse como un solo
+ * set, no íconos sueltos de fuentes distintas. `aria-hidden` en todos: el
+ * texto visible (o el `title`/`aria-label` del control que los envuelve) ya
+ * comunica el significado, el ícono es puramente decorativo/reforzador.
+ */
+type IconProps = { className?: string };
+
+const BASE = {
+  viewBox: '0 0 24 24',
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 1.75,
+  strokeLinecap: 'round' as const,
+  strokeLinejoin: 'round' as const,
+};
+
+export function IconPanel({ className }: IconProps) {
+  return (
+    <svg {...BASE} className={className} aria-hidden="true">
+      <rect x="3.5" y="3.5" width="7" height="7" rx="1.2" />
+      <rect x="13.5" y="3.5" width="7" height="7" rx="1.2" />
+      <rect x="3.5" y="13.5" width="7" height="7" rx="1.2" />
+      <rect x="13.5" y="13.5" width="7" height="7" rx="1.2" />
+    </svg>
+  );
+}
+
+export function IconAlumnos({ className }: IconProps) {
+  return (
+    <svg {...BASE} className={className} aria-hidden="true">
+      <path d="M3 8.5 12 4l9 4.5-9 4.5-9-4.5Z" />
+      <path d="M7 10.7v4.3c0 1.4 2.2 2.5 5 2.5s5-1.1 5-2.5v-4.3" />
+      <path d="M20 8.5v5.3" />
+    </svg>
+  );
+}
+
+export function IconMaestros({ className }: IconProps) {
+  return (
+    <svg {...BASE} className={className} aria-hidden="true">
+      <circle cx="12" cy="7.5" r="3.25" />
+      <path d="M5 20c0-3.6 3.13-6 7-6s7 2.4 7 6" />
+      <path d="M15.5 6.2c1 .3 1.75 1.2 1.75 2.4S16.5 10.7 15.5 11" />
+    </svg>
+  );
+}
+
+export function IconAdministrativos({ className }: IconProps) {
+  return (
+    <svg {...BASE} className={className} aria-hidden="true">
+      <rect x="3.5" y="8" width="17" height="11" rx="1.5" />
+      <path d="M8.5 8V6.2c0-.94.76-1.7 1.7-1.7h3.6c.94 0 1.7.76 1.7 1.7V8" />
+      <path d="M3.5 12.5c2.4 1.4 5.4 2.1 8.5 2.1s6.1-.7 8.5-2.1" />
+    </svg>
+  );
+}
+
+export function IconPerfil({ className }: IconProps) {
+  return (
+    <svg {...BASE} className={className} aria-hidden="true">
+      <circle cx="12" cy="8.2" r="3.4" />
+      <path d="M4.8 19.5c1.1-3.4 3.9-5.3 7.2-5.3s6.1 1.9 7.2 5.3" />
+    </svg>
+  );
+}
+
+export function IconChevronDoble({ className }: IconProps) {
+  return (
+    <svg {...BASE} className={className} aria-hidden="true">
+      <path d="m10.5 6-6 6 6 6" />
+      <path d="m19.5 6-6 6 6 6" />
+    </svg>
+  );
+}
+
+export function IconMenu({ className }: IconProps) {
+  return (
+    <svg {...BASE} className={className} aria-hidden="true">
+      <path d="M4 7h16" />
+      <path d="M4 12h16" />
+      <path d="M4 17h16" />
+    </svg>
+  );
+}
+
+export function IconCerrar({ className }: IconProps) {
+  return (
+    <svg {...BASE} className={className} aria-hidden="true">
+      <path d="m6 6 12 12" />
+      <path d="m18 6-12 12" />
+    </svg>
+  );
+}

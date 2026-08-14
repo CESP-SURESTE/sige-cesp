@@ -30,18 +30,65 @@ import {
 export const POLITICA_PASSWORD_HABILITADA = false;
 
 const LONGITUD_MINIMA = 10; // "más de 10" del encargo → 11+ caracteres reales
-const SECUENCIAS_DEBILES = [
-  '0123456789',
-  '1234567890',
-  '9876543210',
-  '0987654321',
-  'abcdefghij',
-  'abcdefgh',
-  'qwertyuiop',
-  'password',
-  'contrasena',
-  'contraseña',
-];
+
+// Palabras/patrones de teclado obvios que no son una corrida ascendente o
+// descendente de caracteres consecutivos (esas las detecta `tieneCorridaObvia`).
+const PALABRAS_DEBILES = ['qwertyuiop', 'password', 'contrasena', 'contraseña'];
+
+const LONGITUD_MINIMA_CORRIDA = 4; // mismo umbral que la regla de repetición ({4,})
+
+function esDigito(c: string): boolean {
+  return c >= '0' && c <= '9';
+}
+
+function esLetraAscii(c: string): boolean {
+  return c >= 'a' && c <= 'z';
+}
+
+/**
+ * Detecta corridas de `LONGITUD_MINIMA_CORRIDA` o más caracteres consecutivos
+ * ascendentes o descendentes (dígitos con dígitos, letras con letras — nunca
+ * cruzando clase) en cualquier posición de la contraseña.
+ *
+ * Reemplaza la lista fija de secuencias completas de 10 caracteres que había
+ * antes (`'0123456789'`, etc.): esa lista solo detectaba un match exacto de
+ * substring contra esos 4 strings literales, así que cualquier corrida más
+ * corta se colaba — bug real reportado por el usuario 2026-08-14:
+ * "123456789" (9 dígitos, sin el 0 inicial ni final) no calzaba con ninguna
+ * entrada de la lista y la política lo aceptaba como válido.
+ */
+function tieneCorridaObvia(password: string): boolean {
+  const lower = password.toLowerCase();
+  let ascendente = 1;
+  let descendente = 1;
+  for (let i = 1; i < lower.length; i++) {
+    const anterior = lower[i - 1];
+    const actual = lower[i];
+    const mismaClase =
+      (esDigito(anterior) && esDigito(actual)) ||
+      (esLetraAscii(anterior) && esLetraAscii(actual));
+    if (mismaClase && actual.charCodeAt(0) === anterior.charCodeAt(0) + 1) {
+      ascendente++;
+      descendente = 1;
+    } else if (
+      mismaClase &&
+      actual.charCodeAt(0) === anterior.charCodeAt(0) - 1
+    ) {
+      descendente++;
+      ascendente = 1;
+    } else {
+      ascendente = 1;
+      descendente = 1;
+    }
+    if (
+      ascendente >= LONGITUD_MINIMA_CORRIDA ||
+      descendente >= LONGITUD_MINIMA_CORRIDA
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
 
 export interface EvaluacionPoliticaPassword {
   valido: boolean;
@@ -76,9 +123,9 @@ export function evaluarPoliticaPassword(
     };
   }
   const lower = password.toLowerCase();
-  const tieneSecuenciaDebil = SECUENCIAS_DEBILES.some((seq) =>
-    lower.includes(seq),
-  );
+  const tieneSecuenciaDebil =
+    PALABRAS_DEBILES.some((palabra) => lower.includes(palabra)) ||
+    tieneCorridaObvia(password);
   // 4 o más repeticiones seguidas del mismo carácter (ej. "aaaa", "1111").
   const tieneRepeticionObvia = /(.)\1{3,}/.test(password);
   if (tieneSecuenciaDebil || tieneRepeticionObvia) {
