@@ -37,10 +37,14 @@ ALTER TABLE "registro_auditoria"
 -- ============================================================================
 -- ADMIN_PLATAFORMA — sin sede_id (por diseño, es una identidad cross-sede).
 -- RLS habilitada SIN ninguna policy: cerrado por default para
--- authenticated/anon (mismo patrón que sede_responsables, sin policy de
--- UPDATE/DELETE, ver 20260806224102_rls_multisede/migration.sql). El backend
--- conecta como rol postgres y bypassa RLS (ver comentario en esa misma
--- migración) — esto es defensa en profundidad, no el mecanismo real de
--- control de acceso (ese es PlatformAdminGuard).
+-- authenticated/anon. Primer caso en este repo de RLS habilitada con CERO
+-- policies — ninguna tabla previa llega a este extremo: sede_responsables
+-- (20260806224102_rls_multisede/migration.sql) tiene una policy FOR ALL
+-- (sede_isolation_sede_responsables, cubre SELECT/INSERT/UPDATE/DELETE) y
+-- registro_auditoria, el caso más cercano, solo tiene SELECT+INSERT (dos
+-- policies, no cero). El backend conecta como rol postgres y bypassa RLS de
+-- cualquier forma (ver comentario en esa misma migración) — esto es defensa
+-- en profundidad, no el mecanismo real de control de acceso (ese es
+-- PlatformAdminGuard).
 -- ============================================================================
 ALTER TABLE "admin_plataforma" ENABLE ROW LEVEL SECURITY;
