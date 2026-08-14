@@ -14,6 +14,8 @@ declare global {
       userClaims?: UserClaims;
       /** Payload crudo del JWT (snake_case), por si se necesita algo más adelante (ej. `rol` en Fase 2). */
       jwtClaims?: JWTClaims;
+      /** `AdminPlataforma.id` extraído del JWT propio de plataforma, ver `PlatformAdminGuard`. */
+      platformAdminId?: string;
     }
   }
 }
