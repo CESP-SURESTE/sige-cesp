@@ -11,6 +11,7 @@ import { PruebaRolesModule } from './prueba-roles/prueba-roles.module';
 import { PersonasModule } from './personas/personas.module';
 import { CarrerasModule } from './carreras/carreras.module';
 import { PerfilModule } from './perfil/perfil.module';
+import { PlatformAdminModule } from './platform-admin/platform-admin.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { PerfilModule } from './perfil/perfil.module';
     PersonasModule,
     CarrerasModule,
     PerfilModule,
+    PlatformAdminModule,
   ],
   controllers: [AppController],
   providers: [AppService],
