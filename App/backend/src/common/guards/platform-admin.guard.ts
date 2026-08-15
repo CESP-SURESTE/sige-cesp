@@ -5,6 +5,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import type { Request } from 'express';
+import { PrismaService } from '../../prisma/prisma.service';
 import { verificarPlatformAdminToken } from '../../platform-admin/platform-admin-jwt.util';
 
 /**
@@ -15,9 +16,19 @@ import { verificarPlatformAdminToken } from '../../platform-admin/platform-admin
  * `firmarPlatformAdminToken` (`platform-admin-jwt.util.ts`) y deja
  * `request.platformAdminId` disponible — `@PlatformAdminActual()` lo expone
  * a los controllers, mismo patrón que `@SedeActual()`/`SedeGuard`.
+ *
+ * Revisión de whole-branch (2026-08-14): la sola verificación de firma
+ * confiaba en el claim `sub` durante toda la vida del token (8h) sin volver
+ * a consultar la DB — si un `AdminPlataforma` se desactivara/borrara, un
+ * token ya emitido seguía funcionando hasta su expiración natural. Se
+ * agrega un lookup a `AdminPlataforma` por cada request para cerrar ese
+ * hueco (mismo criterio que cualquier guard de esta app: la DB es la
+ * fuente de verdad, el JWT solo prueba identidad).
  */
 @Injectable()
 export class PlatformAdminGuard implements CanActivate {
+  constructor(private readonly prisma: PrismaService) {}
+
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<Request>();
 
@@ -34,16 +45,32 @@ export class PlatformAdminGuard implements CanActivate {
       });
     }
 
+    const tokenInvalidoError = new UnauthorizedException({
+      error: 'Token de plataforma inválido o expirado',
+      code: 'UNAUTHORIZED',
+    });
+
+    let platformAdminId: string;
     try {
       const claims = await verificarPlatformAdminToken(token);
-      request.platformAdminId = claims.sub;
+      platformAdminId = claims.sub;
     } catch (err) {
       console.error('[PlatformAdminGuard] token inválido:', err);
-      throw new UnauthorizedException({
-        error: 'Token de plataforma inválido o expirado',
-        code: 'UNAUTHORIZED',
-      });
+      throw tokenInvalidoError;
     }
+
+    const admin = await this.prisma.adminPlataforma.findUnique({
+      where: { id: platformAdminId },
+    });
+
+    if (!admin || !admin.activo) {
+      // No se distingue (en el mensaje ni el código) entre "no existe" y
+      // "existe pero inactivo" — mismo criterio de no filtrar información
+      // que el resto de los guards de esta app.
+      throw tokenInvalidoError;
+    }
+
+    request.platformAdminId = platformAdminId;
 
     return true;
   }
