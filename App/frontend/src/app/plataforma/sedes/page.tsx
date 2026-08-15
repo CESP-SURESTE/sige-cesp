@@ -21,8 +21,10 @@ export default function PlataformaSedesPage() {
   const [form, setForm] = useState<SedeInput>(FORM_VACIO);
   const [editandoId, setEditandoId] = useState<string | null>(null);
 
-  // Protección de ruta del lado del cliente — app/plataforma no pasa por
-  // src/proxy.ts (regla 11, sistema de identidad aparte, ver Task 9).
+  // Protección de ruta del lado del cliente — app/plataforma está
+  // explícitamente exento de la lógica de sesión de src/proxy.ts (regla 11,
+  // sistema de identidad aparte, ver la exención al inicio de ese archivo),
+  // así que este check en el cliente es el único gate real.
   useEffect(() => {
     if (!getPlatformToken()) {
       router.replace('/plataforma/login');

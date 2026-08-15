@@ -8,9 +8,11 @@ import { ApiError } from './http';
  * Supabase, así que no puede reusar `createClient().auth.getSession()`
  * (eso es específico del árbol `app/admin`/`app/alumno`, regla 11 de
  * CLAUDE.md: `app/plataforma` es un sistema de identidad completamente
- * aparte). Se guarda en `localStorage` — sin cookies/SSR: este árbol no
- * pasa por `src/proxy.ts` (que solo entiende sesiones de Supabase), la
- * protección de ruta es del lado del cliente (ver `app/plataforma/sedes/page.tsx`).
+ * aparte). Se guarda en `localStorage` — sin cookies/SSR: este árbol está
+ * explícitamente EXENTO de la lógica de sesión de `src/proxy.ts` (que solo
+ * entiende sesiones de Supabase, ver la exención al inicio de ese archivo)
+ * — la protección de ruta real es del lado del cliente (ver
+ * `app/plataforma/sedes/page.tsx`).
  */
 const TOKEN_KEY = 'sige_platform_admin_token';
 const API_URL = process.env.NEXT_PUBLIC_API_URL;

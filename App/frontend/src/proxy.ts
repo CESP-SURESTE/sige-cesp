@@ -55,6 +55,21 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const { supabaseResponse, claims } = await updateSession(request);
 
+  // Fase 6, Día 20 — `app/plataforma` es un sistema de identidad
+  // COMPLETAMENTE APARTE (regla 11 de CLAUDE.md): su JWT propio de
+  // `AdminPlataforma` vive en `localStorage`, no en la sesión de Supabase
+  // que este middleware entiende. Sin esta exención, cualquier visitante
+  // sin sesión de Supabase caía en el branch `!autenticado` de abajo y era
+  // redirigido a `/login` — nadie podía llegar nunca a `/plataforma/login`
+  // ni a `/plataforma/sedes`. La protección real de esta rama vive del
+  // lado del cliente (ver el `useEffect` en `app/plataforma/sedes/page.tsx`
+  // que redirige a `/plataforma/login` cuando `getPlatformToken()` es
+  // falsy) — este middleware no tiene nada que checar para este árbol, así
+  // que se sale antes de tocar la lógica de sesión de Supabase.
+  if (pathname === '/plataforma' || pathname.startsWith('/plataforma/')) {
+    return supabaseResponse;
+  }
+
   const rol = esRolValido(claims?.rol) ? claims!.rol : null;
   // Sesión sin `rol` en el claim (usuario sin fila en `usuarios`, ver
   // Auth Hook) se trata como no autenticado para efectos de ruteo: no hay
