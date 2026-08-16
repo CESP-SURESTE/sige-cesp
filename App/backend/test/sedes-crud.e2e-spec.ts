@@ -44,7 +44,10 @@ describe('CRUD /sedes con PlatformAdminGuard (e2e)', () => {
         nombre: 'E2E Sedes',
       },
     });
-    token = await firmarPlatformAdminToken({ sub: admin.id, email: admin.email });
+    token = await firmarPlatformAdminToken({
+      sub: admin.id,
+      email: admin.email,
+    });
   });
 
   afterAll(async () => {
@@ -58,7 +61,9 @@ describe('CRUD /sedes con PlatformAdminGuard (e2e)', () => {
     await prisma.registroAuditoria.deleteMany({
       where: { sedeId: { in: sedesPrueba.map((s) => s.id) } },
     });
-    await prisma.sede.deleteMany({ where: { nombre: { startsWith: 'Sede E2E ' } } });
+    await prisma.sede.deleteMany({
+      where: { nombre: { startsWith: 'Sede E2E ' } },
+    });
     await prisma.adminPlataforma.deleteMany({ where: { email: emailAdmin } });
     await app.close();
   });
@@ -124,7 +129,11 @@ describe('CRUD /sedes con PlatformAdminGuard (e2e)', () => {
     expect(nombres).toContain(nombreSedePrueba);
   });
 
-  it('PATCH /sedes/:id edita el teléfono', async () => {
+  it('PATCH /sedes/:id edita el teléfono y audita (hay cambio real)', async () => {
+    const auditoriasAntes = await prisma.registroAuditoria.count({
+      where: { entidad: 'Sede', entidadId: sedeCreadaId },
+    });
+
     const res = await request(app.getHttpServer())
       .patch(`/sedes/${sedeCreadaId}`)
       .set('Authorization', `Bearer ${token}`)
@@ -134,6 +143,47 @@ describe('CRUD /sedes con PlatformAdminGuard (e2e)', () => {
     expect((res.body as { data: { telefono: string } }).data.telefono).toBe(
       '9990000000',
     );
+
+    const auditoriasDespues = await prisma.registroAuditoria.count({
+      where: { entidad: 'Sede', entidadId: sedeCreadaId },
+    });
+    expect(auditoriasDespues).toBe(auditoriasAntes + 1);
+  });
+
+  it('PATCH /sedes/:id vacío no audita (sin cambios reales)', async () => {
+    const auditoriasAntes = await prisma.registroAuditoria.count({
+      where: { entidad: 'Sede', entidadId: sedeCreadaId },
+    });
+
+    const res = await request(app.getHttpServer())
+      .patch(`/sedes/${sedeCreadaId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({});
+
+    expect(res.status).toBe(200);
+
+    const auditoriasDespues = await prisma.registroAuditoria.count({
+      where: { entidad: 'Sede', entidadId: sedeCreadaId },
+    });
+    expect(auditoriasDespues).toBe(auditoriasAntes);
+  });
+
+  it('PATCH /sedes/:id con los mismos valores no audita (sin cambios reales)', async () => {
+    const auditoriasAntes = await prisma.registroAuditoria.count({
+      where: { entidad: 'Sede', entidadId: sedeCreadaId },
+    });
+
+    const res = await request(app.getHttpServer())
+      .patch(`/sedes/${sedeCreadaId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ telefono: '9990000000' }); // mismo valor que dejó el PATCH anterior
+
+    expect(res.status).toBe(200);
+
+    const auditoriasDespues = await prisma.registroAuditoria.count({
+      where: { entidad: 'Sede', entidadId: sedeCreadaId },
+    });
+    expect(auditoriasDespues).toBe(auditoriasAntes);
   });
 
   it('PATCH /sedes/:id con id inexistente -> 404 NOT_FOUND', async () => {
@@ -147,9 +197,12 @@ describe('CRUD /sedes con PlatformAdminGuard (e2e)', () => {
   });
 
   it('POST /sedes sin token -> 401 UNAUTHORIZED (PlatformAdminGuard sigue activo)', async () => {
-    const res = await request(app.getHttpServer())
-      .post('/sedes')
-      .send({ nombre: 'x', direccion: 'x', ubicacionReferencia: 'x', telefono: 'x' });
+    const res = await request(app.getHttpServer()).post('/sedes').send({
+      nombre: 'x',
+      direccion: 'x',
+      ubicacionReferencia: 'x',
+      telefono: 'x',
+    });
 
     expect(res.status).toBe(401);
   });

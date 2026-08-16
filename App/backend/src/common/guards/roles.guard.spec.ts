@@ -21,9 +21,7 @@ describe('RolesGuard (unit)', () => {
     jwtClaims: Record<string, unknown> | undefined,
   ): { guard: RolesGuard; context: ExecutionContext } {
     const reflector = new Reflector();
-    jest
-      .spyOn(reflector, 'getAllAndOverride')
-      .mockReturnValue(rolesMetadata);
+    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(rolesMetadata);
 
     const request = { jwtClaims } as unknown as Request;
     const context = {
@@ -52,7 +50,9 @@ describe('RolesGuard (unit)', () => {
     const spy = jest
       .spyOn(reflector, 'getAllAndOverride')
       .mockReturnValue([RolUsuario.ADMINISTRATIVO]);
-    const request = { jwtClaims: { rol: 'ADMINISTRATIVO' } } as unknown as Request;
+    const request = {
+      jwtClaims: { rol: 'ADMINISTRATIVO' },
+    } as unknown as Request;
     const handler = {};
     const klass = {};
     const context = {

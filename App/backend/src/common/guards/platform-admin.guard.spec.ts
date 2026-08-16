@@ -9,9 +9,7 @@ describe('PlatformAdminGuard (unit)', () => {
       'secreto-de-prueba-solo-para-tests-1234567890';
   });
 
-  function crearPrismaStub(
-    findUniqueImpl: (...args: unknown[]) => unknown,
-  ) {
+  function crearPrismaStub(findUniqueImpl: (...args: unknown[]) => unknown) {
     return {
       adminPlataforma: {
         findUnique: jest.fn(findUniqueImpl),

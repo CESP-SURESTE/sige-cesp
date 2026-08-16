@@ -40,7 +40,8 @@ export class PlatformAdminGuard implements CanActivate {
 
     if (!token) {
       throw new UnauthorizedException({
-        error: 'Falta el token de autenticación (Authorization: Bearer <token>)',
+        error:
+          'Falta el token de autenticación (Authorization: Bearer <token>)',
         code: 'UNAUTHORIZED',
       });
     }

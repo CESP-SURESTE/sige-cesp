@@ -5,7 +5,8 @@ import {
 
 describe('platform-admin-jwt.util', () => {
   beforeAll(() => {
-    process.env.PLATFORM_ADMIN_JWT_SECRET = 'secreto-de-prueba-solo-para-tests-1234567890';
+    process.env.PLATFORM_ADMIN_JWT_SECRET =
+      'secreto-de-prueba-solo-para-tests-1234567890';
   });
 
   it('firma y verifica un token válido, recupera los claims', async () => {

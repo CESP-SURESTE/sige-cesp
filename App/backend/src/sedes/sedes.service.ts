@@ -3,10 +3,43 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { AccionAuditoria, Prisma } from '@prisma/client';
+import { AccionAuditoria, Prisma, type Sede } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { ActualizarSedeDto } from './dto/actualizar-sede.dto';
 import type { CrearSedeDto } from './dto/crear-sede.dto';
+
+/**
+ * `PATCH /sedes/:id` (hallazgo deferred de Día 20, corregido 2026-08-16, a
+ * pedido explícito del usuario: "un PATCH sin cambios reales no cuenta como
+ * edición auditable") — compara cada campo presente en el `dto` contra el
+ * valor actual de la sede. Un campo ausente del `dto` (PATCH parcial u
+ * PATCH vacío) nunca cuenta como cambio. `costoRenta` es `Prisma.Decimal` en
+ * DB vs. `number` en el DTO — se normaliza a `number` antes de comparar.
+ */
+function hayCambiosReales(dto: ActualizarSedeDto, existente: Sede): boolean {
+  const camposTexto = [
+    'nombre',
+    'direccion',
+    'ubicacionReferencia',
+    'telefono',
+  ] as const;
+
+  for (const campo of camposTexto) {
+    if (dto[campo] !== undefined && dto[campo] !== existente[campo]) {
+      return true;
+    }
+  }
+
+  if (dto.costoRenta !== undefined) {
+    const actual =
+      existente.costoRenta === null ? null : Number(existente.costoRenta);
+    if (actual !== dto.costoRenta) {
+      return true;
+    }
+  }
+
+  return false;
+}
 
 @Injectable()
 export class SedesService {
@@ -96,6 +129,8 @@ export class SedesService {
       });
     }
 
+    const registrarAuditoria = hayCambiosReales(dto, existente);
+
     try {
       return await this.prisma.$transaction(async (tx) => {
         const sede = await tx.sede.update({
@@ -109,15 +144,17 @@ export class SedesService {
           },
         });
 
-        await tx.registroAuditoria.create({
-          data: {
-            adminPlataformaId: actorPlatformAdminId,
-            sedeId: sede.id,
-            accion: AccionAuditoria.EDICION,
-            entidad: 'Sede',
-            entidadId: sede.id,
-          },
-        });
+        if (registrarAuditoria) {
+          await tx.registroAuditoria.create({
+            data: {
+              adminPlataformaId: actorPlatformAdminId,
+              sedeId: sede.id,
+              accion: AccionAuditoria.EDICION,
+              entidad: 'Sede',
+              entidadId: sede.id,
+            },
+          });
+        }
 
         return sede;
       });

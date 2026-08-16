@@ -409,7 +409,7 @@ vars del backend.)
 - Create: `App/backend/src/common/decorators/platform-admin-actual.decorator.ts`
 - Modify: `App/backend/src/common/types/express.d.ts`
 - Modify: `App/backend/src/app.module.ts`
-- Test: `App/backend/test/platform-admin-guard.e2e-spec.ts`
+- Test: `App/backend/src/common/guards/platform-admin.guard.spec.ts`
 
 **Interfaces:**
 - Consume: `verificarPlatformAdminToken` (Task 3)
@@ -426,84 +426,79 @@ En `App/backend/src/common/types/express.d.ts`, agregar dentro de `interface Req
       platformAdminId?: string;
 ```
 
-- [ ] **Step 2: Escribir el test e2e que falla**
+- [ ] **Step 2: Escribir el test unitario que falla**
+
+Unitario, no e2e — a propósito: `GET /sedes` (la única ruta real que usará este guard)
+no existe todavía, se agrega en Task 6. Probar el guard aislado (mismo patrón que
+`src/common/guards/roles.guard.spec.ts`: mockear `ExecutionContext`/`Request` a mano) no
+depende de que exista ninguna ruta.
 
 ```ts
-import { INestApplication } from '@nestjs/common';
-import { Test, TestingModule } from '@nestjs/testing';
-import request from 'supertest';
-import type { App } from 'supertest/types';
-import { AppModule } from '../src/app.module';
-import { loadEnv } from '../src/load-env';
-import { firmarPlatformAdminToken } from '../src/platform-admin/platform-admin-jwt.util';
-import { configureApp } from '../src/setup-app';
+import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
+import type { Request } from 'express';
+import { firmarPlatformAdminToken } from '../../platform-admin/platform-admin-jwt.util';
+import { PlatformAdminGuard } from './platform-admin.guard';
 
-loadEnv();
-
-interface ErrorBody {
-  error: string;
-  code: string;
-}
-
-/**
- * `PlatformAdminGuard` (e2e) — Fase 6, Día 20.
- *
- * Usa `GET /sedes` (Task 6) como ruta real de prueba porque el guard no
- * tiene endpoint propio — igual que `SedeGuard` se probó contra
- * `GET /sedes/:sedeId` en el Día 6. Este archivo se corre DESPUÉS de que
- * Task 6 exista `GET /sedes`.
- */
-describe('PlatformAdminGuard (e2e)', () => {
-  let app: INestApplication<App>;
-
-  beforeAll(async () => {
-    const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile();
-
-    app = moduleFixture.createNestApplication();
-    configureApp(app);
-    await app.init();
+describe('PlatformAdminGuard (unit)', () => {
+  beforeAll(() => {
+    process.env.PLATFORM_ADMIN_JWT_SECRET =
+      'secreto-de-prueba-solo-para-tests-1234567890';
   });
 
-  afterAll(async () => {
-    await app.close();
+  function crearContexto(authHeader: string | undefined): {
+    guard: PlatformAdminGuard;
+    context: ExecutionContext;
+    request: Request;
+  } {
+    const request = {
+      headers: { authorization: authHeader },
+    } as unknown as Request;
+    const context = {
+      switchToHttp: () => ({ getRequest: () => request }),
+    } as unknown as ExecutionContext;
+
+    return { guard: new PlatformAdminGuard(), context, request };
+  }
+
+  it('sin Authorization header -> 401 UnauthorizedException', async () => {
+    const { guard, context } = crearContexto(undefined);
+
+    await expect(guard.canActivate(context)).rejects.toThrow(
+      UnauthorizedException,
+    );
   });
 
-  it('sin Authorization header -> 401 UNAUTHORIZED', async () => {
-    const res = await request(app.getHttpServer()).get('/sedes');
-    expect(res.status).toBe(401);
-    expect((res.body as ErrorBody).code).toBe('UNAUTHORIZED');
+  it('con token inválido -> 401 UnauthorizedException', async () => {
+    const { guard, context } = crearContexto('Bearer token-invalido');
+
+    await expect(guard.canActivate(context)).rejects.toThrow(
+      UnauthorizedException,
+    );
   });
 
-  it('con token de plataforma inválido -> 401 UNAUTHORIZED', async () => {
-    const res = await request(app.getHttpServer())
-      .get('/sedes')
-      .set('Authorization', 'Bearer token-invalido');
-    expect(res.status).toBe(401);
-    expect((res.body as ErrorBody).code).toBe('UNAUTHORIZED');
-  });
-
-  it('con token de plataforma válido -> pasa el guard (200)', async () => {
+  it('con token válido -> deja pasar y puebla request.platformAdminId', async () => {
     const token = await firmarPlatformAdminToken({
       sub: '11111111-1111-1111-1111-111111111111',
       email: 'plataforma.prueba@nexo-sd.mx',
     });
+    const { guard, context, request } = crearContexto(`Bearer ${token}`);
 
-    const res = await request(app.getHttpServer())
-      .get('/sedes')
-      .set('Authorization', `Bearer ${token}`);
-
-    expect(res.status).toBe(200);
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+    expect(request.platformAdminId).toBe(
+      '11111111-1111-1111-1111-111111111111',
+    );
   });
 });
 ```
 
 - [ ] **Step 3: Correr el test, confirmar que falla**
 
-Run: `cd App/backend && pnpm exec jest platform-admin-guard.e2e-spec.ts`
-Expected: FAIL — `GET /sedes` no existe todavía (404) y
-`platform-admin-jwt.util` sí existe (Task 3 ya la creó).
+Run: `cd App/backend && pnpm test -- platform-admin.guard.spec.ts` (NO `pnpm exec jest`
+directo — el archivo importa `firmarPlatformAdminToken`, que hace `import()` dinámico de
+`jose`; Jest sin `--experimental-vm-modules` revienta con `TypeError: A dynamic import
+callback was invoked without --experimental-vm-modules`. `pnpm test` ya usa el wrapper
+`scripts/run-unit-tests.js` que agrega ese flag, ver Task 3.)
+Expected: FAIL — `Cannot find module './platform-admin.guard'`
 
 - [ ] **Step 4: Implementar el guard**
 
@@ -630,17 +625,19 @@ import { PlatformAdminGuardModule } from './common/guards/platform-admin-guard.m
   ],
 ```
 
-- [ ] **Step 5: Correr el test — sigue en rojo (esperado, `GET /sedes` no existe aún)**
+- [ ] **Step 5: Correr el test, confirmar que pasa**
 
-Run: `cd App/backend && pnpm exec jest platform-admin-guard.e2e-spec.ts`
-Expected: FAIL en el 3er test (`200` esperado, `404` real) — los 2 primeros (401) ya
-pasan porque el guard corre antes de que la ruta se resuelva. Esto es correcto: Task 4
-termina aquí, Task 6 completa el verde.
+Run: `cd App/backend && pnpm test -- platform-admin.guard.spec.ts` (NO `pnpm exec jest`
+directo — el archivo importa `firmarPlatformAdminToken`, que hace `import()` dinámico de
+`jose`; Jest sin `--experimental-vm-modules` revienta con `TypeError: A dynamic import
+callback was invoked without --experimental-vm-modules`. `pnpm test` ya usa el wrapper
+`scripts/run-unit-tests.js` que agrega ese flag, ver Task 3.)
+Expected: PASS (3 tests)
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add App/backend/src/common/guards/platform-admin.guard.ts App/backend/src/common/guards/platform-admin-guard.module.ts App/backend/src/common/decorators/platform-admin-actual.decorator.ts App/backend/src/common/types/express.d.ts App/backend/src/app.module.ts App/backend/test/platform-admin-guard.e2e-spec.ts
+git add App/backend/src/common/guards/platform-admin.guard.ts App/backend/src/common/guards/platform-admin.guard.spec.ts App/backend/src/common/guards/platform-admin-guard.module.ts App/backend/src/common/decorators/platform-admin-actual.decorator.ts App/backend/src/common/types/express.d.ts App/backend/src/app.module.ts
 git commit -m "feat(backend): PlatformAdminGuard aislado (Día 20)"
 ```
 
@@ -770,7 +767,11 @@ describe('POST /platform-admin/login (e2e)', () => {
 
 - [ ] **Step 3: Correr el test, confirmar que falla**
 
-Run: `cd App/backend && pnpm exec jest platform-admin-login.e2e-spec.ts`
+Run: `cd App/backend && pnpm test:e2e -- platform-admin-login.e2e-spec.ts` (NO `pnpm exec
+jest` directo — los specs de `test/` usan una config de Jest separada
+(`test/jest-e2e.json`) corrida vía el wrapper `scripts/run-e2e.js`, que ya trae
+`--experimental-vm-modules` para los imports dinámicos de `jose`/`@supabase/server` —
+mismo mecanismo que ya usa `test/sede-guard.e2e-spec.ts`.)
 Expected: FAIL — 404, la ruta no existe.
 
 - [ ] **Step 4: Implementar**
@@ -871,7 +872,11 @@ En `App/backend/src/app.module.ts`, agregar `PlatformAdminModule` a `imports`.
 
 - [ ] **Step 5: Correr el test, confirmar que pasa**
 
-Run: `cd App/backend && pnpm exec jest platform-admin-login.e2e-spec.ts`
+Run: `cd App/backend && pnpm test:e2e -- platform-admin-login.e2e-spec.ts` (NO `pnpm exec
+jest` directo — los specs de `test/` usan una config de Jest separada
+(`test/jest-e2e.json`) corrida vía el wrapper `scripts/run-e2e.js`, que ya trae
+`--experimental-vm-modules` para los imports dinámicos de `jose`/`@supabase/server` —
+mismo mecanismo que ya usa `test/sede-guard.e2e-spec.ts`.)
 Expected: PASS (4 tests)
 
 - [ ] **Step 6: Commit**
@@ -1110,7 +1115,8 @@ describe('CRUD /sedes con PlatformAdminGuard (e2e)', () => {
 
 - [ ] **Step 3: Correr el test, confirmar que falla**
 
-Run: `cd App/backend && pnpm exec jest sedes-crud.e2e-spec.ts`
+Run: `cd App/backend && pnpm test:e2e -- sedes-crud.e2e-spec.ts` (mismo motivo que Task
+5 — specs de `test/` corren vía `scripts/run-e2e.js`, no `pnpm exec jest` directo.)
 Expected: FAIL — `POST /sedes` no existe (404).
 
 - [ ] **Step 4: Implementar el service**
@@ -1351,15 +1357,19 @@ ANTES que cualquier otra cosa solo si hubiera ambigüedad real; acá no la hay
 
 - [ ] **Step 6: Correr el test, confirmar que pasa**
 
-Run: `cd App/backend && pnpm exec jest sedes-crud.e2e-spec.ts`
+Run: `cd App/backend && pnpm test:e2e -- sedes-crud.e2e-spec.ts` (mismo motivo que Task
+5 — specs de `test/` corren vía `scripts/run-e2e.js`, no `pnpm exec jest` directo.)
 Expected: PASS (7 tests)
 
 - [ ] **Step 7: Correr TODA la suite de backend — nada se rompió**
 
-Run: `cd App/backend && pnpm exec jest`
-Expected: PASS en todos los archivos, incluyendo `sede-guard.e2e-spec.ts` (la ruta vieja
-`GET /sedes/:sedeId` sigue funcionando igual) y `platform-admin-guard.e2e-spec.ts` (Task
-4, ahora en verde porque `GET /sedes` ya existe).
+Run: `cd App/backend && pnpm test && pnpm test:e2e`
+Expected: PASS en ambas suites — `pnpm test` cubre todo `src/**/*.spec.ts` (incluye
+`platform-admin.guard.spec.ts`, Task 4, unitario, ya estaba en verde desde esa task) y
+`pnpm test:e2e` cubre todo `test/**/*.e2e-spec.ts` (incluye `sede-guard.e2e-spec.ts` — la
+ruta vieja `GET /sedes/:sedeId` sigue funcionando igual — y los 2 e2e nuevos de este
+plan, Tasks 5 y 6). Este proyecto usa 2 configs de Jest separadas (unit vs e2e, ver
+`package.json`/`scripts/run-e2e.js`) — un solo `pnpm exec jest` nunca cubrió ambas.
 
 - [ ] **Step 8: Commit**
 

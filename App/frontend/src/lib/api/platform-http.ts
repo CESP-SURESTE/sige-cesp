@@ -53,6 +53,27 @@ export async function platformFetch<T>(
   const body: unknown = await res.json().catch(() => null);
 
   if (!res.ok) {
+    // 401 (hallazgo deferred de Día 20, corregido 2026-08-16): token
+    // ausente/inválido/expirado, o admin desactivado a mitad de sesión
+    // (`PlatformAdminGuard` revalida contra la DB en cada request). Este
+    // árbol está exento de `src/proxy.ts` (regla 11) — la única protección
+    // de ruta es del lado del cliente, así que el 401 tiene que forzar el
+    // mismo camino que `cerrarSesion()` en vez de dejar la pantalla rota con
+    // un token que ya no sirve.
+    if (res.status === 401 && typeof window !== 'undefined') {
+      clearPlatformToken();
+      if (window.location.pathname !== '/plataforma/login') {
+        // `platformFetch` es un util de `lib/api/`, fuera del árbol de
+        // componentes de React — no tiene acceso a `useRouter()` (el hook
+        // que pide esta regla de lint). `window.location.href` es la única
+        // opción real acá; además fuerza una recarga completa, lo que de
+        // paso limpia cualquier estado de cliente que haya quedado sucio
+        // por la sesión expirada.
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+        window.location.href = '/plataforma/login';
+      }
+    }
+
     const failure = body as Partial<{ error: string; code: string }> | null;
     throw new ApiError(
       failure?.error ?? 'Error inesperado del servidor',
