@@ -6,6 +6,7 @@ import type { ComponentType } from 'react';
 import {
   IconAdministrativos,
   IconAlumnos,
+  IconCarreras,
   IconMaestros,
   IconPanel,
   IconPerfil,
@@ -31,6 +32,7 @@ const NAV_PRINCIPAL: NavItem[] = [
   { href: '/admin', label: 'Panel', Icon: IconPanel, match: 'exacto' },
   { href: '/admin/alumnos', label: 'Alumnos', Icon: IconAlumnos, match: 'prefijo' },
   { href: '/admin/maestros', label: 'Maestros', Icon: IconMaestros, match: 'prefijo' },
+  { href: '/admin/carreras', label: 'Carreras', Icon: IconCarreras, match: 'prefijo' },
   {
     href: '/admin/administrativos/nuevo',
     label: 'Administrativos',

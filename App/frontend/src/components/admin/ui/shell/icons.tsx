@@ -62,6 +62,17 @@ export function IconAdministrativos({ className }: IconProps) {
   );
 }
 
+/** Birrete — link a "Carreras" en el sidebar (Fase 6, Día 21). */
+export function IconCarreras({ className }: IconProps) {
+  return (
+    <svg {...BASE} className={className} aria-hidden="true">
+      <path d="M2.5 9.5 12 5l9.5 4.5-9.5 4.5-9.5-4.5Z" />
+      <path d="M6.5 11.6v4.1c0 1.6 2.5 2.8 5.5 2.8s5.5-1.2 5.5-2.8v-4.1" />
+      <path d="M21.5 9.5v6" />
+    </svg>
+  );
+}
+
 export function IconPerfil({ className }: IconProps) {
   return (
     <svg {...BASE} className={className} aria-hidden="true">

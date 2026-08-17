@@ -1,7 +1,8 @@
 import { apiFetchAuth } from './http';
 
 /**
- * `GET /carreras` — Fase 4, Día 14.
+ * `GET /carreras` — Fase 4, Día 14, extendido en Fase 6 Día 21 (backend,
+ * corrección posterior al cierre inicial de QA).
  *
  * Endpoint construido en paralelo por otro agente para desbloquear el
  * dropdown de `carreraId` del formulario de alta de alumno
@@ -12,13 +13,82 @@ import { apiFetchAuth } from './http';
  *
  * `sedeId` no es un parámetro aquí: el backend lo saca del JWT
  * (`@SedeActual()`, regla 2 de CLAUDE.md raíz), nunca de query/param.
+ *
+ * ACTUALIZADO (2026-08-17, confirmado leyendo `carreras.service.ts` real —
+ * `listarPorSede` ya no tiene `select` limitado, suite e2e completa en
+ * verde incluyendo el test de Día 14 actualizado a este shape nuevo):
+ * `GET /carreras` ahora devuelve el objeto `Carrera` COMPLETO (mismo shape
+ * que `POST`/`PATCH /carreras`, ver `CarreraCompleta` abajo), ya no el
+ * shape mínimo `{ id, nombre, clave }` de Día 14. `Carrera` se mantiene
+ * como alias de `CarreraCompleta` — el shape mínimo dejó de existir como
+ * tal, pero el nombre se conserva para no romper imports existentes
+ * (`app/admin/alumnos/nuevo/page.tsx` solo usa `id`/`nombre`/`clave` del
+ * resultado, le es indiferente que el objeto traiga más campos).
  */
-export interface Carrera {
-  id: string;
-  nombre: string;
-  clave: string;
-}
+export type Carrera = CarreraCompleta;
 
 export function listarCarreras(): Promise<Carrera[]> {
   return apiFetchAuth<Carrera[]>('/carreras');
+}
+
+/**
+ * `NivelCarrera`/`ModalidadCarrera`/`EstatusCarrera` — espejo de los enums
+ * homónimos en `App/backend/prisma/schema.prisma` (líneas ~63-79).
+ */
+export type NivelCarrera = 'TECNICO' | 'LICENCIATURA' | 'MAESTRIA' | 'DOCTORADO';
+export type ModalidadCarrera = 'PRESENCIAL' | 'SEMIPRESENCIAL' | 'EN_LINEA';
+export type EstatusCarrera = 'ACTIVA' | 'INACTIVA';
+
+/**
+ * Shape completo del modelo `Carrera` — lo que devuelven `GET`/`POST`/`PATCH
+ * /carreras` (Fase 6, Día 21, `carreras.service.ts` — sin `select`, Prisma
+ * regresa el registro completo). Espejo de `model Carrera` en
+ * `schema.prisma` (sin `sedeId`, redundante — el frontend nunca lo necesita,
+ * regla 2).
+ */
+export interface CarreraCompleta {
+  id: string;
+  nombre: string;
+  clave: string;
+  duracion: number;
+  nivel: NivelCarrera;
+  modalidad: ModalidadCarrera;
+  estatus: EstatusCarrera;
+  rvoe: string;
+  descripcion: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Body de `POST /carreras` — los 6 campos son requeridos (`sedeId`/`estatus` nunca van acá, ver `CrearCarreraDto` del backend). */
+export interface CrearCarreraInput {
+  nombre: string;
+  clave: string;
+  duracion: number;
+  nivel: NivelCarrera;
+  modalidad: ModalidadCarrera;
+  rvoe: string;
+  descripcion: string;
+}
+
+/** Body de `PATCH /carreras/:id` — mismos campos que `CrearCarreraInput` + `estatus`, todos opcionales (`{}` es válido). */
+export type ActualizarCarreraInput = Partial<
+  CrearCarreraInput & { estatus: EstatusCarrera }
+>;
+
+export function crearCarrera(input: CrearCarreraInput): Promise<CarreraCompleta> {
+  return apiFetchAuth<CarreraCompleta>('/carreras', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export function actualizarCarrera(
+  id: string,
+  input: ActualizarCarreraInput,
+): Promise<CarreraCompleta> {
+  return apiFetchAuth<CarreraCompleta>(`/carreras/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  });
 }
