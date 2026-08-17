@@ -104,9 +104,21 @@ describe('CarrerasController — GET /carreras (e2e)', () => {
     // Ninguna carrera de Valladolid se filtra al admin de Mérida.
     expect(body.data.map((c) => c.clave)).not.toContain('LC-VLD');
     expect(body.data.map((c) => c.clave)).not.toContain('ING-IND-VLD');
-    // Campos mínimos para un dropdown, nada del resto del modelo.
+    // Extendido en Día 21: objeto Carrera completo (antes solo
+    // id/nombre/clave). El dropdown de alta de alumno sigue leyendo solo
+    // esos 3 campos e ignora el resto, sin cambio de comportamiento ahí.
     for (const carrera of body.data) {
-      expect(Object.keys(carrera).sort()).toEqual(['clave', 'id', 'nombre']);
+      const claves = Object.keys(carrera).sort();
+      expect(claves).toContain('id');
+      expect(claves).toContain('nombre');
+      expect(claves).toContain('clave');
+      expect(claves).toContain('sedeId');
+      expect(claves).toContain('duracion');
+      expect(claves).toContain('nivel');
+      expect(claves).toContain('modalidad');
+      expect(claves).toContain('estatus');
+      expect(claves).toContain('rvoe');
+      expect(claves).toContain('descripcion');
     }
   });
 
