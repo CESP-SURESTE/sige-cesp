@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
-import { LogoutButton } from '@/components/logout-button';
+import { Header } from '@/components/alumno/ui/shell/Header';
 
 /**
  * Shell del área ALUMNO. Cuando este layout se renderiza, `src/proxy.ts` ya
@@ -14,6 +14,11 @@ import { LogoutButton } from '@/components/logout-button';
  * Regla 11 de CLAUDE.md raíz: separación total admin/alumno — este archivo
  * no comparte componentes con `app/admin/layout.tsx` ni con
  * `app/maestro/layout.tsx`, aunque el mismo agente mantenga ambos roles.
+ *
+ * Header rediseñado (2026-08-16, `components/alumno/ui/shell/Header.tsx`) —
+ * mismo lenguaje visual que el sidebar de admin (badge de sede/carrera +
+ * dropdown de perfil) pero sin sidebar propio, ver el comentario de ese
+ * archivo para el porqué.
  */
 export default async function AlumnoLayout(props: LayoutProps<'/alumno'>) {
   const supabase = await createClient();
@@ -22,20 +27,7 @@ export default async function AlumnoLayout(props: LayoutProps<'/alumno'>) {
 
   return (
     <div className="flex min-h-screen flex-col bg-bone text-slate">
-      <header className="border-b border-mist px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-baseline gap-3">
-            <span className="font-display text-xs font-semibold tracking-[0.14em] text-navy uppercase">
-              SIGE
-            </span>
-            <span className="text-sm font-medium text-slate">Panel del alumno</span>
-          </div>
-          <div className="flex items-center gap-4">
-            {email && <span className="text-sm text-slate/60">{email}</span>}
-            <LogoutButton />
-          </div>
-        </div>
-      </header>
+      <Header email={email} />
       <main className="flex-1 p-6">{props.children}</main>
     </div>
   );

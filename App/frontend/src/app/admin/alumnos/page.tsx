@@ -64,7 +64,7 @@ export default function AdminAlumnosPage() {
   });
 
   return (
-    <div className="max-w-5xl rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm">
+    <div className="rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="font-display text-2xl font-semibold text-navy">Alumnos</h1>
         <Link

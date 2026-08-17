@@ -1,12 +1,14 @@
 'use client';
 
 import Link from 'next/link';
+import { useQuery } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
-import { LogoutButton } from '@/components/logout-button';
 import { VolverAlPanel } from '@/components/admin/ui/VolverAlPanel';
+import { obtenerPerfil } from '@/lib/api/perfil';
 import { Sidebar } from './Sidebar';
+import { ProfileDropdown } from './ProfileDropdown';
 import { useSidebarState } from './useSidebarState';
-import { IconChevronDoble, IconCerrar, IconMenu } from './icons';
+import { IconChevronDoble, IconCerrar, IconMenu, IconUbicacion } from './icons';
 
 /**
  * Shell del área admin — rediseño de navegación (panel lateral), pedido
@@ -51,20 +53,11 @@ export function AdminShell({
           colapsado ? 'w-[72px]' : 'w-60',
         ].join(' ')}
       >
-        <SidebarHeader colapsado={colapsado} />
+        <SidebarHeader
+          colapsado={colapsado}
+          onToggleColapsado={() => setColapsado(!colapsado)}
+        />
         <Sidebar colapsado={colapsado} />
-        <div className="px-3 pb-3">
-          <button
-            type="button"
-            onClick={() => setColapsado(!colapsado)}
-            aria-label={colapsado ? 'Expandir panel lateral' : 'Colapsar panel lateral'}
-            className="flex w-full items-center justify-center rounded-lg py-2 text-bone/50 transition-colors hover:bg-white/5 hover:text-bone focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
-          >
-            <IconChevronDoble
-              className={['size-4 transition-transform', colapsado ? 'rotate-180' : ''].join(' ')}
-            />
-          </button>
-        </div>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -75,24 +68,77 @@ export function AdminShell({
   );
 }
 
-function SidebarHeader({ colapsado }: { colapsado: boolean }) {
+/**
+ * Cabecera del sidebar — el toggle de colapsar/expandir (`IconChevronDoble`)
+ * se movió acá desde el fondo del riel (rediseño 2026-08-16, pedido
+ * explícito del usuario: "mueve el ocultar panel arriba"). Mismo botón,
+ * mismo `aria-label` dinámico, ahora vive junto al logo en vez de después
+ * de la lista de links.
+ */
+function SidebarHeader({
+  colapsado,
+  onToggleColapsado,
+}: {
+  colapsado: boolean;
+  onToggleColapsado: () => void;
+}) {
   return (
-    <Link
-      href="/admin"
-      className="flex items-center gap-2 border-b border-white/10 px-4 py-4 focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
-    >
-      <span className="font-display text-lg font-semibold tracking-[0.1em] text-gold">
-        S
-      </span>
-      {!colapsado && (
-        <span className="flex flex-col">
-          <span className="font-display text-sm font-semibold tracking-[0.14em] text-bone uppercase">
-            SIGE
-          </span>
-          <span className="text-xs text-bone/50">Panel administrativo</span>
+    <div className="flex items-center justify-between gap-2 border-b border-white/10 px-3 py-4">
+      <Link
+        href="/admin"
+        className="flex min-w-0 items-center gap-2 rounded-lg focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+      >
+        <span className="font-display text-lg font-semibold tracking-[0.1em] text-gold">
+          S
         </span>
-      )}
-    </Link>
+        {!colapsado && (
+          <span className="flex min-w-0 flex-col">
+            <span className="font-display text-sm font-semibold tracking-[0.14em] text-bone uppercase">
+              SIGE
+            </span>
+            <span className="truncate text-xs text-bone/50">Panel administrativo</span>
+          </span>
+        )}
+      </Link>
+      <button
+        type="button"
+        onClick={onToggleColapsado}
+        aria-label={colapsado ? 'Expandir panel lateral' : 'Colapsar panel lateral'}
+        className="flex shrink-0 items-center justify-center rounded-lg p-1.5 text-bone/50 transition-colors hover:bg-white/5 hover:text-bone focus-visible:ring-2 focus-visible:ring-gold focus-visible:outline-none"
+      >
+        <IconChevronDoble
+          className={['size-4 transition-transform', colapsado ? 'rotate-180' : ''].join(' ')}
+        />
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Badge de sede — rediseño de navbar (2026-08-16, pedido explícito del
+ * usuario: "haz enfasis en su sede y su carrera" en el navbar). Un
+ * administrativo no tiene carrera propia (eso es de `alumno`), así que acá
+ * solo se muestra `sede.nombre`.
+ *
+ * `GET /perfil` vía React Query, mismo `queryKey: ['perfil']` que
+ * `app/admin/perfil/page.tsx` — comparten caché, no se pide 2 veces si el
+ * usuario visita ambas pantallas en la misma sesión. Sin loading state
+ * visible (el badge simplemente no aparece hasta que resuelve) — dato
+ * secundario de contexto, no vale la pena un skeleton para esto.
+ */
+function SedeBadge() {
+  const { data: perfil } = useQuery({
+    queryKey: ['perfil'],
+    queryFn: obtenerPerfil,
+  });
+
+  if (!perfil) return null;
+
+  return (
+    <div className="hidden items-center gap-1.5 rounded-full bg-mist/50 px-3 py-1.5 text-xs font-medium text-slate sm:flex">
+      <IconUbicacion className="size-3.5 shrink-0 text-navy" />
+      <span className="truncate">{perfil.sede.nombre}</span>
+    </div>
   );
 }
 
@@ -104,8 +150,8 @@ function Topbar({
   onAbrirMobile: () => void;
 }) {
   return (
-    <header className="sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-mist bg-bone/95 px-4 py-3 backdrop-blur-sm sm:px-6">
-      <div className="flex min-w-0 items-center gap-3">
+    <header className="sticky top-0 z-20 grid grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-mist bg-bone/95 px-4 py-3 backdrop-blur-sm sm:px-6">
+      <div className="flex min-w-0 items-center gap-3 justify-self-start">
         <button
           type="button"
           onClick={onAbrirMobile}
@@ -116,9 +162,11 @@ function Topbar({
         </button>
         <VolverAlPanel />
       </div>
-      <div className="flex shrink-0 items-center gap-4">
-        {email && <span className="hidden text-sm text-slate/60 sm:inline">{email}</span>}
-        <LogoutButton />
+      <div className="justify-self-center">
+        <SedeBadge />
+      </div>
+      <div className="flex shrink-0 items-center justify-self-end">
+        <ProfileDropdown email={email} />
       </div>
     </header>
   );

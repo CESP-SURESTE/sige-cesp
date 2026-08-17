@@ -98,3 +98,45 @@ export function IconCerrar({ className }: IconProps) {
     </svg>
   );
 }
+
+/** Chevron hacia abajo — trigger del dropdown de perfil (Día 2026-08-16). */
+export function IconChevronAbajo({ className }: IconProps) {
+  return (
+    <svg {...BASE} className={className} aria-hidden="true">
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
+
+/** Pin de ubicación — indicador de sede en el navbar (Día 2026-08-16). */
+export function IconUbicacion({ className }: IconProps) {
+  return (
+    <svg {...BASE} className={className} aria-hidden="true">
+      <path d="M12 21s-6.5-5.6-6.5-11A6.5 6.5 0 0 1 18.5 10c0 5.4-6.5 11-6.5 11Z" />
+      <circle cx="12" cy="10" r="2.3" />
+    </svg>
+  );
+}
+
+/** Llave — link a "Cambiar contraseña" en el dropdown de perfil (Día 2026-08-16). */
+export function IconLlave({ className }: IconProps) {
+  return (
+    <svg {...BASE} className={className} aria-hidden="true">
+      <circle cx="7.5" cy="14.5" r="3.5" />
+      <path d="m9.9 12.1 9.1-9.1" />
+      <path d="m15.5 6.5 2.3 2.3" />
+      <path d="m18 4 2 2" />
+    </svg>
+  );
+}
+
+/** Puerta con flecha de salida — "Cerrar sesión" en el dropdown de perfil (Día 2026-08-16). */
+export function IconSalir({ className }: IconProps) {
+  return (
+    <svg {...BASE} className={className} aria-hidden="true">
+      <path d="M13 4H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h6" />
+      <path d="M11 12h9" />
+      <path d="m16.5 7.5 4.5 4.5-4.5 4.5" />
+    </svg>
+  );
+}
