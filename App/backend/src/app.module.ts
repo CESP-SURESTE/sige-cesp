@@ -12,6 +12,7 @@ import { PersonasModule } from './personas/personas.module';
 import { CarrerasModule } from './carreras/carreras.module';
 import { PerfilModule } from './perfil/perfil.module';
 import { PlatformAdminModule } from './platform-admin/platform-admin.module';
+import { MailModule } from './mail/mail.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { PlatformAdminModule } from './platform-admin/platform-admin.module';
     SedesModule,
     AuthModule,
     PruebaRolesModule,
+    MailModule,
     PersonasModule,
     CarrerasModule,
     PerfilModule,

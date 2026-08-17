@@ -17,6 +17,7 @@ import {
   RolUsuario,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { MailService } from '../mail/mail.service';
 import { CrearPersonaDto, InfoMedicaDto } from './dto/crear-persona.dto';
 import { ListarPersonasQueryDto } from './dto/listar-personas.query.dto';
 import { generateTemporaryPassword } from './temporary-password';
@@ -139,6 +140,7 @@ export class PersonasService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly mailService: MailService,
     @Optional()
     @Inject(PERSONAS_SUPABASE_CLIENT_OVERRIDE)
     private readonly clientOverride?: SupabaseAdminClient,
@@ -187,6 +189,29 @@ export class PersonasService {
       alergias: infoMedica.alergias,
       tratamientoAdicional: infoMedica.tratamientoAdicional,
     };
+  }
+
+  /**
+   * Nombre completo para el saludo del correo de bienvenida (Día 13) — sale
+   * del sub-objeto de perfil correspondiente a `dto.rol`, mismo patrón
+   * condicional que ya usa el resto de este método para ramificar por rol.
+   * `apellidoMaterno` es opcional en los 3 perfiles.
+   */
+  private nombreCompletoPara(dto: CrearPersonaDto): string {
+    const perfil =
+      dto.rol === RolUsuario.ALUMNO
+        ? dto.perfilAlumno
+        : dto.rol === RolUsuario.MAESTRO
+          ? dto.perfilMaestro
+          : dto.perfilAdministrativo;
+
+    if (!perfil) {
+      return dto.email;
+    }
+
+    return [perfil.nombres, perfil.apellidoPaterno, perfil.apellidoMaterno]
+      .filter(Boolean)
+      .join(' ');
   }
 
   /**
@@ -548,6 +573,29 @@ export class PersonasService {
 
         return usuarioCreado;
       });
+
+      // Correo de bienvenida (Día 13, desbloqueado 2026-08-17) — best-effort,
+      // DESPUÉS de que la transacción de Postgres ya confirmó (Supabase Auth
+      // + Usuario + perfil ya existen). Envuelto en su propio try/catch: si
+      // Mailgun falla (esperable casi siempre mientras el dominio sea
+      // sandbox — solo entrega a destinatarios autorizados a mano) NUNCA
+      // debe impedir que la persona quede dada de alta ni afectar la
+      // respuesta HTTP. `temporaryPassword` sigue siendo el fallback real
+      // que ya muestra el frontend en pantalla (Días 14/15).
+      try {
+        await this.mailService.enviarCorreoBienvenida({
+          nombreCompleto: this.nombreCompletoPara(dto),
+          email: dto.email,
+          temporaryPassword,
+        });
+      } catch (mailErr) {
+        // Regla 12 de CLAUDE.md raíz — loguear el error completo server-side
+        // antes de continuar; la respuesta HTTP no se ve afectada.
+        console.error(
+          '[PersonasService.altaPersona] Error enviando correo de bienvenida:',
+          mailErr,
+        );
+      }
 
       return {
         usuario: {
