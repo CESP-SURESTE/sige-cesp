@@ -120,7 +120,7 @@ function SidebarHeader({
  * administrativo no tiene carrera propia (eso es de `alumno`), así que acá
  * solo se muestra `sede.nombre`.
  *
- * `GET /perfil` vía React Query, mismo `queryKey: ['perfil']` que
+ * `GET /perfil` vía React Query, mismo `queryKey: ['admin', 'perfil']` que
  * `app/admin/perfil/page.tsx` — comparten caché, no se pide 2 veces si el
  * usuario visita ambas pantallas en la misma sesión. Sin loading state
  * visible (el badge simplemente no aparece hasta que resuelve) — dato
@@ -128,7 +128,7 @@ function SidebarHeader({
  */
 function SedeBadge() {
   const { data: perfil } = useQuery({
-    queryKey: ['perfil'],
+    queryKey: ['admin', 'perfil'],
     queryFn: obtenerPerfil,
   });
 

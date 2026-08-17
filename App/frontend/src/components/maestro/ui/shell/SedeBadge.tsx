@@ -10,13 +10,13 @@ import { IconUbicacion } from './icons';
  * diferencia de alumno (`SedeCarreraBadge`), un maestro no tiene carrera
  * propia en el schema — solo sede.
  *
- * `GET /perfil` vía React Query, mismo `queryKey: ['perfil']` que
+ * `GET /perfil` vía React Query, mismo `queryKey: ['maestro', 'perfil']` que
  * `app/maestro/page.tsx` (comparten caché). Sin loading state visible —
  * dato secundario de contexto, no vale un skeleton.
  */
 export function SedeBadge() {
   const { data: perfil } = useQuery({
-    queryKey: ['perfil'],
+    queryKey: ['maestro', 'perfil'],
     queryFn: obtenerPerfil,
   });
 

@@ -11,14 +11,14 @@ import { IconCarrera, IconUbicacion } from './icons';
  * `components/admin/ui/shell/AdminShell.tsx`, solo sede), un alumno SÍ tiene
  * carrera propia — se muestran los 2 juntos.
  *
- * `GET /perfil` vía React Query, mismo `queryKey: ['perfil']` que
+ * `GET /perfil` vía React Query, mismo `queryKey: ['alumno', 'perfil']` que
  * `app/alumno/page.tsx` (comparten caché — Fase 5 Día 16, ya usa este mismo
  * query en esa página). Sin loading state visible — dato secundario de
  * contexto, no vale un skeleton.
  */
 export function SedeCarreraBadge() {
   const { data: perfil } = useQuery({
-    queryKey: ['perfil'],
+    queryKey: ['alumno', 'perfil'],
     queryFn: obtenerPerfil,
   });
 
