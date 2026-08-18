@@ -512,8 +512,8 @@ model RegistroAuditoria {
   usuario           Usuario?         @relation(fields: [usuarioId], references: [id])
   adminPlataformaId String?          @map("admin_plataforma_id")
   adminPlataforma   AdminPlataforma? @relation(fields: [adminPlataformaId], references: [id])
-  sedeId            String           @map("sede_id")
-  sede              Sede             @relation(fields: [sedeId], references: [id])
+  sedeId            String?          @map("sede_id")
+  sede              Sede?            @relation(fields: [sedeId], references: [id], onDelete: SetNull)
   accion            AccionAuditoria
   entidad           String
   entidadId         String           @map("entidad_id")
