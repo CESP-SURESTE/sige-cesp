@@ -128,6 +128,16 @@ export class InfoMedicaDto {
  * alta es un flujo distinto (regla 3 de `CLAUDE.md` raíz — baja lógica vía
  * `PATCH /:id/estatus`), que todavía no existe para `PerfilMaestro`/
  * `PerfilAdministrativo` — fuera de alcance de esta corrección.
+ *
+ * `PerfilAlumnoDto` NO tiene campo `matricula` (feature 2026-08-18): dejó de
+ * ser texto libre capturado por el admin — `PersonasService.altaPersona` la
+ * genera automáticamente dentro de la misma transacción, vía el contador
+ * atómico `ContadorMatricula` (`schema.prisma`). Formato `A` + año real del
+ * servidor (4 dígitos) + secuencial de 5 dígitos con ceros a la izquierda
+ * (`A202600001`), secuencia global (todas las sedes) y continua durante el
+ * año (se reinicia a 1 cada año nuevo). La matrícula generada se devuelve al
+ * cliente en la respuesta de `POST /personas` (`matricula` a nivel raíz,
+ * junto a `temporaryPassword`), no en el sub-objeto `usuario`/`perfilAlumno`.
  */
 export class PerfilAlumnoDto {
   @IsString()
@@ -151,10 +161,6 @@ export class PerfilAlumnoDto {
     { message: 'fechaNacimiento debe ser una fecha ISO 8601 válida' },
   )
   fechaNacimiento!: string;
-
-  @IsString()
-  @IsNotEmpty({ message: 'matricula es requerida' })
-  matricula!: string;
 
   @IsEmail({}, { message: 'correoPersonal tiene un formato inválido' })
   correoPersonal!: string;
@@ -289,8 +295,13 @@ export class PerfilAdministrativoDto {
 }
 
 export class CrearPersonaDto {
-  @IsEmail({}, { message: 'El email tiene un formato inválido' })
-  email!: string;
+  // `email` (login) YA NO lo captura el cliente (feature 2026-08-18, mismo
+  // criterio que `matricula` en `PerfilAlumnoDto`) — `PersonasService.altaPersona`
+  // lo genera internamente para LOS 3 ROLES antes de tocar Supabase Auth (ver
+  // `generarLoginAlumno`/`generarLoginPersonal`). Si el cliente lo manda de
+  // todos modos, `ValidationPipe` (`whitelist: true, forbidNonWhitelisted:
+  // true`, `setup-app.ts`) lo rechaza con 400 VALIDATION_ERROR — no se
+  // descarta en silencio (confirmado con test e2e dedicado).
 
   @IsEnum(RolUsuario, {
     message: 'rol debe ser ALUMNO, MAESTRO o ADMINISTRATIVO',

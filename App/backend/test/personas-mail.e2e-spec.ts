@@ -18,6 +18,8 @@ interface AltaPersonaBody {
   data: {
     usuario: { id: string; email: string; rol: string; sedeId: string };
     temporaryPassword: string;
+    matricula?: string;
+    email: string;
   };
 }
 
@@ -43,6 +45,12 @@ interface AltaPersonaBody {
  * y cualquier otro spec que dispare un alta) sigue corriendo con el flag
  * apagado como viene en `.env` — no le pegan a `fetch` en absoluto,
  * independientemente de si mockean `MAIL_FETCH_OVERRIDE` o no.
+ *
+ * Cambio de destino (feature 2026-08-18) — el correo YA NO se manda al login
+ * (`dto.email` / el login generado); se manda SIEMPRE a `correoPersonal` del
+ * perfil, para los 3 roles por igual. `payloadAlumno` (abajo) ya no acepta
+ * `email` (ese campo ni siquiera existe más en el DTO — el login se genera
+ * internamente); en su lugar deja variar `correoPersonal` vía `overrides`.
  */
 describe('PersonasController — POST /personas + correo de bienvenida (e2e)', () => {
   let app: INestApplication<App>;
@@ -122,19 +130,14 @@ describe('PersonasController — POST /personas + correo de bienvenida (e2e)', (
     });
   }
 
-  function payloadAlumno(
-    email: string,
-    overrides: Record<string, unknown> = {},
-  ) {
+  function payloadAlumno(overrides: Record<string, unknown> = {}) {
     return {
-      email,
       rol: RolUsuario.ALUMNO,
       perfilAlumno: {
         nombres: 'Correo',
         apellidoPaterno: 'Bienvenida',
         apellidoMaterno: 'Prueba',
         fechaNacimiento: '2007-05-01',
-        matricula: `MID-2026-${randomUUID().slice(0, 8)}`,
         correoPersonal: `alumno.personal.${randomUUID()}@example.com`,
         carreraId: carreraMeridaId,
         periodoIngreso: '2026-1',
@@ -207,15 +210,15 @@ describe('PersonasController — POST /personas + correo de bienvenida (e2e)', (
     await app.close();
   });
 
-  it('alta exitosa -> llama a Mailgun con el payload correcto (nombre completo, email, temporaryPassword)', async () => {
+  it('alta exitosa -> llama a Mailgun con el payload correcto: "to" es correoPersonal (NO el login), el cuerpo muestra el login generado', async () => {
     mockCreateUserExitoso();
     mockMailFetchOk();
-    const email = `mail.exitoso.${randomUUID()}@cesp-merida.edu.mx`;
+    const correoPersonal = `mail.exitoso.personal.${randomUUID()}@example.com`;
 
     const res = await request(app.getHttpServer())
       .post('/personas')
       .set('Authorization', `Bearer ${await tokenAdmin()}`)
-      .send(payloadAlumno(email));
+      .send(payloadAlumno({ correoPersonal }));
 
     expect(res.status).toBe(201);
     const body = res.body as AltaPersonaBody;
@@ -226,16 +229,20 @@ describe('PersonasController — POST /personas + correo de bienvenida (e2e)', (
     expect(init.method).toBe('POST');
 
     const sentBody = new URLSearchParams(init.body as string);
-    expect(sentBody.get('to')).toBe(email);
+    // Destino REAL del envío (feature 2026-08-18) — `correoPersonal`, NO el
+    // login generado (`body.data.email` / `body.data.usuario.email`).
+    expect(sentBody.get('to')).toBe(correoPersonal);
+    expect(sentBody.get('to')).not.toBe(body.data.email);
     expect(sentBody.get('text')).toContain('Correo Bienvenida Prueba');
-    expect(sentBody.get('text')).toContain(email);
+    // El CUERPO del correo sigue mostrando el login generado como texto —
+    // es el dato real con el que la persona debe iniciar sesión.
+    expect(sentBody.get('text')).toContain(body.data.email);
     expect(sentBody.get('text')).toContain(body.data.temporaryPassword);
   });
 
   it('Mailgun rechaza el envío (sandbox) -> el alta de todos modos completa con 201 y temporaryPassword', async () => {
     mockCreateUserExitoso();
     mockMailFetchRechazado();
-    const email = `mail.rechazado.${randomUUID()}@cesp-merida.edu.mx`;
     const consoleErrorSpy = jest
       .spyOn(console, 'error')
       .mockImplementation(() => undefined);
@@ -244,11 +251,11 @@ describe('PersonasController — POST /personas + correo de bienvenida (e2e)', (
       const res = await request(app.getHttpServer())
         .post('/personas')
         .set('Authorization', `Bearer ${await tokenAdmin()}`)
-        .send(payloadAlumno(email));
+        .send(payloadAlumno());
 
       expect(res.status).toBe(201);
       const body = res.body as AltaPersonaBody;
-      expect(body.data.usuario.email).toBe(email);
+      expect(body.data.usuario.email).toBe(body.data.email);
       expect(typeof body.data.temporaryPassword).toBe('string');
       expect(body.data.temporaryPassword.length).toBeGreaterThanOrEqual(16);
       expect(mailFetch).toHaveBeenCalledTimes(1);
@@ -275,7 +282,6 @@ describe('PersonasController — POST /personas + correo de bienvenida (e2e)', (
   it('fetch de Mailgun rechaza la promesa (falla de red) -> el alta de todos modos completa con 201', async () => {
     mockCreateUserExitoso();
     mailFetch.mockRejectedValue(new Error('network down'));
-    const email = `mail.redcaida.${randomUUID()}@cesp-merida.edu.mx`;
     const consoleErrorSpy = jest
       .spyOn(console, 'error')
       .mockImplementation(() => undefined);
@@ -284,7 +290,7 @@ describe('PersonasController — POST /personas + correo de bienvenida (e2e)', (
       const res = await request(app.getHttpServer())
         .post('/personas')
         .set('Authorization', `Bearer ${await tokenAdmin()}`)
-        .send(payloadAlumno(email));
+        .send(payloadAlumno());
 
       expect(res.status).toBe(201);
       const body = res.body as AltaPersonaBody;

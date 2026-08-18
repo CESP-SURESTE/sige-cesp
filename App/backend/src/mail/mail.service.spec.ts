@@ -7,6 +7,14 @@ import { MailService } from './mail.service';
  * (mismo mecanismo que `MAIL_FETCH_OVERRIDE`), mismo criterio que
  * `temporary-password.spec.ts`/`platform-admin-jwt.util.spec.ts` (unidad
  * chica y aislada). Ninguno de estos tests le pega a Mailgun real.
+ *
+ * `correoDestino` (feature 2026-08-18) — desde que el login (`email`) pasó a
+ * ser sintético para los 3 roles, el destino REAL del envío (`to:`) es un
+ * campo separado (`correoPersonal` del perfil, en la práctica). Todos los
+ * payloads de este archivo lo incluyen; el test principal ("llama a Mailgun
+ * con el payload correcto...") verifica explícitamente que `to` usa
+ * `correoDestino` y que el CUERPO del mensaje (`text`/`html`) sigue
+ * mostrando `email` (el login) como texto.
  */
 describe('MailService', () => {
   const ENV_ORIGINAL = { ...process.env };
@@ -38,7 +46,8 @@ describe('MailService', () => {
 
     await service.enviarCorreoBienvenida({
       nombreCompleto: 'Juan Pérez',
-      email: 'juan.perez@example.com',
+      email: 'arturob1@acceso.cesp.edu.mx',
+      correoDestino: 'juan.perez.personal@example.com',
       temporaryPassword: 'Temporal123!',
     });
 
@@ -59,13 +68,19 @@ describe('MailService', () => {
     expect(body.get('from')).toBe(
       'SIGE CESP <postmaster@sandbox-test.mailgun.org>',
     );
-    expect(body.get('to')).toBe('juan.perez@example.com');
+    // Destino REAL del envío (feature 2026-08-18) — `correoDestino`, NO el
+    // login (`email`).
+    expect(body.get('to')).toBe('juan.perez.personal@example.com');
     expect(body.get('subject')).toContain('Bienvenido a SIGE');
     expect(body.get('text')).toContain('Juan Pérez');
-    expect(body.get('text')).toContain('juan.perez@example.com');
+    // El CUERPO del correo sigue mostrando el login (`email`) como texto —
+    // es el dato que la persona necesita para iniciar sesión, aunque el
+    // correo no llegue a esa dirección.
+    expect(body.get('text')).toContain('arturob1@acceso.cesp.edu.mx');
     expect(body.get('text')).toContain('Temporal123!');
     expect(body.get('text')).toContain('http://localhost:3000/login');
     expect(body.get('html')).toContain('Juan Pérez');
+    expect(body.get('html')).toContain('arturob1@acceso.cesp.edu.mx');
     expect(body.get('html')).toContain('Temporal123!');
   });
 
@@ -81,7 +96,8 @@ describe('MailService', () => {
     await expect(
       service.enviarCorreoBienvenida({
         nombreCompleto: 'Falla Sandbox',
-        email: 'no.autorizado@example.com',
+        email: 'no.autorizado@acceso.cesp.edu.mx',
+        correoDestino: 'no.autorizado.personal@example.com',
         temporaryPassword: 'Temporal123!',
       }),
     ).rejects.toThrow();
@@ -94,7 +110,8 @@ describe('MailService', () => {
     await expect(
       service.enviarCorreoBienvenida({
         nombreCompleto: 'Falla Red',
-        email: 'x@example.com',
+        email: 'x@acceso.cesp.edu.mx',
+        correoDestino: 'x.personal@example.com',
         temporaryPassword: 'Temporal123!',
       }),
     ).rejects.toThrow('network down');
@@ -108,7 +125,8 @@ describe('MailService', () => {
     await expect(
       service.enviarCorreoBienvenida({
         nombreCompleto: 'Sin Config',
-        email: 'x@example.com',
+        email: 'x@acceso.cesp.edu.mx',
+        correoDestino: 'x.personal@example.com',
         temporaryPassword: 'Temporal123!',
       }),
     ).rejects.toThrow();
@@ -131,7 +149,8 @@ describe('MailService', () => {
       await expect(
         service.enviarCorreoBienvenida({
           nombreCompleto: 'No Enviar',
-          email: 'x@example.com',
+          email: 'x@acceso.cesp.edu.mx',
+          correoDestino: 'x.personal@example.com',
           temporaryPassword: 'Temporal123!',
         }),
       ).resolves.toBeUndefined();
@@ -146,7 +165,8 @@ describe('MailService', () => {
 
       await service.enviarCorreoBienvenida({
         nombreCompleto: 'Sin Flag',
-        email: 'x@example.com',
+        email: 'x@acceso.cesp.edu.mx',
+        correoDestino: 'x.personal@example.com',
         temporaryPassword: 'Temporal123!',
       });
 
@@ -160,7 +180,8 @@ describe('MailService', () => {
 
       await service.enviarCorreoBienvenida({
         nombreCompleto: 'Typo Flag',
-        email: 'x@example.com',
+        email: 'x@acceso.cesp.edu.mx',
+        correoDestino: 'x.personal@example.com',
         temporaryPassword: 'Temporal123!',
       });
 
@@ -174,7 +195,8 @@ describe('MailService', () => {
 
       await service.enviarCorreoBienvenida({
         nombreCompleto: 'Flag Prendido',
-        email: 'x@example.com',
+        email: 'x@acceso.cesp.edu.mx',
+        correoDestino: 'x.personal@example.com',
         temporaryPassword: 'Temporal123!',
       });
 

@@ -27,6 +27,8 @@ interface AltaPersonaBody {
   data: {
     usuario: { id: string; email: string; rol: string; sedeId: string };
     temporaryPassword: string;
+    matricula?: string;
+    email: string;
   };
 }
 
@@ -44,6 +46,10 @@ interface AltaPersonaBody {
  * JWTs firmados con el mismo mecanismo que `sede-guard.e2e-spec.ts` /
  * `roles-guard.e2e-spec.ts` (JWKS de prueba generado con `jose`, inyectado
  * vía `SEDE_GUARD_ENV_OVERRIDE`).
+ *
+ * `email` (login) YA NO se manda en el body (feature 2026-08-18, ver
+ * "login (Usuario.email) generado automáticamente" más abajo) — ningún
+ * payload de este archivo lo incluye.
  */
 describe('PersonasController — POST /personas (e2e)', () => {
   let app: INestApplication<App>;
@@ -150,7 +156,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
     };
   }
 
-  function perfilAdministrativoValido() {
+  function perfilAdministrativoValido(overrides: Record<string, unknown> = {}) {
     return {
       nombres: 'Prueba',
       apellidoPaterno: 'Jerarquia',
@@ -161,6 +167,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
       puesto: PuestoAdministrativo.RECEPCION,
       contactos: [contactoValido()],
       infoMedica: infoMedicaValida(),
+      ...overrides,
     };
   }
 
@@ -169,7 +176,6 @@ describe('PersonasController — POST /personas (e2e)', () => {
       nombres: 'Prueba',
       apellidoPaterno: 'Alumno',
       fechaNacimiento: '2007-05-01',
-      matricula: `MID-2026-${randomUUID().slice(0, 8)}`,
       correoPersonal: `alumno.personal.${randomUUID()}@example.com`,
       carreraId: carreraMeridaId,
       periodoIngreso: '2026-1',
@@ -192,6 +198,26 @@ describe('PersonasController — POST /personas (e2e)', () => {
       infoMedica: infoMedicaValida(),
       ...overrides,
     };
+  }
+
+  /**
+   * Genera un par nombres/apellidoPaterno prácticamente único (feature
+   * 2026-08-18, tests del algoritmo de login de MAESTRO/ADMINISTRATIVO) —
+   * `normalizarParaLogin` (`PersonasService`) descarta TODO lo que no sea
+   * `[a-z]` (dígitos incluidos), así que no sirve `randomUUID()` tal cual
+   * para variar el nombre entre corridas del suite; esto convierte un
+   * número grande y único (timestamp + random) a letras base-26
+   * (`a`-`z`), sin dígitos, para que cada corrida arranque el contador de
+   * colisión en 1 de verdad (nombre nunca visto antes en la DB real).
+   */
+  function letrasUnicas(): string {
+    let n = Date.now() * 1000 + Math.floor(Math.random() * 1000);
+    let resultado = '';
+    do {
+      resultado = String.fromCharCode(97 + (n % 26)) + resultado;
+      n = Math.floor(n / 26);
+    } while (n > 0);
+    return resultado;
   }
 
   function mockCreateUserExitoso() {
@@ -342,21 +368,18 @@ describe('PersonasController — POST /personas (e2e)', () => {
     await app.close();
   });
 
-  it('alta de alumno exitosa -> 201, con usuario + temporaryPassword y email_confirm: true', async () => {
+  it('alta de alumno exitosa -> 201, con usuario + temporaryPassword + matricula/email generados y email_confirm: true', async () => {
     mockCreateUserExitoso();
-    const email = `alumno.prueba.${randomUUID()}@cesp-merida.edu.mx`;
 
     const res = await request(app.getHttpServer())
       .post('/personas')
       .set('Authorization', `Bearer ${await tokenAdmin()}`)
       .send({
-        email,
         rol: RolUsuario.ALUMNO,
         perfilAlumno: {
           nombres: 'Prueba',
           apellidoPaterno: 'Alumno',
           fechaNacimiento: '2007-05-01',
-          matricula: `MID-2026-${randomUUID().slice(0, 8)}`,
           correoPersonal: 'prueba.alumno.personal@example.com',
           carreraId: carreraMeridaId,
           periodoIngreso: '2026-1',
@@ -368,29 +391,112 @@ describe('PersonasController — POST /personas (e2e)', () => {
 
     expect(res.status).toBe(201);
     const body = res.body as AltaPersonaBody;
-    expect(body.data.usuario.email).toBe(email);
     expect(body.data.usuario.rol).toBe(RolUsuario.ALUMNO);
     expect(body.data.usuario.sedeId).toBe(sedeMeridaId);
     expect(typeof body.data.temporaryPassword).toBe('string');
     expect(body.data.temporaryPassword.length).toBeGreaterThanOrEqual(16);
 
+    // Feature 2026-08-18: matrícula generada por el sistema, campo nuevo a
+    // nivel raíz de `data`, junto a `temporaryPassword` — formato `A` + año
+    // (4 dígitos) + secuencial (5 dígitos) = 9 dígitos tras la `A`.
+    expect(typeof body.data.matricula).toBe('string');
+    expect(body.data.matricula).toMatch(/^A\d{9}$/);
+    expect(
+      body.data.matricula?.startsWith(`A${new Date().getFullYear()}`),
+    ).toBe(true);
+
+    // Login generado (feature 2026-08-18, extensión del mismo día): para
+    // ALUMNO es `{matricula en minúsculas}@acceso.cesp.edu.mx` — mismo
+    // valor en `usuario.email` y en `data.email` (raíz, a propósito).
+    expect(body.data.email).toBe(
+      `${body.data.matricula?.toLowerCase()}@acceso.cesp.edu.mx`,
+    );
+    expect(body.data.usuario.email).toBe(body.data.email);
+
     expect(createUser).toHaveBeenCalledWith(
-      expect.objectContaining({ email, email_confirm: true }),
+      expect.objectContaining({ email: body.data.email, email_confirm: true }),
     );
 
     // Confirma que la fila real de Usuario + PerfilAlumno + RegistroAuditoria
-    // quedaron insertadas (no solo el 201 HTTP).
+    // quedaron insertadas (no solo el 201 HTTP), y que la matrícula
+    // persistida es exactamente la que devolvió la respuesta.
     const usuarioCreado = await prisma.usuario.findUnique({
       where: { id: body.data.usuario.id },
       include: { perfilAlumno: true },
     });
-    expect(usuarioCreado?.perfilAlumno?.matricula).toBeDefined();
+    expect(usuarioCreado?.email).toBe(body.data.email);
+    expect(usuarioCreado?.perfilAlumno?.matricula).toBe(body.data.matricula);
 
     const auditoria = await prisma.registroAuditoria.findFirst({
       where: { entidad: 'Usuario', entidadId: body.data.usuario.id },
     });
     expect(auditoria?.usuarioId).toBe(actorAdminId);
     expect(auditoria?.accion).toBe('ALTA');
+  });
+
+  it('matricula ya no se acepta en el body de perfilAlumno (feature 2026-08-18) -> 400 VALIDATION_ERROR (forbidNonWhitelisted)', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/personas')
+      .set('Authorization', `Bearer ${await tokenAdmin()}`)
+      .send({
+        rol: RolUsuario.ALUMNO,
+        perfilAlumno: perfilAlumnoValido({
+          matricula: 'A202600001',
+        }),
+      });
+
+    expect(res.status).toBe(400);
+    expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+    expect(createUser).not.toHaveBeenCalled();
+  });
+
+  it('email en el body (raíz, ya no se acepta) -> 400 VALIDATION_ERROR (forbidNonWhitelisted), sin llamar a Supabase Auth', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/personas')
+      .set('Authorization', `Bearer ${await tokenAdmin()}`)
+      .send({
+        email: 'residual@cesp-merida.edu.mx',
+        rol: RolUsuario.ALUMNO,
+        perfilAlumno: perfilAlumnoValido(),
+      });
+
+    expect(res.status).toBe(400);
+    expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+    expect(createUser).not.toHaveBeenCalled();
+  });
+
+  it('dos altas de alumno consecutivas -> matriculas y logins consecutivos y distintos, sin duplicados', async () => {
+    mockCreateUserExitoso();
+
+    const res1 = await request(app.getHttpServer())
+      .post('/personas')
+      .set('Authorization', `Bearer ${await tokenAdmin()}`)
+      .send({
+        rol: RolUsuario.ALUMNO,
+        perfilAlumno: perfilAlumnoValido(),
+      });
+    expect(res1.status).toBe(201);
+
+    const res2 = await request(app.getHttpServer())
+      .post('/personas')
+      .set('Authorization', `Bearer ${await tokenAdmin()}`)
+      .send({
+        rol: RolUsuario.ALUMNO,
+        perfilAlumno: perfilAlumnoValido(),
+      });
+    expect(res2.status).toBe(201);
+
+    const body1 = res1.body as AltaPersonaBody;
+    const body2 = res2.body as AltaPersonaBody;
+
+    expect(body1.data.matricula).toMatch(/^A\d{9}$/);
+    expect(body2.data.matricula).toMatch(/^A\d{9}$/);
+    expect(body1.data.matricula).not.toBe(body2.data.matricula);
+    expect(body1.data.email).not.toBe(body2.data.email);
+
+    const numero1 = Number(body1.data.matricula?.slice(-5));
+    const numero2 = Number(body2.data.matricula?.slice(-5));
+    expect(numero2).toBe(numero1 + 1);
   });
 
   it('rol no administrativo -> 403 ROL_NO_AUTORIZADO, sin llamar a Supabase Auth', async () => {
@@ -403,13 +509,11 @@ describe('PersonasController — POST /personas (e2e)', () => {
       .post('/personas')
       .set('Authorization', `Bearer ${token}`)
       .send({
-        email: 'no-deberia-crearse@cesp-merida.edu.mx',
         rol: RolUsuario.ALUMNO,
         perfilAlumno: {
           nombres: 'X',
           apellidoPaterno: 'Y',
           fechaNacimiento: '2007-01-01',
-          matricula: `MID-2026-${randomUUID().slice(0, 8)}`,
           correoPersonal: 'x@example.com',
           carreraId: carreraMeridaId,
           periodoIngreso: '2026-1',
@@ -428,37 +532,10 @@ describe('PersonasController — POST /personas (e2e)', () => {
     const res = await request(app.getHttpServer())
       .post('/personas')
       .set('Authorization', `Bearer ${await tokenAdmin()}`)
-      .send({ email: 'incompleto@cesp-merida.edu.mx', rol: RolUsuario.ALUMNO });
+      .send({ rol: RolUsuario.ALUMNO });
 
     expect(res.status).toBe(400);
     expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
-    expect(createUser).not.toHaveBeenCalled();
-  });
-
-  it('email duplicado (ya existe en usuarios) -> 409 CONFLICT, sin llamar a Supabase Auth', async () => {
-    const res = await request(app.getHttpServer())
-      .post('/personas')
-      .set('Authorization', `Bearer ${await tokenAdmin()}`)
-      .send({
-        // Email real ya sembrado por prisma/seed.ts.
-        email: 'ana.canul@cesp-merida.edu.mx',
-        rol: RolUsuario.ALUMNO,
-        perfilAlumno: {
-          nombres: 'Duplicado',
-          apellidoPaterno: 'Prueba',
-          fechaNacimiento: '2007-01-01',
-          matricula: `MID-2026-${randomUUID().slice(0, 8)}`,
-          correoPersonal: 'duplicado@example.com',
-          carreraId: carreraMeridaId,
-          periodoIngreso: '2026-1',
-          semestreActual: 1,
-          contactos: [contactoAlumnoValido()],
-          infoMedica: infoMedicaValida(),
-        },
-      });
-
-    expect(res.status).toBe(409);
-    expect((res.body as ErrorBody).code).toBe('CONFLICT');
     expect(createUser).not.toHaveBeenCalled();
   });
 
@@ -484,13 +561,11 @@ describe('PersonasController — POST /personas (e2e)', () => {
       .post('/personas')
       .set('Authorization', `Bearer ${token}`)
       .send({
-        email: `rollback.${randomUUID()}@cesp-merida.edu.mx`,
         rol: RolUsuario.ALUMNO,
         perfilAlumno: {
           nombres: 'Rollback',
           apellidoPaterno: 'Prueba',
           fechaNacimiento: '2007-01-01',
-          matricula: `MID-2026-${randomUUID().slice(0, 8)}`,
           correoPersonal: 'rollback@example.com',
           carreraId: carreraMeridaId,
           periodoIngreso: '2026-1',
@@ -536,13 +611,11 @@ describe('PersonasController — POST /personas (e2e)', () => {
         .post('/personas')
         .set('Authorization', `Bearer ${token}`)
         .send({
-          email: `rollback.reject.${randomUUID()}@cesp-merida.edu.mx`,
           rol: RolUsuario.ALUMNO,
           perfilAlumno: {
             nombres: 'Rollback',
             apellidoPaterno: 'Reject',
             fechaNacimiento: '2007-01-01',
-            matricula: `MID-2026-${randomUUID().slice(0, 8)}`,
             correoPersonal: 'rollback.reject@example.com',
             carreraId: carreraMeridaId,
             periodoIngreso: '2026-1',
@@ -571,7 +644,6 @@ describe('PersonasController — POST /personas (e2e)', () => {
       .post('/personas')
       .set('Authorization', `Bearer ${await tokenAuxiliar()}`)
       .send({
-        email: `auxiliar.intenta.crear.${randomUUID()}@cesp-merida.edu.mx`,
         rol: RolUsuario.ADMINISTRATIVO,
         perfilAdministrativo: perfilAdministrativoValido(),
       });
@@ -586,7 +658,6 @@ describe('PersonasController — POST /personas (e2e)', () => {
       .post('/personas')
       .set('Authorization', `Bearer ${await tokenSinPerfil()}`)
       .send({
-        email: `sinperfil.intenta.crear.${randomUUID()}@cesp-merida.edu.mx`,
         rol: RolUsuario.ADMINISTRATIVO,
         perfilAdministrativo: perfilAdministrativoValido(),
       });
@@ -601,7 +672,6 @@ describe('PersonasController — POST /personas (e2e)', () => {
       .post('/personas')
       .set('Authorization', `Bearer ${await tokenAdmin()}`)
       .send({
-        email: `admin.crea.superadmin.${randomUUID()}@cesp-merida.edu.mx`,
         rol: RolUsuario.ADMINISTRATIVO,
         perfilAdministrativo: {
           ...perfilAdministrativoValido(),
@@ -621,7 +691,6 @@ describe('PersonasController — POST /personas (e2e)', () => {
       .post('/personas')
       .set('Authorization', `Bearer ${await tokenSuperAdmin()}`)
       .send({
-        email: `superadmin.crea.sa.${randomUUID()}@cesp-merida.edu.mx`,
         rol: RolUsuario.ADMINISTRATIVO,
         perfilAdministrativo: {
           ...perfilAdministrativoValido(),
@@ -636,6 +705,109 @@ describe('PersonasController — POST /personas (e2e)', () => {
   });
 
   /**
+   * Login (`Usuario.email`) generado automáticamente — feature 2026-08-18,
+   * extensión de la matrícula generada automáticamente (misma sesión de
+   * trabajo). Login sintético para los 3 roles — no es un buzón real,
+   * dominio placeholder `acceso.cesp.edu.mx` (elegido: "un solo dominio
+   * fijo para los 3 roles", sin distinción por rol/sede).
+   */
+  describe('login (Usuario.email) generado automáticamente (feature 2026-08-18)', () => {
+    it('MAESTRO: login = {primernombre}{primera letra apellidoPaterno}{contador}@acceso.cesp.edu.mx, contador SIEMPRE presente desde el primer registro', async () => {
+      mockCreateUserExitoso();
+      const nombreUnico = `Zz${letrasUnicas()}`;
+      const apellidoUnico = `Qq${letrasUnicas()}`;
+      const baseEsperada = `${nombreUnico.toLowerCase()}${apellidoUnico
+        .charAt(0)
+        .toLowerCase()}`;
+
+      const res = await request(app.getHttpServer())
+        .post('/personas')
+        .set('Authorization', `Bearer ${await tokenAdmin()}`)
+        .send({
+          rol: RolUsuario.MAESTRO,
+          perfilMaestro: perfilMaestroValido({
+            nombres: `${nombreUnico} Segundo`, // nombre compuesto: solo la 1a palabra cuenta
+            apellidoPaterno: apellidoUnico,
+          }),
+        });
+
+      expect(res.status).toBe(201);
+      const body = res.body as AltaPersonaBody;
+      // Contador SIEMPRE presente desde el primer registro (nunca
+      // `${base}@...` sin número).
+      expect(body.data.email).toBe(`${baseEsperada}1@acceso.cesp.edu.mx`);
+      expect(body.data.usuario.email).toBe(body.data.email);
+    });
+
+    it('ADMINISTRATIVO: colisión de nombre+inicial -> segundo registro recibe contador 2, distinto del primero (1)', async () => {
+      mockCreateUserExitoso();
+      const nombreUnico = `Yy${letrasUnicas()}`;
+      const apellidoUnico = `Ww${letrasUnicas()}`;
+      const baseEsperada = `${nombreUnico.toLowerCase()}${apellidoUnico
+        .charAt(0)
+        .toLowerCase()}`;
+
+      const res1 = await request(app.getHttpServer())
+        .post('/personas')
+        .set('Authorization', `Bearer ${await tokenSuperAdmin()}`)
+        .send({
+          rol: RolUsuario.ADMINISTRATIVO,
+          perfilAdministrativo: perfilAdministrativoValido({
+            nombres: nombreUnico,
+            apellidoPaterno: apellidoUnico,
+          }),
+        });
+      expect(res1.status).toBe(201);
+      const body1 = res1.body as AltaPersonaBody;
+      expect(body1.data.email).toBe(`${baseEsperada}1@acceso.cesp.edu.mx`);
+
+      // Segunda alta, MISMO nombre+apellidoPaterno exacto (mismo caso que
+      // el ejemplo del encargo: "Arturo Bustamante" dos veces) -> el
+      // algoritmo debe detectar la colisión contra el `Usuario.email` recién
+      // insertado y subir a 2 — nunca debe repetir `${baseEsperada}1@...`.
+      const res2 = await request(app.getHttpServer())
+        .post('/personas')
+        .set('Authorization', `Bearer ${await tokenSuperAdmin()}`)
+        .send({
+          rol: RolUsuario.ADMINISTRATIVO,
+          perfilAdministrativo: perfilAdministrativoValido({
+            nombres: nombreUnico,
+            apellidoPaterno: apellidoUnico,
+          }),
+        });
+      expect(res2.status).toBe(201);
+      const body2 = res2.body as AltaPersonaBody;
+      expect(body2.data.email).toBe(`${baseEsperada}2@acceso.cesp.edu.mx`);
+      expect(body2.data.email).not.toBe(body1.data.email);
+    });
+
+    it('normalización: nombre con acentos/espacios genera login solo [a-z] (sin diacríticos, sin dígitos residuales)', async () => {
+      mockCreateUserExitoso();
+      const sufijo = letrasUnicas();
+
+      const res = await request(app.getHttpServer())
+        .post('/personas')
+        .set('Authorization', `Bearer ${await tokenAdmin()}`)
+        .send({
+          rol: RolUsuario.MAESTRO,
+          perfilMaestro: perfilMaestroValido({
+            nombres: `José${sufijo}`,
+            apellidoPaterno: `Bustamante${sufijo}`,
+          }),
+        });
+
+      expect(res.status).toBe(201);
+      const body = res.body as AltaPersonaBody;
+      expect(body.data.email).toMatch(/^[a-z]+\d+@acceso\.cesp\.edu\.mx$/);
+      // "José..." -> "jose..." (sin tilde), primera letra de
+      // "Bustamante..." -> "b".
+      expect(body.data.email?.startsWith(`jose${sufijo.toLowerCase()}b`)).toBe(
+        true,
+      );
+    });
+  });
+
+  /**
    * Extensión (decisión explícita del usuario, 2026-08-12: "que sea en la
    * misma transacción ya que todo se debe cargar a la vez") — contactos de
    * emergencia (1-3, `orden` secuencial derivado de la posición en el array)
@@ -645,13 +817,11 @@ describe('PersonasController — POST /personas (e2e)', () => {
   describe('contactos de emergencia + datos de salud (extensión 2026-08-12)', () => {
     it('alta de alumno con 1 contacto -> 201, contacto insertado con orden 1', async () => {
       mockCreateUserExitoso();
-      const email = `alumno.1contacto.${randomUUID()}@cesp-merida.edu.mx`;
 
       const res = await request(app.getHttpServer())
         .post('/personas')
         .set('Authorization', `Bearer ${await tokenAdmin()}`)
         .send({
-          email,
           rol: RolUsuario.ALUMNO,
           perfilAlumno: perfilAlumnoValido({
             contactos: [contactoAlumnoValido({ nombre: 'Único Contacto' })],
@@ -673,13 +843,11 @@ describe('PersonasController — POST /personas (e2e)', () => {
 
     it('alta de alumno con 3 contactos -> 201, los 3 insertados con orden secuencial 1-2-3', async () => {
       mockCreateUserExitoso();
-      const email = `alumno.3contactos.${randomUUID()}@cesp-merida.edu.mx`;
 
       const res = await request(app.getHttpServer())
         .post('/personas')
         .set('Authorization', `Bearer ${await tokenAdmin()}`)
         .send({
-          email,
           rol: RolUsuario.ALUMNO,
           perfilAlumno: perfilAlumnoValido({
             contactos: [
@@ -715,7 +883,6 @@ describe('PersonasController — POST /personas (e2e)', () => {
         .post('/personas')
         .set('Authorization', `Bearer ${await tokenAdmin()}`)
         .send({
-          email: `alumno.0contactos.${randomUUID()}@cesp-merida.edu.mx`,
           rol: RolUsuario.ALUMNO,
           perfilAlumno: perfilAlumnoValido({ contactos: [] }),
         });
@@ -730,7 +897,6 @@ describe('PersonasController — POST /personas (e2e)', () => {
         .post('/personas')
         .set('Authorization', `Bearer ${await tokenAdmin()}`)
         .send({
-          email: `alumno.4contactos.${randomUUID()}@cesp-merida.edu.mx`,
           rol: RolUsuario.ALUMNO,
           perfilAlumno: perfilAlumnoValido({
             contactos: [
@@ -755,7 +921,6 @@ describe('PersonasController — POST /personas (e2e)', () => {
         .post('/personas')
         .set('Authorization', `Bearer ${await tokenAdmin()}`)
         .send({
-          email: `alumno.sininfomedica.${randomUUID()}@cesp-merida.edu.mx`,
           rol: RolUsuario.ALUMNO,
           perfilAlumno: perfil,
         });
@@ -772,7 +937,6 @@ describe('PersonasController — POST /personas (e2e)', () => {
         .post('/personas')
         .set('Authorization', `Bearer ${await tokenAdmin()}`)
         .send({
-          email: `alumno.infomedica.${randomUUID()}@cesp-merida.edu.mx`,
           rol: RolUsuario.ALUMNO,
           perfilAlumno: perfilAlumnoValido({
             infoMedica: infoMedicaValida({
@@ -806,7 +970,6 @@ describe('PersonasController — POST /personas (e2e)', () => {
         .post('/personas')
         .set('Authorization', `Bearer ${await tokenAdmin()}`)
         .send({
-          email: `maestro.infomedica.${randomUUID()}@cesp-merida.edu.mx`,
           rol: RolUsuario.MAESTRO,
           perfilMaestro: perfilMaestroValido({
             contactos: [
@@ -840,7 +1003,6 @@ describe('PersonasController — POST /personas (e2e)', () => {
         .post('/personas')
         .set('Authorization', `Bearer ${await tokenSuperAdmin()}`)
         .send({
-          email: `administrativo.infomedica.${randomUUID()}@cesp-merida.edu.mx`,
           rol: RolUsuario.ADMINISTRATIVO,
           perfilAdministrativo: {
             ...perfilAdministrativoValido(),

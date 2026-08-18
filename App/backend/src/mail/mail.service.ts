@@ -51,7 +51,25 @@ function enviosHabilitados(): boolean {
 
 export interface EnviarCorreoBienvenidaParams {
   nombreCompleto: string;
+  /**
+   * Login de acceso (`Usuario.email`) — se muestra DENTRO del cuerpo del
+   * correo ("Email de acceso: ..."), NO es necesariamente el destino real
+   * del envío. Desde que el login pasó a ser sintético para los 3 roles
+   * (feature 2026-08-18, `PersonasService.generarLoginAlumno`/
+   * `generarLoginPersonal` — el login ya no tiene buzón real), la persona
+   * necesita ver este valor como TEXTO para saber con qué iniciar sesión,
+   * aunque el correo mismo no llegue a esa dirección.
+   */
   email: string;
+  /**
+   * Destino REAL del envío (feature 2026-08-18) — a dónde Mailgun manda el
+   * mensaje de verdad (`to:`). Antes de este cambio no existía este campo
+   * separado: el correo se mandaba al mismo `email` de arriba (cuando el
+   * login todavía podía ser un correo real capturado por el admin). Ahora
+   * SIEMPRE es `correoPersonal` del perfil (alumno/maestro/administrativo)
+   * — el único correo legible por un humano, para los 3 roles por igual.
+   */
+  correoDestino: string;
   temporaryPassword: string;
 }
 
@@ -124,7 +142,7 @@ export class MailService {
     if (!enviosHabilitados()) {
       console.log(
         '[MailService] Envío deshabilitado (MAILGUN_ENVIOS_HABILITADO=false) — se hubiera enviado a:',
-        params.email,
+        params.correoDestino,
       );
       return;
     }
@@ -142,7 +160,10 @@ export class MailService {
 
     const body = new URLSearchParams({
       from: `SIGE CESP <postmaster@${domain}>`,
-      to: params.email,
+      // Destino real (feature 2026-08-18) — `correoDestino`, NO `params.email`
+      // (ese es el login, mostrado en el CUERPO del mensaje vía
+      // `buildTexto`/`buildHtml`, ver comentario de `EnviarCorreoBienvenidaParams`).
+      to: params.correoDestino,
       subject: 'Bienvenido a SIGE — tu cuenta ya está lista',
       text: this.buildTexto(params, loginUrl),
       html: this.buildHtml(params, loginUrl),

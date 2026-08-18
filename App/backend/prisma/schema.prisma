@@ -267,6 +267,25 @@ model Usuario {
 }
 
 // ============================
+// MATRÍCULA (generación automática — ver PersonasService.altaPersona)
+// ============================
+
+/// Contador atómico, global (todas las sedes comparten la misma secuencia),
+/// continuo durante el año (nunca se reinicia dentro del mismo año) y
+/// reiniciado a 1 cada año nuevo. Una fila por año (`anio` = PK). El
+/// incremento se hace con `upsert` + `{ increment: 1 }` dentro de la misma
+/// transacción de `PersonasService.altaPersona` — Prisma compila esto a un
+/// `INSERT ... ON CONFLICT DO UPDATE` nativo de Postgres (atómico desde
+/// Prisma 4.6+ para Postgres), NO al patrón "leer la última matrícula y
+/// sumarle 1" (con condición de carrera real bajo altas concurrentes).
+model ContadorMatricula {
+  anio         Int @id
+  ultimoNumero Int @default(0) @map("ultimo_numero")
+
+  @@map("contador_matricula")
+}
+
+// ============================
 // ALUMNO
 // ============================
 

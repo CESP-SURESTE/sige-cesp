@@ -103,6 +103,21 @@ export interface UsuarioAltaResult {
 export interface AltaPersonaResult {
   usuario: UsuarioAltaResult;
   temporaryPassword: string;
+  /**
+   * Matrícula generada automáticamente (feature 2026-08-18) — SOLO presente
+   * cuando `rol === ALUMNO`; `undefined` para MAESTRO/ADMINISTRATIVO. Ver
+   * `PersonasService.generarLoginAlumno`.
+   */
+  matricula?: string;
+  /**
+   * Login generado automáticamente (feature 2026-08-18, extensión del mismo
+   * día) — SIEMPRE presente, para los 3 roles. Mismo valor que
+   * `usuario.email` (duplicado a propósito a nivel raíz de `data`, junto a
+   * `matricula`/`temporaryPassword` — mismo nivel que esos 2 campos, para
+   * que el frontend no tenga que ir a buscarlo dentro de `usuario` para el
+   * panel de "resultado del alta" que ya muestra esos otros 2 campos).
+   */
+  email: string;
 }
 
 /**
@@ -137,6 +152,20 @@ export class PersonasService {
     [NivelPermiso.ADMIN]: 1,
     [NivelPermiso.SUPER_ADMIN]: 2,
   };
+
+  /**
+   * Dominio placeholder del login sintético (feature 2026-08-18) — UN SOLO
+   * dominio fijo para los 3 roles (pedido explícito: "no hace falta uno
+   * distinto por rol ni por sede"). No es un buzón real — nadie recibe
+   * correo ahí, es solo el identificador de acceso (`Usuario.email`), así
+   * que el dominio no necesita ser deliverable de verdad. Elegido
+   * `acceso.cesp.edu.mx` (subdominio ficticio de CESP, sin conflicto con el
+   * dominio real que Mailgun use más adelante para el correo de
+   * bienvenida — ver `MailService`) — documentado acá como la decisión
+   * final, no hace falta configurarlo por env var (no es un dato sensible
+   * ni cambia por entorno).
+   */
+  private static readonly DOMINIO_LOGIN = 'acceso.cesp.edu.mx';
 
   constructor(
     private readonly prisma: PrismaService,
@@ -192,26 +221,220 @@ export class PersonasService {
   }
 
   /**
+   * Generación automática de `matricula` (feature 2026-08-18) —
+   * `PerfilAlumno.matricula` dejó de ser texto libre capturado por el admin
+   * (`docs/modelo-datos.md` ya lo documentaba así desde el diseño original:
+   * "generada por el sistema al dar de alta", la implementación real no lo
+   * hacía hasta hoy).
+   *
+   * Formato: `A` + año REAL del servidor (`new Date().getFullYear()`, 4
+   * dígitos — NO `dto.perfilAlumno.periodoIngreso`, que es texto libre sin
+   * validar capturado por el admin) + 5 dígitos secuenciales con ceros a la
+   * izquierda (`A202600001` .. `A202699999`).
+   *
+   * Secuencia GLOBAL (todas las sedes comparten la misma, no hay una por
+   * sede/carrera) y CONTINUA durante el año (nunca se reinicia dentro del
+   * mismo año, solo al cambiar de año). `ContadorMatricula` (`schema.prisma`)
+   * es una tabla contador dedicada con 1 fila por año (`anio` = PK).
+   *
+   * Atomicidad: `this.prisma.contadorMatricula.upsert(...)` con
+   * `update: { ultimoNumero: { increment: 1 } }`. Prisma compila un `upsert`
+   * contra una PK/unique de una sola columna en Postgres a un `INSERT ...
+   * ON CONFLICT DO UPDATE ... RETURNING` nativo (atómico desde Prisma 4.6+
+   * para Postgres/CockroachDB) — es una sola sentencia SQL, atómica por sí
+   * misma sin necesitar un `$transaction` explícito que la envuelva; el lock
+   * de fila que toma esa sentencia durante la resolución del conflicto es lo
+   * que hace que dos altas concurrentes en el mismo año nunca obtengan el
+   * mismo secuencial, incluso bajo el nivel de aislamiento default de
+   * Postgres (READ COMMITTED). Por eso se evita a propósito el patrón "leer
+   * la última matrícula y sumarle 1" (`findFirst` + `+1`) — ese patrón SÍ
+   * tiene condición de carrera real bajo altas simultáneas.
+   *
+   * Se llama ANTES de la transacción principal de `altaPersona` (extensión
+   * 2026-08-18, revisión del diseño original de la matrícula) — a
+   * diferencia de la primera versión de esta feature, que la generaba
+   * DENTRO del `$transaction` que crea `Usuario`/`PerfilAlumno`. El cambio
+   * es necesario porque ahora el login (`Usuario.email`) del alumno se
+   * DERIVA de la matrícula (`generarLoginAlumno` abajo) y Supabase Auth
+   * necesita ese login ANTES de que exista la fila de `Usuario` en
+   * Postgres — la llamada a Supabase Auth ocurre antes del `$transaction`,
+   * así que la matrícula (y el login que depende de ella) también. Esto NO
+   * compromete la atomicidad del contador (sigue siendo una sola sentencia
+   * atómica); lo único que cambia es que, si la transacción principal falla
+   * después y hace rollback, el número ya incrementado queda "saltado" (un
+   * hueco en la secuencia) en vez de revertirse — aceptable, igual que un
+   * `SERIAL` de Postgres: la unicidad importa, no la ausencia total de
+   * huecos.
+   */
+  private async generarMatricula(): Promise<string> {
+    const anio = new Date().getFullYear();
+
+    const contador = await this.prisma.contadorMatricula.upsert({
+      where: { anio },
+      create: { anio, ultimoNumero: 1 },
+      update: { ultimoNumero: { increment: 1 } },
+    });
+
+    const secuencial = contador.ultimoNumero.toString().padStart(5, '0');
+    return `A${anio}${secuencial}`;
+  }
+
+  /**
+   * Login del alumno (feature 2026-08-18, extensión de la matrícula) —
+   * reutiliza la matrícula ya generada: `{matricula en minúsculas}@{dominio}`
+   * (ej. `a202600001@acceso.cesp.edu.mx`). Como la matrícula ya es única por
+   * construcción (`generarMatricula`), el login derivado de ella también lo
+   * es — sin necesidad de una consulta de colisión adicional (a diferencia
+   * de `generarLoginPersonal`, para MAESTRO/ADMINISTRATIVO, que sí necesita
+   * checar colisiones porque no parte de un identificador ya único).
+   */
+  private generarLoginAlumno(matricula: string): string {
+    return `${matricula.toLowerCase()}@${PersonasService.DOMINIO_LOGIN}`;
+  }
+
+  /**
+   * Normaliza texto para usarlo como parte de un login (feature 2026-08-18)
+   * — minúsculas, sin diacríticos (acentos/diéresis, vía `normalize('NFD')`
+   * + strip de marcas combinantes) y solo `[a-z]` (sin espacios, sin
+   * números, sin ningún otro caracter no-ASCII). "José" -> "jose",
+   * "Bustamante-Ríos" -> "bustamanterios".
+   */
+  private normalizarParaLogin(texto: string): string {
+    return texto
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z]/g, '');
+  }
+
+  /**
+   * Login de MAESTRO/ADMINISTRATIVO (feature 2026-08-18) — mismo algoritmo
+   * para ambos roles (pedido explícito): `{primernombre}{primera_letra del
+   * apellidoPaterno}{contador}@{dominio}`. Ej. "Arturo Bustamante" ->
+   * `arturob1@acceso.cesp.edu.mx`; un segundo "Arturo Bustamante" ->
+   * `arturob2@acceso.cesp.edu.mx`.
+   *
+   * `primernombre`: SOLO la primera palabra de `nombres` (si es compuesto,
+   * ej. "José Luis", usa solo "jose").
+   *
+   * El contador SIEMPRE está presente desde el primer registro (nunca
+   * `arturob@...` sin número, aunque hoy sea único) — a propósito: si el
+   * número solo apareciera al haber colisión, el día que llegue un segundo
+   * "Arturo Bustamante" habría que renombrar el login del primero (rompe una
+   * cuenta ya en uso). Con número desde el día uno, nunca hay que tocar una
+   * cuenta existente.
+   *
+   * Implementación: se buscan en `Usuario.email` todos los logins que
+   * empiezan con `base` y terminan en `@{dominio}` (`startsWith`/`endsWith`
+   * de Postgres, sin regex en la query — Prisma/`pg` no necesitan eso para
+   * un prefijo/sufijo simple), y en JS se filtran con una regex exacta
+   * (`^{base}\d+@{dominio}$`) para descartar falsos positivos por prefijo
+   * (ej. `base` "arturob" NO debe hacer match con un login real
+   * "arturobalb1@..." de una persona distinta cuyo nombre normalizado
+   * también empieza con esas letras — la regex exige que después de `base`
+   * solo haya dígitos). El siguiente número es `máximo encontrado + 1`.
+   *
+   * Nota de robustez (no atómico como `generarMatricula`, a propósito no se
+   * le puso una tabla contador dedicada): existe una ventana de carrera
+   * angosta si dos altas con el MISMO nombre+inicial llegan casi al mismo
+   * tiempo — ambas podrían calcular el mismo candidato. El backstop real es
+   * la unicidad de `Usuario.email` (real, `@unique` en Postgres) + la
+   * unicidad de email de Supabase Auth: si dos requests concurrentes
+   * intentan crear el mismo login, Supabase Auth solo deja pasar la primera
+   * (`email_exists`, ya manejado como 409 CONFLICT más abajo) — la segunda
+   * falla con un error claro, no con datos corruptos ni un login duplicado
+   * silencioso. Caso extremadamente improbable en la práctica (alta de
+   * personal por un admin, no un flujo de registro masivo concurrente) —
+   * mismo criterio de prioridad que la Observación 1 de QA — Día 21
+   * (`Carrera.nombre` duplicado): documentado, no bloqueante.
+   */
+  private async generarLoginPersonal(
+    nombres: string,
+    apellidoPaterno: string,
+  ): Promise<string> {
+    const primerNombre = this.normalizarParaLogin(
+      nombres.trim().split(/\s+/)[0] ?? '',
+    );
+    const inicialApellido = this.normalizarParaLogin(apellidoPaterno).charAt(0);
+    const base = `${primerNombre}${inicialApellido}`;
+
+    const candidatos = await this.prisma.usuario.findMany({
+      where: {
+        email: {
+          startsWith: base,
+          endsWith: `@${PersonasService.DOMINIO_LOGIN}`,
+        },
+      },
+      select: { email: true },
+    });
+
+    const patron = new RegExp(
+      `^${base}(\\d+)@${PersonasService.DOMINIO_LOGIN.replace(/\./g, '\\.')}$`,
+    );
+    let maxNumero = 0;
+    for (const { email } of candidatos) {
+      const match = patron.exec(email);
+      if (match) {
+        const numero = Number(match[1]);
+        if (numero > maxNumero) {
+          maxNumero = numero;
+        }
+      }
+    }
+
+    return `${base}${maxNumero + 1}@${PersonasService.DOMINIO_LOGIN}`;
+  }
+
+  /**
+   * Sub-objeto de perfil correspondiente a `dto.rol` — helper compartido por
+   * `nombreCompletoPara`/`correoPersonalPara` (feature 2026-08-18) para no
+   * duplicar el mismo condicional 2 veces. Los 3 DTOs de perfil comparten
+   * `nombres`/`apellidoPaterno`/`apellidoMaterno`/`correoPersonal`
+   * estructuralmente (aunque son clases distintas), por eso TS deja acceder
+   * a esos campos directo sobre el tipo unión sin necesitar un discriminador
+   * adicional.
+   */
+  private perfilPara(dto: CrearPersonaDto) {
+    return dto.rol === RolUsuario.ALUMNO
+      ? dto.perfilAlumno
+      : dto.rol === RolUsuario.MAESTRO
+        ? dto.perfilMaestro
+        : dto.perfilAdministrativo;
+  }
+
+  /**
    * Nombre completo para el saludo del correo de bienvenida (Día 13) — sale
-   * del sub-objeto de perfil correspondiente a `dto.rol`, mismo patrón
-   * condicional que ya usa el resto de este método para ramificar por rol.
-   * `apellidoMaterno` es opcional en los 3 perfiles.
+   * del sub-objeto de perfil correspondiente a `dto.rol`. `apellidoMaterno`
+   * es opcional en los 3 perfiles. El fallback (`perfil` ausente) es
+   * puramente defensivo — el DTO + los pre-checks de `altaPersona` ya
+   * garantizan que el perfil correspondiente al `rol` viene siempre; no
+   * puede usar `dto.email` como antes (feature 2026-08-18: ya no existe ese
+   * campo en el DTO).
    */
   private nombreCompletoPara(dto: CrearPersonaDto): string {
-    const perfil =
-      dto.rol === RolUsuario.ALUMNO
-        ? dto.perfilAlumno
-        : dto.rol === RolUsuario.MAESTRO
-          ? dto.perfilMaestro
-          : dto.perfilAdministrativo;
+    const perfil = this.perfilPara(dto);
 
     if (!perfil) {
-      return dto.email;
+      return 'Usuario SIGE';
     }
 
     return [perfil.nombres, perfil.apellidoPaterno, perfil.apellidoMaterno]
       .filter(Boolean)
       .join(' ');
+  }
+
+  /**
+   * Destino REAL del correo de bienvenida (feature 2026-08-18, cambio de
+   * comportamiento) — `correoPersonal` del perfil correspondiente al `rol`,
+   * para LOS 3 ROLES por igual, sin excepción ni lógica condicional por rol.
+   * Antes se mandaba al login (`dto.email` / el login generado) — ya no
+   * tiene sentido: el login ahora es sintético para los 3 roles (no es un
+   * buzón real), así que `correoPersonal` es el único correo legible por un
+   * humano. El fallback (`perfil` ausente) es igual de defensivo que
+   * `nombreCompletoPara` — no debería ocurrir nunca en la práctica.
+   */
+  private correoPersonalPara(dto: CrearPersonaDto): string | undefined {
+    return this.perfilPara(dto)?.correoPersonal;
   }
 
   /**
@@ -269,16 +492,12 @@ export class PersonasService {
     // la propia DB. No eliminan la necesidad de la compensación de abajo
     // (hay condiciones de carrera y constraints que solo Postgres detecta
     // en el momento del insert), pero cubren el caso común.
-    const emailEnUso = await this.prisma.usuario.findUnique({
-      where: { email: dto.email },
-      select: { id: true },
-    });
-    if (emailEnUso) {
-      throw new ConflictException({
-        error: 'Ya existe un usuario con ese email',
-        code: 'CONFLICT',
-      });
-    }
+    //
+    // Ya NO hay pre-check de `email` duplicado acá (feature 2026-08-18): el
+    // cliente ya no manda `email` — el login se GENERA para los 3 roles
+    // (`generarLoginAlumno`/`generarLoginPersonal`, más abajo, antes de
+    // tocar Supabase Auth), único por construcción (mismo criterio que se
+    // aplicó a `matricula` en la primera mitad de este mismo día).
 
     // Observación B de QA — Día 11: `codigoExterno` también es `@unique` en
     // `Usuario` (nullable) y sí es parte del flujo (`CrearPersonaDto.codigoExterno`,
@@ -326,16 +545,14 @@ export class PersonasService {
         });
       }
 
-      const matriculaEnUso = await this.prisma.perfilAlumno.findUnique({
-        where: { matricula: dto.perfilAlumno.matricula },
-        select: { id: true },
-      });
-      if (matriculaEnUso) {
-        throw new ConflictException({
-          error: 'Ya existe un alumno con esa matrícula',
-          code: 'CONFLICT',
-        });
-      }
+      // Ya NO hay pre-check de matrícula duplicada acá (feature 2026-08-18):
+      // la matrícula ya no la manda el cliente, la genera `generarMatricula`
+      // (ver más abajo, antes de tocar Supabase Auth) vía el contador
+      // atómico `ContadorMatricula` — única por construcción (secuencial,
+      // nunca se repite). El `@unique` de Postgres en
+      // `PerfilAlumno.matricula` queda como defensa mínima contra un bug
+      // futuro en el generador, no como camino esperado (ver catch de
+      // `P2002` más abajo).
     } else if (dto.rol === RolUsuario.MAESTRO && !dto.perfilMaestro) {
       throw new BadRequestException({
         error: 'perfilMaestro es requerido para rol MAESTRO',
@@ -362,6 +579,47 @@ export class PersonasService {
       );
     }
 
+    // --- Generación del login (feature 2026-08-18) — DEBE ocurrir antes de
+    // llamar a Supabase Auth (unas líneas abajo), porque el Admin API
+    // necesita el email de la cuenta ANTES de que exista la fila de
+    // `Usuario` en Postgres. Por eso, a diferencia del resto del alta
+    // (Usuario -> perfil -> contactos -> auditoría, todo dentro de un mismo
+    // `$transaction`), esto pasa afuera de esa transacción — ver el
+    // comentario largo de `generarMatricula` para el porqué no compromete
+    // la atomicidad.
+    //
+    // `matricula` queda `undefined` para MAESTRO/ADMINISTRATIVO (solo
+    // aplica a ALUMNO) — se propaga tal cual hasta la respuesta final.
+    let matricula: string | undefined;
+    let email: string;
+
+    if (dto.rol === RolUsuario.ALUMNO && dto.perfilAlumno) {
+      matricula = await this.generarMatricula();
+      email = this.generarLoginAlumno(matricula);
+    } else if (dto.rol === RolUsuario.MAESTRO && dto.perfilMaestro) {
+      email = await this.generarLoginPersonal(
+        dto.perfilMaestro.nombres,
+        dto.perfilMaestro.apellidoPaterno,
+      );
+    } else if (
+      dto.rol === RolUsuario.ADMINISTRATIVO &&
+      dto.perfilAdministrativo
+    ) {
+      email = await this.generarLoginPersonal(
+        dto.perfilAdministrativo.nombres,
+        dto.perfilAdministrativo.apellidoPaterno,
+      );
+    } else {
+      // Defensivo — nunca debería llegar acá: los pre-checks de arriba ya
+      // garantizan que el perfil correspondiente al `rol` viene siempre
+      // (mismo criterio que el resto de los chequeos defensivos de este
+      // método).
+      throw new BadRequestException({
+        error: 'No fue posible determinar el perfil para generar el login',
+        code: 'VALIDATION_ERROR',
+      });
+    }
+
     const temporaryPassword = generateTemporaryPassword();
     const client = await this.getClient();
 
@@ -372,7 +630,7 @@ export class PersonasService {
     // `CORREO_NO_CONFIRMADO` en `AuthService.login`).
     const { data: authData, error: authError } =
       await client.auth.admin.createUser({
-        email: dto.email,
+        email,
         password: temporaryPassword,
         email_confirm: true,
       });
@@ -414,7 +672,7 @@ export class PersonasService {
         const usuarioCreado = await tx.usuario.create({
           data: {
             id: usuarioId,
-            email: dto.email,
+            email,
             rol: dto.rol,
             sedeId,
             codigoExterno: dto.codigoExterno,
@@ -430,7 +688,11 @@ export class PersonasService {
               apellidoMaterno: dto.perfilAlumno.apellidoMaterno,
               curp: dto.perfilAlumno.curp,
               fechaNacimiento: new Date(dto.perfilAlumno.fechaNacimiento),
-              matricula: dto.perfilAlumno.matricula,
+              // `matricula` ya se generó arriba (antes de Supabase Auth) —
+              // non-null assertion segura: este branch solo corre cuando
+              // `dto.rol === ALUMNO`, que es exactamente la condición bajo
+              // la cual se generó `matricula` unas líneas arriba.
+              matricula: matricula!,
               correoPersonal: dto.perfilAlumno.correoPersonal,
               carreraId: dto.perfilAlumno.carreraId,
               // Una alta nueva siempre arranca INSCRITO — no es un campo
@@ -582,10 +844,24 @@ export class PersonasService {
       // debe impedir que la persona quede dada de alta ni afectar la
       // respuesta HTTP. `temporaryPassword` sigue siendo el fallback real
       // que ya muestra el frontend en pantalla (Días 14/15).
+      //
+      // Cambio de destino (feature 2026-08-18): el correo se manda a
+      // `correoPersonalPara(dto)` (`correoPersonal` del perfil), NO a
+      // `email` (el login sintético, generado, sin buzón real) — para LOS 3
+      // ROLES por igual, sin excepción. `email` se sigue mandando al
+      // `MailService` (parámetro `email` de `EnviarCorreoBienvenidaParams`)
+      // porque el CUERPO del correo necesita mostrar el login real con el
+      // que la persona debe iniciar sesión — solo el DESTINO (`to:` real de
+      // Mailgun) cambia a `correoDestino`.
       try {
         await this.mailService.enviarCorreoBienvenida({
           nombreCompleto: this.nombreCompletoPara(dto),
-          email: dto.email,
+          email,
+          // Non-null assertion segura: los pre-checks de arriba ya
+          // garantizan que el perfil correspondiente al `rol` (y por lo
+          // tanto su `correoPersonal`, requerido en los 3 DTOs de perfil)
+          // viene siempre.
+          correoDestino: this.correoPersonalPara(dto)!,
           temporaryPassword,
         });
       } catch (mailErr) {
@@ -608,6 +884,14 @@ export class PersonasService {
           activo: usuario.activo,
         },
         temporaryPassword,
+        // Presente SOLO si rol === ALUMNO (`matricula` queda `undefined`
+        // para MAESTRO/ADMINISTRATIVO) — mismo contrato ya consumido por el
+        // frontend (formulario de alta de alumno).
+        matricula,
+        // Login generado — SIEMPRE presente, para los 3 roles (feature
+        // 2026-08-18). Mismo valor que `usuario.email`, duplicado a nivel
+        // raíz por claridad (ver doc de `AltaPersonaResult.email`).
+        email,
       };
     } catch (err) {
       // Regla 9 de CLAUDE.md raíz: Postgres y Supabase Auth son dos
@@ -655,7 +939,7 @@ export class PersonasService {
       ) {
         throw new ConflictException({
           error:
-            'Ya existe un registro con ese dato único (email, matrícula o código externo)',
+            'Ya existe un registro con ese dato único (login generado, matrícula generada o código externo)',
           code: 'CONFLICT',
         });
       }
