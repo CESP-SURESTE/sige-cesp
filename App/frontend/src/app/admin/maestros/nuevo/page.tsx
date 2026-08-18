@@ -51,13 +51,14 @@ import { crearMaestro, type AltaPersonaResult } from '@/lib/api/personas';
  * alta, decisión del usuario) — `ContactosFieldset` (sin `mostrarTipo`, ese
  * campo es exclusivo de alumno) e `InfoMedicaFieldset`, ver esos componentes
  * en `components/admin/ui/persona-alta/`.
+ *
+ * `email` (raíz) YA NO se captura en este formulario (2026-08-18) — el
+ * backend genera el login y rechaza `POST /personas` con
+ * `400 VALIDATION_ERROR` si se manda. Se muestra después del alta,
+ * generado, en `ResultadoAltaPersona` (`resultado.usuario.email`).
  */
 
 const maestroSchema = z.object({
-  email: z
-    .string()
-    .min(1, 'El correo es requerido')
-    .email('Formato de correo inválido'),
   codigoExterno: z.string().optional(),
   perfilMaestro: z.object({
     nombres: z.string().min(1, 'Los nombres son requeridos'),
@@ -81,7 +82,6 @@ const maestroSchema = z.object({
 type MaestroFormValues = z.infer<typeof maestroSchema>;
 
 const DEFAULT_VALUES: MaestroFormValues = {
-  email: '',
   codigoExterno: '',
   perfilMaestro: {
     nombres: '',
@@ -125,7 +125,6 @@ export default function NuevoMaestroPage() {
   const mutation = useMutation({
     mutationFn: (values: MaestroFormValues) =>
       crearMaestro({
-        email: values.email,
         codigoExterno: values.codigoExterno || undefined,
         perfilMaestro: {
           ...values.perfilMaestro,
@@ -174,52 +173,64 @@ export default function NuevoMaestroPage() {
   return (
     <AltaPersonaFormShell
       titulo="Alta de maestro"
-      descripcion="Crea la cuenta y el perfil del maestro. La contraseña temporal se muestra al terminar — Día 13 (correo de bienvenida) sigue bloqueado, comunícala tú mismo."
+      descripcion="Crea la cuenta y el perfil del maestro. La contraseña temporal se muestra al terminar — la entrega del correo de bienvenida no está garantizada (dominio en modo de prueba), comunícala tú mismo como respaldo."
       onSubmit={handleSubmit(onSubmit)}
       isPending={mutation.isPending}
     >
-      <CuentaFieldset register={register} errors={errors} disabled={mutation.isPending} />
+      <div className="grid gap-5 xl:grid-cols-3">
+        <div className="flex flex-col gap-5">
+          <CuentaFieldset register={register} errors={errors} disabled={mutation.isPending} />
 
-      <DatosPersonalesFieldset
-        register={register}
-        errors={errors}
-        disabled={mutation.isPending}
-        prefix="perfilMaestro"
-        curpOpcional={false}
-        telefonoOpcional={false}
-      />
-
-      <fieldset className="space-y-4">
-        <legend className="text-sm font-semibold text-slate">Datos laborales</legend>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label htmlFor="cedulaProfesional" className={LABEL_CLASS}>
-              Cédula profesional (opcional)
-            </label>
-            <input
-              id="cedulaProfesional"
-              type="text"
-              disabled={mutation.isPending}
-              className={INPUT_CLASS}
-              {...register('perfilMaestro.cedulaProfesional')}
-            />
-            <FieldError message={errors.perfilMaestro?.cedulaProfesional?.message} />
-          </div>
-          <div>
-            <label htmlFor="fechaContratacion" className={LABEL_CLASS}>
-              Fecha de contratación
-            </label>
-            <input
-              id="fechaContratacion"
-              type="date"
-              disabled={mutation.isPending}
-              className={INPUT_CLASS}
-              {...register('perfilMaestro.fechaContratacion')}
-            />
-            <FieldError message={errors.perfilMaestro?.fechaContratacion?.message} />
-          </div>
+          <InfoMedicaFieldset
+            register={register}
+            errors={errors}
+            disabled={mutation.isPending}
+            prefix="perfilMaestro"
+            tieneCondicionMedica={Boolean(tieneCondicionMedica)}
+          />
         </div>
-      </fieldset>
+
+        <DatosPersonalesFieldset
+          register={register}
+          errors={errors}
+          disabled={mutation.isPending}
+          prefix="perfilMaestro"
+          curpOpcional={false}
+          telefonoOpcional={false}
+        />
+
+        <fieldset className="space-y-3 rounded-lg border border-mist bg-bone/50 p-4">
+          <legend className="text-sm font-semibold text-slate">Datos laborales</legend>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label htmlFor="cedulaProfesional" className={LABEL_CLASS}>
+                Cédula profesional (opcional)
+              </label>
+              <input
+                id="cedulaProfesional"
+                type="text"
+                disabled={mutation.isPending}
+                className={INPUT_CLASS}
+                {...register('perfilMaestro.cedulaProfesional')}
+              />
+              <FieldError message={errors.perfilMaestro?.cedulaProfesional?.message} />
+            </div>
+            <div>
+              <label htmlFor="fechaContratacion" className={LABEL_CLASS}>
+                Fecha de contratación
+              </label>
+              <input
+                id="fechaContratacion"
+                type="date"
+                disabled={mutation.isPending}
+                className={INPUT_CLASS}
+                {...register('perfilMaestro.fechaContratacion')}
+              />
+              <FieldError message={errors.perfilMaestro?.fechaContratacion?.message} />
+            </div>
+          </div>
+        </fieldset>
+      </div>
 
       <ContactosFieldset
         control={control}
@@ -227,14 +238,6 @@ export default function NuevoMaestroPage() {
         errors={errors}
         disabled={mutation.isPending}
         prefix="perfilMaestro"
-      />
-
-      <InfoMedicaFieldset
-        register={register}
-        errors={errors}
-        disabled={mutation.isPending}
-        prefix="perfilMaestro"
-        tieneCondicionMedica={Boolean(tieneCondicionMedica)}
       />
     </AltaPersonaFormShell>
   );

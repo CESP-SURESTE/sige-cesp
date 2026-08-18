@@ -54,7 +54,7 @@ export function DatosPersonalesFieldset<
   const path = (campo: keyof PerfilComunFields) => `${prefix}.${campo}` as Path<TInput>;
 
   return (
-    <fieldset className="space-y-4">
+    <fieldset className="space-y-3 rounded-lg border border-mist bg-bone/50 p-4">
       <legend className="text-sm font-semibold text-slate">Datos personales</legend>
       <div className="grid gap-4 sm:grid-cols-2">
         <div>

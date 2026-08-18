@@ -64,13 +64,15 @@ import { crearAlumno, type AltaPersonaResult } from '@/lib/api/personas';
  * `tratamientoAdicional`) solo se muestran (y se envían) si
  * `tieneCondicionMedica` está marcado — criterio de UX documentado en
  * `InfoMedicaFieldset`.
+ *
+ * `email` (raíz) y `perfilAlumno.matricula` (2026-08-18) YA NO se capturan
+ * en este formulario — el backend los genera y rechaza `POST /personas` con
+ * `400 VALIDATION_ERROR` si se mandan. Ambos se muestran después del alta,
+ * generados, en `ResultadoAltaPersona` (`resultado.usuario.email` /
+ * `resultado.matricula`).
  */
 
 const alumnoSchema = z.object({
-  email: z
-    .string()
-    .min(1, 'El correo es requerido')
-    .email('Formato de correo inválido'),
   codigoExterno: z.string().optional(),
   perfilAlumno: z.object({
     nombres: z.string().min(1, 'Los nombres son requeridos'),
@@ -78,7 +80,6 @@ const alumnoSchema = z.object({
     apellidoMaterno: z.string().optional(),
     curp: z.string().optional(),
     fechaNacimiento: z.string().min(1, 'La fecha de nacimiento es requerida'),
-    matricula: z.string().min(1, 'La matrícula es requerida'),
     correoPersonal: z
       .string()
       .min(1, 'El correo personal es requerido')
@@ -109,7 +110,6 @@ type AlumnoFormInput = z.input<typeof alumnoSchema>;
 type AlumnoFormOutput = z.output<typeof alumnoSchema>;
 
 const DEFAULT_VALUES: AlumnoFormInput = {
-  email: '',
   codigoExterno: '',
   perfilAlumno: {
     nombres: '',
@@ -117,7 +117,6 @@ const DEFAULT_VALUES: AlumnoFormInput = {
     apellidoMaterno: '',
     curp: '',
     fechaNacimiento: '',
-    matricula: '',
     correoPersonal: '',
     carreraId: '',
     periodoIngreso: '',
@@ -176,7 +175,6 @@ export default function NuevoAlumnoPage() {
   const mutation = useMutation({
     mutationFn: (values: AlumnoFormOutput) =>
       crearAlumno({
-        email: values.email,
         codigoExterno: values.codigoExterno || undefined,
         perfilAlumno: {
           ...values.perfilAlumno,
@@ -226,105 +224,104 @@ export default function NuevoAlumnoPage() {
   return (
     <AltaPersonaFormShell
       titulo="Alta de alumno"
-      descripcion="Crea la cuenta y el perfil del alumno. La contraseña temporal se muestra al terminar — Día 13 (correo de bienvenida) sigue bloqueado, comunícala tú mismo."
+      descripcion="Crea la cuenta y el perfil del alumno. La contraseña temporal se muestra al terminar — la entrega del correo de bienvenida no está garantizada (dominio en modo de prueba), comunícala tú mismo como respaldo."
       onSubmit={handleSubmit(onSubmit)}
       isPending={mutation.isPending}
     >
-      <CuentaFieldset register={register} errors={errors} disabled={mutation.isPending} />
+      <div className="grid gap-5 xl:grid-cols-3">
+        <div className="flex flex-col gap-5">
+          <CuentaFieldset register={register} errors={errors} disabled={mutation.isPending} />
 
-      <DatosPersonalesFieldset
-        register={register}
-        errors={errors}
-        disabled={mutation.isPending}
-        prefix="perfilAlumno"
-      />
-
-      <fieldset className="space-y-4">
-        <legend className="text-sm font-semibold text-slate">Datos académicos</legend>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label htmlFor="matricula" className={LABEL_CLASS}>
-              Matrícula
-            </label>
-            <input
-              id="matricula"
-              type="text"
-              disabled={mutation.isPending}
-              className={INPUT_CLASS}
-              {...register('perfilAlumno.matricula')}
-            />
-            <FieldError message={errors.perfilAlumno?.matricula?.message} />
-          </div>
-          <div>
-            <label htmlFor="fechaNacimiento" className={LABEL_CLASS}>
-              Fecha de nacimiento
-            </label>
-            <input
-              id="fechaNacimiento"
-              type="date"
-              disabled={mutation.isPending}
-              className={INPUT_CLASS}
-              {...register('perfilAlumno.fechaNacimiento')}
-            />
-            <FieldError message={errors.perfilAlumno?.fechaNacimiento?.message} />
-          </div>
-          <div>
-            <label htmlFor="carreraId" className={LABEL_CLASS}>
-              Carrera
-            </label>
-            <select
-              id="carreraId"
-              disabled={mutation.isPending || carrerasQuery.isLoading}
-              className={INPUT_CLASS}
-              {...register('perfilAlumno.carreraId')}
-            >
-              <option value="">
-                {carrerasQuery.isLoading ? 'Cargando carreras…' : 'Selecciona una carrera'}
-              </option>
-              {carrerasQuery.data?.map((carrera) => (
-                <option key={carrera.id} value={carrera.id}>
-                  {carrera.clave} — {carrera.nombre}
-                </option>
-              ))}
-            </select>
-            {carrerasQuery.isError && (
-              <p className="mt-1 text-xs text-crimson">
-                No se pudieron cargar las carreras. Intenta de nuevo más tarde.
-              </p>
-            )}
-            <FieldError message={errors.perfilAlumno?.carreraId?.message} />
-          </div>
-          <div>
-            <label htmlFor="periodoIngreso" className={LABEL_CLASS}>
-              Periodo de ingreso
-            </label>
-            <input
-              id="periodoIngreso"
-              type="text"
-              placeholder="ej. 2026-2"
-              disabled={mutation.isPending}
-              className={INPUT_CLASS}
-              {...register('perfilAlumno.periodoIngreso')}
-            />
-            <FieldError message={errors.perfilAlumno?.periodoIngreso?.message} />
-          </div>
-          <div>
-            <label htmlFor="semestreActual" className={LABEL_CLASS}>
-              Semestre actual
-            </label>
-            <input
-              id="semestreActual"
-              type="number"
-              min={1}
-              step={1}
-              disabled={mutation.isPending}
-              className={INPUT_CLASS}
-              {...register('perfilAlumno.semestreActual')}
-            />
-            <FieldError message={errors.perfilAlumno?.semestreActual?.message} />
-          </div>
+          <InfoMedicaFieldset
+            register={register}
+            errors={errors}
+            disabled={mutation.isPending}
+            prefix="perfilAlumno"
+            tieneCondicionMedica={Boolean(tieneCondicionMedica)}
+          />
         </div>
-      </fieldset>
+
+        <DatosPersonalesFieldset
+          register={register}
+          errors={errors}
+          disabled={mutation.isPending}
+          prefix="perfilAlumno"
+        />
+
+        <fieldset className="space-y-3 rounded-lg border border-mist bg-bone/50 p-4">
+          <legend className="text-sm font-semibold text-slate">Datos académicos</legend>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label htmlFor="fechaNacimiento" className={LABEL_CLASS}>
+                Fecha de nacimiento
+              </label>
+              <input
+                id="fechaNacimiento"
+                type="date"
+                disabled={mutation.isPending}
+                className={INPUT_CLASS}
+                {...register('perfilAlumno.fechaNacimiento')}
+              />
+              <FieldError message={errors.perfilAlumno?.fechaNacimiento?.message} />
+            </div>
+            <div>
+              <label htmlFor="carreraId" className={LABEL_CLASS}>
+                Carrera
+              </label>
+              <select
+                id="carreraId"
+                disabled={mutation.isPending || carrerasQuery.isLoading}
+                className={INPUT_CLASS}
+                {...register('perfilAlumno.carreraId')}
+              >
+                <option value="">
+                  {carrerasQuery.isLoading ? 'Cargando carreras…' : 'Selecciona una carrera'}
+                </option>
+                {carrerasQuery.data?.map((carrera) => (
+                  <option key={carrera.id} value={carrera.id}>
+                    {carrera.clave} — {carrera.nombre}
+                  </option>
+                ))}
+              </select>
+              {carrerasQuery.isError && (
+                <p className="mt-1 text-xs text-crimson">
+                  No se pudieron cargar las carreras. Intenta de nuevo más tarde.
+                </p>
+              )}
+              <FieldError message={errors.perfilAlumno?.carreraId?.message} />
+            </div>
+            <div>
+              <label htmlFor="periodoIngreso" className={LABEL_CLASS}>
+                Periodo de ingreso
+              </label>
+              <input
+                id="periodoIngreso"
+                type="text"
+                placeholder="ej. 2026-2"
+                disabled={mutation.isPending}
+                className={INPUT_CLASS}
+                {...register('perfilAlumno.periodoIngreso')}
+              />
+              <FieldError message={errors.perfilAlumno?.periodoIngreso?.message} />
+            </div>
+            <div>
+              <label htmlFor="semestreActual" className={LABEL_CLASS}>
+                Semestre actual
+              </label>
+              <input
+                id="semestreActual"
+                type="number"
+                min={1}
+                step={1}
+                disabled={mutation.isPending}
+                className={INPUT_CLASS}
+                {...register('perfilAlumno.semestreActual')}
+              />
+              <FieldError message={errors.perfilAlumno?.semestreActual?.message} />
+            </div>
+          </div>
+        </fieldset>
+      </div>
 
       <ContactosFieldset
         control={control}
@@ -333,14 +330,6 @@ export default function NuevoAlumnoPage() {
         disabled={mutation.isPending}
         prefix="perfilAlumno"
         mostrarTipo
-      />
-
-      <InfoMedicaFieldset
-        register={register}
-        errors={errors}
-        disabled={mutation.isPending}
-        prefix="perfilAlumno"
-        tieneCondicionMedica={Boolean(tieneCondicionMedica)}
       />
     </AltaPersonaFormShell>
   );

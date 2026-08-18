@@ -96,7 +96,7 @@ export function ContactosFieldset<
     `${prefix}.contactos.${index}.${campo}` as Path<TInput>;
 
   return (
-    <fieldset className="space-y-4">
+    <fieldset className="space-y-3 rounded-lg border border-mist bg-bone/50 p-4">
       <legend className="text-sm font-semibold text-slate">
         Contactos de emergencia
       </legend>
@@ -105,7 +105,7 @@ export function ContactosFieldset<
       </p>
       <FieldError message={arrayErrorMessage} />
 
-      <div className="space-y-4">
+      <div className="space-y-3">
         {fields.map((rawField, index) => {
           const field = rawField as unknown as ContactoFormValues & {
             id: string;
@@ -113,7 +113,7 @@ export function ContactosFieldset<
           const fieldErrors = contactosItemErrors?.[index];
 
           return (
-            <div key={field.id} className="rounded-lg border border-mist p-4">
+            <div key={field.id} className="rounded-lg border border-mist bg-white p-4">
               <div className="flex items-center justify-between">
                 <p className="text-xs font-medium text-slate/60">
                   Contacto {index + 1}
@@ -128,7 +128,7 @@ export function ContactosFieldset<
                 </button>
               </div>
 
-              <div className="mt-3 grid gap-4 sm:grid-cols-2">
+              <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
                 <div>
                   <label
                     htmlFor={`${prefix}-contactos-${index}-nombre`}

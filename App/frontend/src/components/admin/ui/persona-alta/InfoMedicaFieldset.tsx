@@ -63,7 +63,7 @@ export function InfoMedicaFieldset<
     `${prefix}.infoMedica.${campo}` as Path<TInput>;
 
   return (
-    <fieldset className="space-y-4">
+    <fieldset className="space-y-3 rounded-lg border border-mist bg-bone/50 p-4">
       <legend className="text-sm font-semibold text-slate">Datos de salud</legend>
 
       <div>

@@ -42,8 +42,13 @@ import { crearAdministrativo, type AltaPersonaResult } from '@/lib/api/personas'
  * (`CONFLICT`/`VALIDATION_ERROR`/`ROL_NO_AUTORIZADO`) ya cubiertos por
  * `resolverMensajeError`.
  *
- * Día 13 (emails de bienvenida) sigue BLOQUEADO — la `temporaryPassword` se
- * muestra en pantalla tras el alta, igual que en alumno/maestro.
+ * `email` (raíz) YA NO se captura en este formulario (2026-08-18) — el
+ * backend lo genera (nombre+inicial+contador@acceso.cesp.edu.mx) y rechaza
+ * `POST /personas` con `400 VALIDATION_ERROR` si se manda. Se muestra
+ * después del alta, generado, en `ResultadoAltaPersona`
+ * (`resultado.usuario.email`) — igual que en alumno/maestro. El correo de
+ * bienvenida (Día 13, desbloqueado) va a `correoPersonal`, no a este login
+ * sintético.
  *
  * Sin campo `estatus` — el backend fuerza siempre `ACTIVO` en la creación
  * (corrección de QA manual, 2026-08-12, ver nota en `crear-persona.dto.ts`);
@@ -72,10 +77,6 @@ const MENSAJES_ERROR_ADMINISTRATIVO: Record<string, string> = {
 };
 
 const administrativoSchema = z.object({
-  email: z
-    .string()
-    .min(1, 'El correo es requerido')
-    .email('Formato de correo inválido'),
   codigoExterno: z.string().optional(),
   perfilAdministrativo: z.object({
     nombres: z.string().min(1, 'Los nombres son requeridos'),
@@ -102,7 +103,6 @@ const administrativoSchema = z.object({
 type AdministrativoFormValues = z.infer<typeof administrativoSchema>;
 
 const DEFAULT_VALUES: AdministrativoFormValues = {
-  email: '',
   codigoExterno: '',
   perfilAdministrativo: {
     nombres: '',
@@ -147,7 +147,6 @@ export default function NuevoAdministrativoPage() {
   const mutation = useMutation({
     mutationFn: (values: AdministrativoFormValues) =>
       crearAdministrativo({
-        email: values.email,
         codigoExterno: values.codigoExterno || undefined,
         perfilAdministrativo: {
           ...values.perfilAdministrativo,
@@ -200,81 +199,93 @@ export default function NuevoAdministrativoPage() {
   return (
     <AltaPersonaFormShell
       titulo="Alta de administrativo"
-      descripcion="Crea la cuenta y el perfil del administrativo. La contraseña temporal se muestra al terminar — Día 13 (correo de bienvenida) sigue bloqueado, comunícala tú mismo."
+      descripcion="Crea la cuenta y el perfil del administrativo. La contraseña temporal se muestra al terminar — la entrega del correo de bienvenida no está garantizada (dominio en modo de prueba), comunícala tú mismo como respaldo."
       onSubmit={handleSubmit(onSubmit)}
       isPending={mutation.isPending}
     >
-      <CuentaFieldset register={register} errors={errors} disabled={mutation.isPending} />
+      <div className="grid gap-5 xl:grid-cols-3">
+        <div className="flex flex-col gap-5">
+          <CuentaFieldset register={register} errors={errors} disabled={mutation.isPending} />
 
-      <DatosPersonalesFieldset
-        register={register}
-        errors={errors}
-        disabled={mutation.isPending}
-        prefix="perfilAdministrativo"
-        curpOpcional={false}
-        telefonoOpcional={false}
-      />
-
-      <fieldset className="space-y-4">
-        <legend className="text-sm font-semibold text-slate">Datos laborales</legend>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label htmlFor="fechaContratacion" className={LABEL_CLASS}>
-              Fecha de contratación
-            </label>
-            <input
-              id="fechaContratacion"
-              type="date"
-              disabled={mutation.isPending}
-              className={INPUT_CLASS}
-              {...register('perfilAdministrativo.fechaContratacion')}
-            />
-            <FieldError message={errors.perfilAdministrativo?.fechaContratacion?.message} />
-          </div>
-          <div>
-            <label htmlFor="puesto" className={LABEL_CLASS}>
-              Puesto
-            </label>
-            <select
-              id="puesto"
-              disabled={mutation.isPending}
-              className={INPUT_CLASS}
-              {...register('perfilAdministrativo.puesto')}
-            >
-              <option value="">Selecciona un puesto</option>
-              {PUESTO_OPCIONES.map((valor) => (
-                <option key={valor} value={valor}>
-                  {valor}
-                </option>
-              ))}
-            </select>
-            <FieldError message={errors.perfilAdministrativo?.puesto?.message} />
-          </div>
-          <div>
-            <label htmlFor="nivelPermiso" className={LABEL_CLASS}>
-              Nivel de permiso (opcional, por defecto AUXILIAR)
-            </label>
-            <select
-              id="nivelPermiso"
-              disabled={mutation.isPending}
-              className={INPUT_CLASS}
-              {...register('perfilAdministrativo.nivelPermiso')}
-            >
-              <option value="">AUXILIAR (por defecto)</option>
-              {NIVEL_PERMISO_OPCIONES.map((valor) => (
-                <option key={valor} value={valor}>
-                  {valor}
-                </option>
-              ))}
-            </select>
-            <p className="mt-1 text-xs text-slate/60">
-              Solo puedes asignar un nivel igual o menor al tuyo — el backend rechaza la
-              solicitud con <code>NIVEL_PERMISO_INSUFICIENTE</code> si intentas asignar más.
-            </p>
-            <FieldError message={errors.perfilAdministrativo?.nivelPermiso?.message} />
-          </div>
+          <InfoMedicaFieldset
+            register={register}
+            errors={errors}
+            disabled={mutation.isPending}
+            prefix="perfilAdministrativo"
+            tieneCondicionMedica={Boolean(tieneCondicionMedica)}
+          />
         </div>
-      </fieldset>
+
+        <DatosPersonalesFieldset
+          register={register}
+          errors={errors}
+          disabled={mutation.isPending}
+          prefix="perfilAdministrativo"
+          curpOpcional={false}
+          telefonoOpcional={false}
+        />
+
+        <fieldset className="space-y-3 rounded-lg border border-mist bg-bone/50 p-4">
+          <legend className="text-sm font-semibold text-slate">Datos laborales</legend>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label htmlFor="fechaContratacion" className={LABEL_CLASS}>
+                Fecha de contratación
+              </label>
+              <input
+                id="fechaContratacion"
+                type="date"
+                disabled={mutation.isPending}
+                className={INPUT_CLASS}
+                {...register('perfilAdministrativo.fechaContratacion')}
+              />
+              <FieldError message={errors.perfilAdministrativo?.fechaContratacion?.message} />
+            </div>
+            <div>
+              <label htmlFor="puesto" className={LABEL_CLASS}>
+                Puesto
+              </label>
+              <select
+                id="puesto"
+                disabled={mutation.isPending}
+                className={INPUT_CLASS}
+                {...register('perfilAdministrativo.puesto')}
+              >
+                <option value="">Selecciona un puesto</option>
+                {PUESTO_OPCIONES.map((valor) => (
+                  <option key={valor} value={valor}>
+                    {valor}
+                  </option>
+                ))}
+              </select>
+              <FieldError message={errors.perfilAdministrativo?.puesto?.message} />
+            </div>
+            <div className="sm:col-span-2">
+              <label htmlFor="nivelPermiso" className={LABEL_CLASS}>
+                Nivel de permiso (opcional, por defecto AUXILIAR)
+              </label>
+              <select
+                id="nivelPermiso"
+                disabled={mutation.isPending}
+                className={INPUT_CLASS}
+                {...register('perfilAdministrativo.nivelPermiso')}
+              >
+                <option value="">AUXILIAR (por defecto)</option>
+                {NIVEL_PERMISO_OPCIONES.map((valor) => (
+                  <option key={valor} value={valor}>
+                    {valor}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-slate/60">
+                Solo puedes asignar un nivel igual o menor al tuyo — el backend rechaza la
+                solicitud con <code>NIVEL_PERMISO_INSUFICIENTE</code> si intentas asignar más.
+              </p>
+              <FieldError message={errors.perfilAdministrativo?.nivelPermiso?.message} />
+            </div>
+          </div>
+        </fieldset>
+      </div>
 
       <ContactosFieldset
         control={control}
@@ -282,14 +293,6 @@ export default function NuevoAdministrativoPage() {
         errors={errors}
         disabled={mutation.isPending}
         prefix="perfilAdministrativo"
-      />
-
-      <InfoMedicaFieldset
-        register={register}
-        errors={errors}
-        disabled={mutation.isPending}
-        prefix="perfilAdministrativo"
-        tieneCondicionMedica={Boolean(tieneCondicionMedica)}
       />
     </AltaPersonaFormShell>
   );

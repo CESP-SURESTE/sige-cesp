@@ -22,6 +22,13 @@ import { apiFetchAuth, apiFetchAuthPaginado, type ApiListaPaginada } from './htt
  * `ContactoAlumnoDto`/`InfoMedicaDto` (`crear-persona.dto.ts`). `orden` NO se
  * manda (regla 1 de `CLAUDE.md` raíz): se deriva de la posición del contacto
  * en el array, el backend lo asigna.
+ *
+ * `email` (raíz de `CrearAlumnoInput`/`CrearMaestroInput`/
+ * `CrearAdministrativoInput`) y `perfilAlumno.matricula` (2026-08-18) YA NO
+ * los captura el cliente — el backend los genera y responde `400
+ * VALIDATION_ERROR` (`forbidNonWhitelisted`) si se mandan. El login generado
+ * viaja de vuelta en `AltaPersonaResult.usuario.email`; la matrícula
+ * generada (solo alumno) en `AltaPersonaResult.matricula`.
  */
 export interface ContactoInput {
   nombre: string;
@@ -58,7 +65,6 @@ export interface PerfilAlumnoInput {
   curp?: string;
   /** ISO date (`YYYY-MM-DD`). */
   fechaNacimiento: string;
-  matricula: string;
   correoPersonal: string;
   carreraId: string;
   periodoIngreso: string;
@@ -70,7 +76,6 @@ export interface PerfilAlumnoInput {
 }
 
 export interface CrearAlumnoInput {
-  email: string;
   codigoExterno?: string;
   perfilAlumno: PerfilAlumnoInput;
 }
@@ -103,7 +108,6 @@ export interface PerfilMaestroInput {
 }
 
 export interface CrearMaestroInput {
-  email: string;
   codigoExterno?: string;
   perfilMaestro: PerfilMaestroInput;
 }
@@ -131,7 +135,6 @@ export interface PerfilAdministrativoInput {
 }
 
 export interface CrearAdministrativoInput {
-  email: string;
   codigoExterno?: string;
   perfilAdministrativo: PerfilAdministrativoInput;
 }
@@ -149,6 +152,8 @@ export interface UsuarioAltaResult {
 export interface AltaPersonaResult {
   usuario: UsuarioAltaResult;
   temporaryPassword: string;
+  /** Solo presente si `rol === 'ALUMNO'` — matrícula generada por el backend. */
+  matricula?: string;
 }
 
 export function crearAlumno(
