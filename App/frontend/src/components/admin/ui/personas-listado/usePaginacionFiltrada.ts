@@ -9,8 +9,11 @@ import { useCallback, useState } from 'react';
  * `app/admin/maestros/page.tsx` — cualquier cambio en `buscar` (debounced,
  * ver `useBuscarDebounced`) o en `estatus` resetea `page` a 1 (evita quedar
  * "atrapado" en una página que ya no existe tras filtrar/buscar de nuevo).
- * `limit` fijo en 20 (mismo default que el backend, `ListarPersonasQueryDto`)
- * — sin selector de tamaño de página, fuera de alcance ("paginación simple").
+ * `limit` fijo en 10 (bajado de 20 el 2026-08-18, a pedido explícito del
+ * usuario — evitar downscroll innecesario dentro de la tarjeta; el backend
+ * sigue defaulteando a 20 si no se manda `limit`, `ListarPersonasQueryDto`,
+ * pero el frontend siempre lo manda explícito) — sin selector de tamaño de
+ * página, fuera de alcance ("paginación simple").
  *
  * El reset de `page` por cambio de `buscar` se hace con el patrón "ajustar
  * estado durante el render" (React docs, "Adjusting some state when a prop
@@ -18,7 +21,7 @@ import { useCallback, useState } from 'react';
  * `eslint-plugin-react-hooks` (`react-hooks/set-state-in-effect`) marca como
  * error al llamar `setState` síncrono dentro de un efecto.
  */
-export function usePaginacionFiltrada(buscar: string, limit = 20) {
+export function usePaginacionFiltrada(buscar: string, limit = 10) {
   const [estatus, setEstatusState] = useState('');
   const [page, setPage] = useState(1);
   const [prevBuscar, setPrevBuscar] = useState(buscar);
