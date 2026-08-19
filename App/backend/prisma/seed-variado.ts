@@ -223,16 +223,17 @@ async function sembrarVariadoSede(config: SedeVariadoConfig, sedeIndice: number)
     const genero: 'H' | 'M' = i % 2 === 0 ? 'M' : 'H';
     const p = generarPersona(sedeIndice, i, genero);
     const matricula = `${config.matriculaPrefijo}-2026-${String(9 + i).padStart(4, '0')}`;
-    const nombreEmail = p.nombres.toLowerCase().split(' ')[0];
+    const nombreEmail = quitarAcentos(p.nombres.toLowerCase().split(' ')[0]);
+    const apellidoEmail = quitarAcentos(p.apellidoPaterno.toLowerCase());
     await seedAlumno({
-      email: `${nombreEmail}.${p.apellidoPaterno.toLowerCase()}${i}@${config.dominio}`,
+      email: `${nombreEmail}.${apellidoEmail}${i}@${config.dominio}`,
       sedeId: sede.id,
       nombres: p.nombres,
       apellidoPaterno: p.apellidoPaterno,
       apellidoMaterno: p.apellidoMaterno,
       curp: p.curp,
       matricula,
-      correoPersonal: `${nombreEmail}.${p.apellidoPaterno.toLowerCase()}${i}.personal@example.com`,
+      correoPersonal: `${nombreEmail}.${apellidoEmail}${i}.personal@example.com`,
       fechaNacimiento: new Date(p.anioNacimiento, i % 12, ((i * 3) % 27) + 1),
       carreraId: todasLasCarreras[i % todasLasCarreras.length].id,
       contacto: p.contacto,
@@ -249,16 +250,17 @@ async function sembrarVariadoSede(config: SedeVariadoConfig, sedeIndice: number)
     const indiceGlobal = 100 + i;
     const genero: 'H' | 'M' = i % 2 === 0 ? 'H' : 'M';
     const p = generarPersona(sedeIndice, indiceGlobal, genero);
-    const nombreEmail = p.nombres.toLowerCase().split(' ')[0];
+    const nombreEmail = quitarAcentos(p.nombres.toLowerCase().split(' ')[0]);
+    const apellidoEmail = quitarAcentos(p.apellidoPaterno.toLowerCase());
     await seedMaestro({
-      email: `${nombreEmail}.${p.apellidoPaterno.toLowerCase()}${i}@${config.dominio}`,
+      email: `${nombreEmail}.${apellidoEmail}${i}@${config.dominio}`,
       sedeId: sede.id,
       nombres: p.nombres,
       apellidoPaterno: p.apellidoPaterno,
       apellidoMaterno: p.apellidoMaterno,
       curp: p.curp,
       cedulaProfesional: `${1000000 + sedeIndice * 10000 + i}`,
-      correoPersonal: `${nombreEmail}.${p.apellidoPaterno.toLowerCase()}${i}.personal@example.com`,
+      correoPersonal: `${nombreEmail}.${apellidoEmail}${i}.personal@example.com`,
       telefono: p.telefono,
       contacto: p.contacto,
       estatus: distribucionMaestros[i],
@@ -274,15 +276,16 @@ async function sembrarVariadoSede(config: SedeVariadoConfig, sedeIndice: number)
     const indiceGlobal = 200 + i;
     const genero: 'H' | 'M' = i % 2 === 0 ? 'M' : 'H';
     const p = generarPersona(sedeIndice, indiceGlobal, genero);
-    const nombreEmail = p.nombres.toLowerCase().split(' ')[0];
+    const nombreEmail = quitarAcentos(p.nombres.toLowerCase().split(' ')[0]);
+    const apellidoEmail = quitarAcentos(p.apellidoPaterno.toLowerCase());
     await seedAdministrativo({
-      email: `${nombreEmail}.${p.apellidoPaterno.toLowerCase()}${i}@${config.dominio}`,
+      email: `${nombreEmail}.${apellidoEmail}${i}@${config.dominio}`,
       sedeId: sede.id,
       nombres: p.nombres,
       apellidoPaterno: p.apellidoPaterno,
       apellidoMaterno: p.apellidoMaterno,
       curp: p.curp,
-      correoPersonal: `${nombreEmail}.${p.apellidoPaterno.toLowerCase()}${i}.personal@example.com`,
+      correoPersonal: `${nombreEmail}.${apellidoEmail}${i}.personal@example.com`,
       telefono: p.telefono,
       puesto: PUESTOS_VARIADOS[i],
       nivelPermiso: NivelPermiso.AUXILIAR,
