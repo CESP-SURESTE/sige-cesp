@@ -7,9 +7,13 @@ import { INPUT_CLASS } from './estilos';
  * Reemplazo de `<select>` nativo con `Listbox` de Headless UI (v2.2.10) —
  * el panel de opciones del `<select>` del navegador es un overlay del SO
  * que no respeta el `border-radius`/layout de las tarjetas y se sale del
- * contenedor. Headless respecto a `react-hook-form`: NO usa `register()`,
- * recibe `value`/`onChange`/`onBlur` como props controlados — cada
- * formulario lo integra vía `Controller` de RHF.
+ * contenedor. Componente controlado puro (`value`/`onChange`/`onBlur` como
+ * props, NO usa `register()`) — desacoplado de cualquier librería de forms.
+ * Los 4 formularios de alta lo integran vía `Controller` de `react-hook-form`
+ * (ver `ContactosFieldset.tsx`); `admin/carreras/page.tsx` y
+ * `BuscadorFiltro.tsx` (Día 22, migración de los últimos `<select>` nativos
+ * del árbol admin) lo conectan directo a `useState`, sin RHF — ambos casos
+ * funcionan porque el componente no depende de ninguno de los dos.
  *
  * API real instalada (v2.2.10) difiere del `Listbox.Button`/`Listbox.Options`
  * con notación de punto sugerida originalmente: esa notación sigue existiendo
