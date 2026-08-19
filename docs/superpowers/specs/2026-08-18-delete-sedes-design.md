@@ -152,6 +152,18 @@ cuentas huérfanas (`sedeId: null`) silenciosamente. Extender el chequeo a
 "ninguna cuenta activa de ningún rol" queda fuera de alcance de este
 sub-proyecto — el roadmap pidió específicamente "alumnos activos".
 
+**Consecuencia adicional sobre RLS (encontrada en el review final):** la policy
+`sede_isolation_registro_auditoria_select` (`prisma/migrations/20260806224102_rls_multisede/migration.sql`)
+filtra con `USING (sede_id = public.current_sede_id())`. Con `sede_id` en `null` (un
+registro de auditoría de una sede ya borrada), esa comparación evalúa a `NULL` en SQL —
+ni verdadero ni falso — así que el registro queda invisible para siempre a través del
+camino RLS/rol `authenticated`, para cualquier sede. Sin impacto hoy (el backend conecta
+como un rol que bypassa RLS, y no existe todavía ningún endpoint de lectura de
+`RegistroAuditoria` — es "Solo lectura", tabla pendiente en el roadmap). Documentado para
+quien construya ese endpoint a futuro: los registros huérfanos de una sede borrada no van
+a aparecer filtrando por sede, solo son recuperables por `entidadId` + el snapshot en
+`detalle`.
+
 ## Fuera de alcance de este sub-proyecto
 
 - "Mensajes de error en UI" (pulido general, no solo de este flujo) y

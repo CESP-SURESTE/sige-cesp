@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { AccionAuditoria, Prisma, type Sede } from '@prisma/client';
+import { AccionAuditoria, Prisma, RolUsuario, type Sede } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { ActualizarSedeDto } from './dto/actualizar-sede.dto';
 import type { CrearSedeDto } from './dto/crear-sede.dto';
@@ -204,7 +204,7 @@ export class SedesService {
     }
 
     const alumnosActivos = await this.prisma.usuario.count({
-      where: { sedeId: id, rol: 'ALUMNO', activo: true },
+      where: { sedeId: id, rol: RolUsuario.ALUMNO, activo: true },
     });
     if (alumnosActivos > 0) {
       throw new ConflictException({
@@ -235,7 +235,7 @@ export class SedesService {
       ) {
         throw new ConflictException({
           error:
-            'No se puede eliminar: la sede tiene otros datos asociados (carreras, personal, etc.)',
+            'No se puede eliminar: la sede tiene datos asociados (cuentas de usuario, carreras, salones, grupos, personal). Debe quedar vacía para poder eliminarse.',
           code: 'CONFLICT',
         });
       }

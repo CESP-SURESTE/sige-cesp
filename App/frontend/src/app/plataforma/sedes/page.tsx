@@ -66,14 +66,20 @@ export default function PlataformaSedesPage() {
 
   const eliminarMutation = useMutation({
     mutationFn: (id: string) => eliminarSede(id),
-    onSuccess: () => {
+    onSuccess: (_data, id) => {
       toast.success('Sede eliminada');
       setSedeAEliminar(null);
-      void queryClient.invalidateQueries({ queryKey: ['plataforma', 'sedes'] });
+      if (editandoId === id) {
+        setEditandoId(null);
+        setForm(FORM_VACIO);
+      }
     },
     onError: (err) => {
       toast.error(err instanceof ApiError ? err.message : 'Error al eliminar la sede');
       setSedeAEliminar(null);
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ['plataforma', 'sedes'] });
     },
   });
 

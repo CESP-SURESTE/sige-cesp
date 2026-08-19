@@ -321,6 +321,7 @@ describe('CRUD /sedes con PlatformAdminGuard (e2e)', () => {
       expect(res.status).toBe(409);
       expect((res.body as ErrorBody).code).toBe('CONFLICT');
       expect((res.body as ErrorBody).error).toMatch(/alumno/i);
+      expect((res.body as ErrorBody).error).toMatch(/1 alumno/);
 
       const sedeEnDb = await prisma.sede.findUnique({ where: { id } });
       expect(sedeEnDb).not.toBeNull();
@@ -339,6 +340,34 @@ describe('CRUD /sedes con PlatformAdminGuard (e2e)', () => {
           rol: RolUsuario.ALUMNO,
           sedeId: id,
           activo: false,
+        },
+      });
+
+      const res = await request(app.getHttpServer())
+        .delete(`/sedes/${id}`)
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(res.status).toBe(409);
+      expect((res.body as ErrorBody).code).toBe('CONFLICT');
+      expect((res.body as ErrorBody).error).toMatch(
+        /otros datos asociados|datos asociados/,
+      );
+
+      const sedeEnDb = await prisma.sede.findUnique({ where: { id } });
+      expect(sedeEnDb).not.toBeNull();
+    });
+
+    it('sede con maestro activo -> 409 CONFLICT (protegido por el FK de Usuario, no por el chequeo explícito de alumnos)', async () => {
+      const id = await crearSedeDePrueba(
+        `Sede E2E Delete MaestroActivo ${Date.now()}`,
+      );
+      await prisma.usuario.create({
+        data: {
+          id: randomUUID(),
+          email: `fixture.delete-sede.${randomUUID()}@example.com`,
+          rol: RolUsuario.MAESTRO,
+          sedeId: id,
+          activo: true,
         },
       });
 
