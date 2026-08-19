@@ -35,7 +35,14 @@ export default function PlataformaSedesPage() {
 
   const sedesQuery = useQuery({
     queryKey: ['plataforma', 'sedes'],
-    queryFn: listarSedes,
+    queryFn: async () => {
+      try {
+        return await listarSedes();
+      } catch (err) {
+        console.error('[PlataformaSedesPage] Error al listar sedes:', err);
+        throw err;
+      }
+    },
   });
 
   const crearMutation = useMutation({
@@ -45,7 +52,8 @@ export default function PlataformaSedesPage() {
       setForm(FORM_VACIO);
       void queryClient.invalidateQueries({ queryKey: ['plataforma', 'sedes'] });
     },
-    onError: (err) => {
+    onError: (err, vars) => {
+      console.error('[PlataformaSedesPage] Error al crear sede:', { input: vars, err });
       toast.error(err instanceof ApiError ? err.message : 'Error al crear la sede');
     },
   });
@@ -59,7 +67,12 @@ export default function PlataformaSedesPage() {
       setEditandoId(null);
       void queryClient.invalidateQueries({ queryKey: ['plataforma', 'sedes'] });
     },
-    onError: (err) => {
+    onError: (err, vars) => {
+      console.error('[PlataformaSedesPage] Error al actualizar sede:', {
+        id: vars.id,
+        input: vars.input,
+        err,
+      });
       toast.error(err instanceof ApiError ? err.message : 'Error al actualizar la sede');
     },
   });
@@ -74,7 +87,8 @@ export default function PlataformaSedesPage() {
         setForm(FORM_VACIO);
       }
     },
-    onError: (err) => {
+    onError: (err, vars) => {
+      console.error('[PlataformaSedesPage] Error al eliminar sede:', { id: vars, err });
       toast.error(err instanceof ApiError ? err.message : 'Error al eliminar la sede');
       setSedeAEliminar(null);
     },
@@ -221,6 +235,24 @@ export default function PlataformaSedesPage() {
                 </td>
               </tr>
             )}
+            {sedesQuery.isError && (
+              <tr>
+                <td colSpan={4} className="px-4 py-6 text-center text-crimson">
+                  {sedesQuery.error instanceof ApiError
+                    ? sedesQuery.error.message
+                    : 'No se pudo cargar el listado de sedes. Intenta de nuevo más tarde.'}
+                </td>
+              </tr>
+            )}
+            {!sedesQuery.isLoading &&
+              !sedesQuery.isError &&
+              sedesQuery.data?.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-4 py-6 text-center text-slate/60">
+                    Todavía no hay sedes registradas.
+                  </td>
+                </tr>
+              )}
             {sedesQuery.data?.map((sede) => (
               <tr key={sede.id} className="border-b border-mist last:border-0">
                 <td className="px-4 py-3 text-slate">{sede.nombre}</td>

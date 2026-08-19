@@ -23,7 +23,14 @@ export default function PlataformaDashboardPage() {
 
   const resumenQuery = useQuery({
     queryKey: ['plataforma', 'resumen'],
-    queryFn: obtenerResumenGlobal,
+    queryFn: async () => {
+      try {
+        return await obtenerResumenGlobal();
+      } catch (err) {
+        console.error('[PlataformaDashboardPage] Error al obtener el resumen global:', err);
+        throw err;
+      }
+    },
   });
 
   function cerrarSesion() {

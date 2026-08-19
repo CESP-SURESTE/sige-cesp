@@ -28,6 +28,10 @@ export default function PlataformaLoginPage() {
       router.push('/plataforma');
     },
     onError: (err) => {
+      // Regla 12 de `CLAUDE.md` raíz — nunca loguear `password`, solo el
+      // email intentado (útil para debug: "¿a qué cuenta se le negó el
+      // acceso?" sin exponer la credencial).
+      console.error('[PlataformaLoginPage] Error al iniciar sesión:', { email, err });
       const mensaje =
         err instanceof ApiError
           ? (MENSAJES_ERROR[err.code] ?? 'Ocurrió un error inesperado. Intenta de nuevo.')
