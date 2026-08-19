@@ -154,7 +154,17 @@ export default function NuevoAlumnoPage() {
 
   const carrerasQuery = useQuery({
     queryKey: ['carreras'],
-    queryFn: listarCarreras,
+    queryFn: async () => {
+      try {
+        return await listarCarreras();
+      } catch (err) {
+        // Regla 12 de `CLAUDE.md` raíz — loguear antes de dejar que React
+        // Query marque `isError` (ya renderizado inline junto al campo,
+        // ver más abajo en este mismo archivo).
+        console.error('[AdminAlumnosNuevoPage] Error al listar carreras:', err);
+        throw err;
+      }
+    },
   });
 
   const {
