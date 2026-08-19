@@ -51,6 +51,31 @@ export interface ListarPersonasResult {
   total: number;
 }
 
+/** `GET /personas/resumen` — dashboard de admin por sede. */
+export interface AlumnosPorCarreraItem {
+  carreraId: string;
+  nombre: string;
+  cantidad: number;
+}
+
+/** `GET /personas/resumen` — dashboard de admin por sede. */
+export interface AltaRecienteItem {
+  usuarioId: string;
+  nombreCompleto: string;
+  rol: RolUsuario;
+  fecha: string;
+}
+
+/** `GET /personas/resumen` — dashboard de admin por sede. */
+export interface ResumenPorSedeResult {
+  totalAlumnosActivos: number;
+  totalMaestrosActivos: number;
+  totalAdministrativosActivos: number;
+  totalCarreras: number;
+  alumnosPorCarrera: AlumnosPorCarreraItem[];
+  altasRecientes: AltaRecienteItem[];
+}
+
 /**
  * `@supabase/server` (y `jose`, del que depende) son paquetes ESM-only —
  * mismo motivo/solución que `src/common/guards/sede.guard.ts` y
@@ -1144,6 +1169,132 @@ export class PersonasService {
       page,
       limit,
       total,
+    };
+  }
+
+  /**
+   * `GET /personas/resumen` — dashboard de admin por sede.
+   *
+   * Solo lecturas relativas a `sedeId` (`@SedeActual()`, regla 2 de
+   * CLAUDE.md raíz) — sin `$transaction`, no hay escritura que proteger.
+   *
+   * `alumnosPorCarrera` — `groupBy` sobre `PerfilAlumno` (que no tiene
+   * `sedeId` propio, vive en `Usuario`, mismo criterio que
+   * `listarPorSedeYRol`) no trae el nombre de la carrera, así que se hace
+   * una segunda query a `Carrera` solo con los ids que trajo el `groupBy` y
+   * se combinan ambos resultados en JS.
+   *
+   * `altasRecientes` — un solo `usuario.findMany` con los 3 `include` de
+   * perfil (a lo sumo uno de los 3 viene no-nulo por fila, según `rol`).
+   * `nombreCompletoPara` (usado en el correo de bienvenida, más arriba en
+   * este archivo) NO se reutiliza acá: opera sobre `CrearPersonaDto` (el
+   * body de la request de alta), no sobre el resultado de una query de
+   * `Usuario` con sus perfiles incluidos — shape distinto, no hay forma de
+   * compartir el helper sin forzar un adapter que complica más de lo que
+   * ahorra para una sola línea de `.filter(Boolean).join(' ')`.
+   */
+  async resumenPorSede(sedeId: string): Promise<ResumenPorSedeResult> {
+    const [
+      totalAlumnosActivos,
+      totalMaestrosActivos,
+      totalAdministrativosActivos,
+      totalCarreras,
+      alumnosPorCarreraGroupBy,
+      usuariosRecientes,
+    ] = await Promise.all([
+      this.prisma.usuario.count({
+        where: { sedeId, rol: RolUsuario.ALUMNO, activo: true },
+      }),
+      this.prisma.usuario.count({
+        where: { sedeId, rol: RolUsuario.MAESTRO, activo: true },
+      }),
+      this.prisma.usuario.count({
+        where: { sedeId, rol: RolUsuario.ADMINISTRATIVO, activo: true },
+      }),
+      this.prisma.carrera.count({ where: { sedeId, estatus: 'ACTIVA' } }),
+      this.prisma.perfilAlumno.groupBy({
+        by: ['carreraId'],
+        where: { usuario: { sedeId, activo: true } },
+        _count: { carreraId: true },
+        orderBy: { _count: { carreraId: 'desc' } },
+        take: 5,
+      }),
+      this.prisma.usuario.findMany({
+        where: { sedeId },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        include: {
+          perfilAlumno: {
+            select: {
+              nombres: true,
+              apellidoPaterno: true,
+              apellidoMaterno: true,
+            },
+          },
+          perfilMaestro: {
+            select: {
+              nombres: true,
+              apellidoPaterno: true,
+              apellidoMaterno: true,
+            },
+          },
+          perfilAdministrativo: {
+            select: {
+              nombres: true,
+              apellidoPaterno: true,
+              apellidoMaterno: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    let alumnosPorCarrera: AlumnosPorCarreraItem[] = [];
+    if (alumnosPorCarreraGroupBy.length > 0) {
+      const carreras = await this.prisma.carrera.findMany({
+        where: {
+          id: { in: alumnosPorCarreraGroupBy.map((item) => item.carreraId) },
+        },
+        select: { id: true, nombre: true },
+      });
+      const nombrePorCarreraId = new Map(
+        carreras.map((carrera) => [carrera.id, carrera.nombre]),
+      );
+
+      alumnosPorCarrera = alumnosPorCarreraGroupBy.map((item) => ({
+        carreraId: item.carreraId,
+        nombre: nombrePorCarreraId.get(item.carreraId) ?? '',
+        cantidad: item._count.carreraId,
+      }));
+    }
+
+    const altasRecientes: AltaRecienteItem[] = usuariosRecientes.map(
+      (usuario) => {
+        const perfil =
+          usuario.perfilAlumno ??
+          usuario.perfilMaestro ??
+          usuario.perfilAdministrativo;
+
+        return {
+          usuarioId: usuario.id,
+          nombreCompleto: perfil
+            ? [perfil.nombres, perfil.apellidoPaterno, perfil.apellidoMaterno]
+                .filter(Boolean)
+                .join(' ')
+            : 'Usuario SIGE',
+          rol: usuario.rol,
+          fecha: usuario.createdAt.toISOString(),
+        };
+      },
+    );
+
+    return {
+      totalAlumnosActivos,
+      totalMaestrosActivos,
+      totalAdministrativosActivos,
+      totalCarreras,
+      alumnosPorCarrera,
+      altasRecientes,
     };
   }
 }

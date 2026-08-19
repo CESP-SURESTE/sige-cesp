@@ -526,4 +526,174 @@ describe('PersonasController — GET /personas (e2e)', () => {
     expect(res.status).toBe(401);
     expect((res.body as ErrorBody).code).toBe('UNAUTHORIZED');
   });
+
+  /**
+   * `GET /personas/resumen` — dashboard de admin por sede.
+   *
+   * Reutiliza el mismo `beforeAll` (sedes/carreras/admins/fixtures de este
+   * archivo) — no siembra fixtures propios de ALUMNO/ADMINISTRATIVO nuevos
+   * porque el seed real (`prisma/seed.ts`) ya tiene alumnos/administrativos
+   * en Mérida (`luis.chan`/`ana.canul`, usados arriba); los conteos de este
+   * describe se comparan contra lo que el propio endpoint reporta al inicio
+   * de esta suite en vez de contra números fijos, para no quedar frágiles
+   * ante fixtures de otras corridas (mismo criterio de "no limpiar en
+   * afterAll" ya documentado arriba en este archivo) — solo se valida que
+   * agregar un maestro nuevo en Mérida SUMA exactamente 1 al conteo previo.
+   */
+  describe('GET /personas/resumen', () => {
+    interface ResumenBody {
+      data: {
+        totalAlumnosActivos: number;
+        totalMaestrosActivos: number;
+        totalAdministrativosActivos: number;
+        totalCarreras: number;
+        alumnosPorCarrera: {
+          carreraId: string;
+          nombre: string;
+          cantidad: number;
+        }[];
+        altasRecientes: {
+          usuarioId: string;
+          nombreCompleto: string;
+          rol: RolUsuario;
+          fecha: string;
+        }[];
+      };
+    }
+
+    it('devuelve los conteos correctos — un maestro nuevo suma 1 al total de maestros activos de la sede', async () => {
+      const antes = await request(app.getHttpServer())
+        .get('/personas/resumen')
+        .set(
+          'Authorization',
+          `Bearer ${await firmarToken(adminMeridaId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+        );
+      expect(antes.status).toBe(200);
+      const totalMaestrosAntes = (antes.body as ResumenBody).data
+        .totalMaestrosActivos;
+
+      const nuevoUsuario = await prisma.usuario.create({
+        data: {
+          id: randomUUID(),
+          email: `fixture.resumen.${randomUUID()}@example.com`,
+          rol: RolUsuario.MAESTRO,
+          sedeId: sedeMeridaId,
+        },
+      });
+      const marcaNueva = `QARESUMEN${randomUUID().slice(0, 8)}`;
+      await prisma.perfilMaestro.create({
+        data: {
+          usuarioId: nuevoUsuario.id,
+          nombres: `Fixture ${marcaNueva}`,
+          apellidoPaterno: 'Resumen',
+          curp: `FX${randomUUID().slice(0, 16).toUpperCase()}`,
+          correoPersonal: `fixture.resumen.personal.${randomUUID()}@example.com`,
+          telefono: '9990009999',
+          fechaContratacion: new Date('2024-01-01'),
+          estatus: EstatusEmpleado.ACTIVO,
+        },
+      });
+
+      const despues = await request(app.getHttpServer())
+        .get('/personas/resumen')
+        .set(
+          'Authorization',
+          `Bearer ${await firmarToken(adminMeridaId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+        );
+
+      expect(despues.status).toBe(200);
+      const body = (despues.body as ResumenBody).data;
+      expect(body.totalMaestrosActivos).toBe(totalMaestrosAntes + 1);
+      expect(body.totalCarreras).toBeGreaterThanOrEqual(1);
+      expect(Array.isArray(body.alumnosPorCarrera)).toBe(true);
+      expect(body.alumnosPorCarrera.length).toBeLessThanOrEqual(5);
+      expect(Array.isArray(body.altasRecientes)).toBe(true);
+      expect(body.altasRecientes.length).toBeLessThanOrEqual(5);
+      // El maestro recién creado es el alta más reciente de la sede — debe
+      // aparecer primero en `altasRecientes` (orden desc por `createdAt`).
+      const primeraAlta = body.altasRecientes[0];
+      expect(typeof primeraAlta.fecha).toBe('string');
+      expect({ ...primeraAlta, fecha: undefined }).toEqual({
+        usuarioId: nuevoUsuario.id,
+        nombreCompleto: `Fixture ${marcaNueva} Resumen`,
+        rol: 'MAESTRO',
+        fecha: undefined,
+      });
+    });
+
+    it('aislamiento por sede -> no cuenta datos de otra sede (Valladolid ve sus propios totales, no los de Mérida)', async () => {
+      const resMerida = await request(app.getHttpServer())
+        .get('/personas/resumen')
+        .set(
+          'Authorization',
+          `Bearer ${await firmarToken(adminMeridaId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+        );
+      const resValladolid = await request(app.getHttpServer())
+        .get('/personas/resumen')
+        .set(
+          'Authorization',
+          `Bearer ${await firmarToken(adminValladolidId, RolUsuario.ADMINISTRATIVO, sedeValladolidId)}`,
+        );
+
+      expect(resMerida.status).toBe(200);
+      expect(resValladolid.status).toBe(200);
+      const bodyMerida = (resMerida.body as ResumenBody).data;
+      const bodyValladolid = (resValladolid.body as ResumenBody).data;
+
+      // Mérida tiene fixtures de sobra (este describe + el resto del
+      // archivo) — Valladolid solo tiene 1 fixture de maestro sembrado
+      // arriba, así que sus totales deben ser estrictamente menores.
+      expect(bodyValladolid.totalMaestrosActivos).toBeLessThan(
+        bodyMerida.totalMaestrosActivos,
+      );
+      // Ningún alta reciente de Valladolid debe coincidir con un
+      // `usuarioId` de las altas recientes de Mérida.
+      const idsMerida = new Set(
+        bodyMerida.altasRecientes.map((a) => a.usuarioId),
+      );
+      for (const alta of bodyValladolid.altasRecientes) {
+        expect(idsMerida.has(alta.usuarioId)).toBe(false);
+      }
+    });
+
+    it('rol MAESTRO (no ADMINISTRATIVO) -> 403 ROL_NO_AUTORIZADO', async () => {
+      const maestro = await prisma.usuario.create({
+        data: {
+          id: randomUUID(),
+          email: `fixture.resumen.maestro.${randomUUID()}@example.com`,
+          rol: RolUsuario.MAESTRO,
+          sedeId: sedeMeridaId,
+        },
+      });
+
+      const res = await request(app.getHttpServer())
+        .get('/personas/resumen')
+        .set(
+          'Authorization',
+          `Bearer ${await firmarToken(maestro.id, RolUsuario.MAESTRO, sedeMeridaId)}`,
+        );
+
+      expect(res.status).toBe(403);
+      expect((res.body as ErrorBody).code).toBe('ROL_NO_AUTORIZADO');
+    });
+
+    it('rol ALUMNO (no ADMINISTRATIVO) -> 403 ROL_NO_AUTORIZADO', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/personas/resumen')
+        .set(
+          'Authorization',
+          `Bearer ${await firmarToken(alumnoMeridaId, RolUsuario.ALUMNO, sedeMeridaId)}`,
+        );
+
+      expect(res.status).toBe(403);
+      expect((res.body as ErrorBody).code).toBe('ROL_NO_AUTORIZADO');
+    });
+
+    it('sin Authorization -> 401 UNAUTHORIZED', async () => {
+      const res = await request(app.getHttpServer()).get('/personas/resumen');
+
+      expect(res.status).toBe(401);
+      expect((res.body as ErrorBody).code).toBe('UNAUTHORIZED');
+    });
+  });
 });

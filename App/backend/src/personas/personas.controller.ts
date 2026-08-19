@@ -46,6 +46,15 @@ import { PersonasService } from './personas.service';
  * `nivelPermiso` — es solo lectura, no aplica la jerarquía de
  * `NivelPermiso` que sí aplica al dar de alta administrativos. `sedeId`
  * también sale SIEMPRE de `@SedeActual()`, nunca de query.
+ *
+ * `GET /personas/resumen` — dashboard de admin. Mismos guards que
+ * `GET /personas` (`SedeGuard` + `RolesGuard`, `@Roles(ADMINISTRATIVO)`) —
+ * cualquier `ADMINISTRATIVO` sin importar `nivelPermiso`, es solo lectura.
+ * `sedeId` sale SIEMPRE de `@SedeActual()`, nunca de query/param (regla 2 de
+ * CLAUDE.md raíz). Declarado ANTES de `GET /personas/:id` si algún día se
+ * agrega esa ruta — no hay conflicto hoy porque no existe `:id` en este
+ * controller, pero `resumen` como segmento fijo debe ganarle a cualquier
+ * `:id` futuro.
  */
 @Controller('personas')
 @UseGuards(SedeGuard, RolesGuard)
@@ -75,5 +84,12 @@ export class PersonasController {
     @SedeActual() sedeId: string,
   ) {
     return this.personasService.listarPorSedeYRol(sedeId, query);
+  }
+
+  @Get('resumen')
+  @Roles(RolUsuario.ADMINISTRATIVO)
+  async resumen(@SedeActual() sedeId: string) {
+    const data = await this.personasService.resumenPorSede(sedeId);
+    return { data };
   }
 }
