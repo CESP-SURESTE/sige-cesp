@@ -13,16 +13,25 @@
  * Dry-run por default — solo cuenta y lista qué se borraría, sin tocar
  * nada. Requiere el flag `--confirmar` para ejecutar el borrado real.
  *
- * Orden de borrado (verificado contra las FK reales de las migraciones):
+ * Orden de borrado (verificado contra las FK y CHECK reales de las
+ * migraciones — el primer intento de este script chocó con 2 constraints
+ * no anticipados, corregidos aquí):
  *  1. `grupo_alumnos` de los alumnos a borrar — `ON DELETE RESTRICT`,
  *     bloquea el borrado del alumno si no se limpia antes.
- *  2. `usuarios` por id — cascada automática a
+ *  2. `sede_responsables` de los administrativos a borrar — mismo motivo
+ *     (`administrativo_id` también `ON DELETE RESTRICT`), aunque hoy la
+ *     tabla esté vacía en la práctica.
+ *  3. `registro_auditoria` donde estos usuarios son el actor
+ *     (`usuario_id`) — la tabla tiene un CHECK
+ *     (`registro_auditoria_actor_check`) que exige EXACTAMENTE un actor no
+ *     nulo (`usuario_id` XOR `admin_plataforma_id`); el `ON DELETE SET
+ *     NULL` de la FK no puede completarse cuando el otro actor también es
+ *     null (el caso normal para estas filas), así que se borran explícito
+ *     en vez de dejar que la cascada lo intente y falle contra el CHECK.
+ *  4. `usuarios` por id — cascada automática a
  *     `perfiles_alumno`/`perfiles_maestro`/`perfiles_administrativo` y sus
  *     `contactos_*`/`info_medica_*` (`ON DELETE CASCADE`).
- *     `registro_auditoria.usuario_id` ya es `ON DELETE SET NULL` (migración
- *     de Día 20) — el historial de auditoría sobrevive, solo pierde la
- *     referencia.
- *  3. La cuenta correspondiente en Supabase Auth — si no se borra acá
+ *  5. La cuenta correspondiente en Supabase Auth — si no se borra acá
  *     también, el email queda huérfano en Auth y nadie podría volver a
  *     registrarse con él. Best-effort en lotes de 20 con una pausa de
  *     500ms entre lotes, para no saturar la Admin API.
@@ -77,19 +86,51 @@ async function main() {
     return;
   }
 
+  const idsABorrar = candidatos.map((c) => c.id);
+
   const alumnoUsuarioIds = candidatos.filter((c) => c.rol === RolUsuario.ALUMNO).map((c) => c.id);
   if (alumnoUsuarioIds.length > 0) {
-    const perfiles = await prisma.perfilAlumno.findMany({
+    const perfilesAlumno = await prisma.perfilAlumno.findMany({
       where: { usuarioId: { in: alumnoUsuarioIds } },
       select: { id: true },
     });
     const { count: gruposEliminados } = await prisma.grupoAlumno.deleteMany({
-      where: { alumnoId: { in: perfiles.map((p) => p.id) } },
+      where: { alumnoId: { in: perfilesAlumno.map((p) => p.id) } },
     });
     console.log(`grupo_alumnos borrados: ${gruposEliminados}`);
   }
 
-  const idsABorrar = candidatos.map((c) => c.id);
+  // `sede_responsables.administrativo_id` es ON DELETE RESTRICT — limpia
+  // antes de borrar, aunque hoy la tabla esté vacía en la práctica (más
+  // robusto que asumirlo).
+  const administrativoUsuarioIds = candidatos
+    .filter((c) => c.rol === RolUsuario.ADMINISTRATIVO)
+    .map((c) => c.id);
+  if (administrativoUsuarioIds.length > 0) {
+    const perfilesAdmin = await prisma.perfilAdministrativo.findMany({
+      where: { usuarioId: { in: administrativoUsuarioIds } },
+      select: { id: true },
+    });
+    const { count: responsablesEliminados } = await prisma.sedeResponsable.deleteMany({
+      where: { administrativoId: { in: perfilesAdmin.map((p) => p.id) } },
+    });
+    if (responsablesEliminados > 0) {
+      console.log(`sede_responsables borrados: ${responsablesEliminados}`);
+    }
+  }
+
+  // `registro_auditoria` tiene un CHECK que exige EXACTAMENTE un actor
+  // (usuario_id XOR admin_plataforma_id) — el `ON DELETE SET NULL` de la FK
+  // no puede completarse cuando el otro actor también es null (que es el
+  // caso normal: estas filas registran acciones de un Usuario, no de un
+  // AdminPlataforma). Se borran explícito en vez de dejar que la cascada lo
+  // intente y falle contra el CHECK — mismo criterio que "es basura, se va
+  // junto con la cuenta que la generó".
+  const { count: auditoriaEliminada } = await prisma.registroAuditoria.deleteMany({
+    where: { usuarioId: { in: idsABorrar } },
+  });
+  console.log(`registro_auditoria (de estos usuarios como actor) borrados: ${auditoriaEliminada}`);
+
   const { count: usuariosEliminados } = await prisma.usuario.deleteMany({
     where: { id: { in: idsABorrar } },
   });
