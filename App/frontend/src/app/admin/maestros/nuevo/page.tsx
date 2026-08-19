@@ -151,6 +151,7 @@ export default function NuevoMaestroPage() {
       reset(DEFAULT_VALUES);
     },
     onError: (error) => {
+      console.error('[AdminMaestrosNuevoPage] Error al dar de alta maestro:', error);
       toast.error(resolverMensajeError(error) ?? MENSAJE_ERROR_GENERICO);
     },
   });

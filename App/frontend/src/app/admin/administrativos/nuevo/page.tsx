@@ -176,6 +176,7 @@ export default function NuevoAdministrativoPage() {
       reset(DEFAULT_VALUES);
     },
     onError: (error) => {
+      console.error('[AdminAdministrativosNuevoPage] Error al dar de alta administrativo:', error);
       toast.error(
         resolverMensajeError(error, MENSAJES_ERROR_ADMINISTRATIVO) ?? MENSAJE_ERROR_GENERICO,
       );

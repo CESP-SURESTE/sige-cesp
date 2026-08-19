@@ -213,6 +213,7 @@ export default function NuevoAlumnoPage() {
       reset(DEFAULT_VALUES);
     },
     onError: (error) => {
+      console.error('[AdminAlumnosNuevoPage] Error al dar de alta alumno:', error);
       toast.error(resolverMensajeError(error, MENSAJES_ERROR_ALUMNO) ?? MENSAJE_ERROR_GENERICO);
     },
   });
