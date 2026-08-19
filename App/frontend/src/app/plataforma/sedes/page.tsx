@@ -6,7 +6,8 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
 import { ApiError } from '@/lib/api/http';
 import { getPlatformToken, clearPlatformToken } from '@/lib/api/platform-http';
-import { listarSedes, crearSede, actualizarSede, type Sede, type SedeInput } from '@/lib/api/sedes';
+import { listarSedes, crearSede, actualizarSede, eliminarSede, type Sede, type SedeInput } from '@/lib/api/sedes';
+import { ConfirmarEliminarSedeModal } from './ConfirmarEliminarSedeModal';
 
 const FORM_VACIO: SedeInput = {
   nombre: '',
@@ -20,6 +21,7 @@ export default function PlataformaSedesPage() {
   const queryClient = useQueryClient();
   const [form, setForm] = useState<SedeInput>(FORM_VACIO);
   const [editandoId, setEditandoId] = useState<string | null>(null);
+  const [sedeAEliminar, setSedeAEliminar] = useState<Sede | null>(null);
 
   // Protección de ruta del lado del cliente — app/plataforma está
   // explícitamente exento de la lógica de sesión de src/proxy.ts (regla 11,
@@ -59,6 +61,19 @@ export default function PlataformaSedesPage() {
     },
     onError: (err) => {
       toast.error(err instanceof ApiError ? err.message : 'Error al actualizar la sede');
+    },
+  });
+
+  const eliminarMutation = useMutation({
+    mutationFn: (id: string) => eliminarSede(id),
+    onSuccess: () => {
+      toast.success('Sede eliminada');
+      setSedeAEliminar(null);
+      void queryClient.invalidateQueries({ queryKey: ['plataforma', 'sedes'] });
+    },
+    onError: (err) => {
+      toast.error(err instanceof ApiError ? err.message : 'Error al eliminar la sede');
+      setSedeAEliminar(null);
     },
   });
 
@@ -212,12 +227,27 @@ export default function PlataformaSedesPage() {
                   >
                     Editar
                   </button>
+                  <button
+                    onClick={() => setSedeAEliminar(sede)}
+                    className="ml-4 text-crimson hover:underline"
+                  >
+                    Eliminar
+                  </button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      {sedeAEliminar && (
+        <ConfirmarEliminarSedeModal
+          sede={sedeAEliminar}
+          eliminando={eliminarMutation.isPending}
+          onConfirmar={() => eliminarMutation.mutate(sedeAEliminar.id)}
+          onCancelar={() => setSedeAEliminar(null)}
+        />
+      )}
     </main>
   );
 }

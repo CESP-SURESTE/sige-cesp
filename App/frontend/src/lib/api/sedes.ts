@@ -40,3 +40,9 @@ export function actualizarSede(
     body: JSON.stringify(input),
   });
 }
+
+export function eliminarSede(id: string): Promise<{ ok: true }> {
+  return platformFetch<{ ok: true }>(`/sedes/${id}`, {
+    method: 'DELETE',
+  });
+}
