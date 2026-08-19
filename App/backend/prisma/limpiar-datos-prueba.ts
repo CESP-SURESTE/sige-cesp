@@ -1,7 +1,11 @@
 /**
  * Borra todo `Usuario` con rol ALUMNO/MAESTRO/ADMINISTRATIVO cuyo email NO
  * esté en `EMAILS_ANCLA` (las 39 personas ficticias reales del proyecto,
- * ver `seed-helpers.ts`) — pensado para limpiar la basura que deja la
+ * ver `seed-helpers.ts`) NI en `obtenerEmailsVariados()` (los 60 emails
+ * generados por `seed-variado.ts` — bajas, licencias, egresados; función
+ * pura y determinística, recalcularla acá reproduce exactamente los mismos
+ * emails ya creados en la DB, sin necesidad de hardcodear una segunda
+ * lista) — pensado para limpiar la basura que deja la
  * suite e2e del backend al correr contra esta misma base de datos (causa
  * raíz documentada en `documentacion_de_agentes/ESTADO.md`, sin corregir
  * hoy a propósito).
@@ -33,16 +37,19 @@ import { loadEnv } from '../src/load-env';
 loadEnv();
 
 import { prisma, EMAILS_ANCLA, getAdminClient } from './seed-helpers';
+import { obtenerEmailsVariados } from './seed-variado';
 
 const CONFIRMAR = process.argv.includes('--confirmar');
 const TAMANO_LOTE = 20;
 const PAUSA_ENTRE_LOTES_MS = 500;
 
 async function main() {
+  const emailsProtegidos = [...EMAILS_ANCLA, ...obtenerEmailsVariados()];
+
   const candidatos = await prisma.usuario.findMany({
     where: {
       rol: { in: [RolUsuario.ALUMNO, RolUsuario.MAESTRO, RolUsuario.ADMINISTRATIVO] },
-      email: { notIn: [...EMAILS_ANCLA] },
+      email: { notIn: emailsProtegidos },
     },
     select: { id: true, email: true, rol: true },
   });
@@ -54,7 +61,7 @@ async function main() {
   };
 
   console.log(`Modo: ${CONFIRMAR ? 'BORRADO REAL' : 'DRY-RUN (nada se borra)'}`);
-  console.log(`Anclas protegidas: ${EMAILS_ANCLA.length}`);
+  console.log(`Anclas protegidas: ${EMAILS_ANCLA.length} + ${emailsProtegidos.length - EMAILS_ANCLA.length} variados = ${emailsProtegidos.length}`);
   console.log(`Candidatos a borrar: ${candidatos.length}`);
   console.log(`  Alumnos: ${porRol.ALUMNO}`);
   console.log(`  Maestros: ${porRol.MAESTRO}`);

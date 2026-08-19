@@ -97,6 +97,46 @@ interface PersonaGenerada {
 }
 
 /**
+ * Única fuente de verdad para el formato de email de una persona generada
+ * — usado tanto al crearla (`sembrarVariadoSede`) como al listar los 60
+ * emails que este script produce (`obtenerEmailsVariados`, consumido por
+ * `limpiar-datos-prueba.ts` para NUNCA borrarlos). Pura y determinística:
+ * mismos argumentos, mismo resultado, siempre.
+ */
+function construirEmail(p: PersonaGenerada, indiceLocal: number, dominio: string): string {
+  const nombreEmail = quitarAcentos(p.nombres.toLowerCase().split(' ')[0]);
+  const apellidoEmail = quitarAcentos(p.apellidoPaterno.toLowerCase());
+  return `${nombreEmail}.${apellidoEmail}${indiceLocal}@${dominio}`;
+}
+
+/**
+ * Los índices y offsets de acá DEBEN mantenerse sincronizados con los
+ * loops reales de `sembrarVariadoSede` (12 alumnos índice 0-11, 4 maestros
+ * offset 100, 4 administrativos offset 200) — si la distribución cambia,
+ * cambia en los 2 lugares. `generarPersona` es pura, así que recalcular
+ * acá reproduce EXACTAMENTE los mismos emails que ya se crearon en la DB.
+ */
+export function obtenerEmailsVariados(): string[] {
+  const emails: string[] = [];
+  for (const config of SEDES) {
+    const sedeIndice = SEDES.indexOf(config);
+    for (let i = 0; i < 12; i++) {
+      const genero: 'H' | 'M' = i % 2 === 0 ? 'M' : 'H';
+      emails.push(construirEmail(generarPersona(sedeIndice, i, genero), i, config.dominio));
+    }
+    for (let i = 0; i < 4; i++) {
+      const genero: 'H' | 'M' = i % 2 === 0 ? 'H' : 'M';
+      emails.push(construirEmail(generarPersona(sedeIndice, 100 + i, genero), i, config.dominio));
+    }
+    for (let i = 0; i < 4; i++) {
+      const genero: 'H' | 'M' = i % 2 === 0 ? 'M' : 'H';
+      emails.push(construirEmail(generarPersona(sedeIndice, 200 + i, genero), i, config.dominio));
+    }
+  }
+  return emails;
+}
+
+/**
  * `sedeIndice` (0/1/2) separa el pool de nombres entre sedes para
  * minimizar coincidencias de nombre completo; `indiceGlobal` recorre las
  * personas nuevas de esa sede (offsets distintos por rol para no repetir
@@ -223,17 +263,16 @@ async function sembrarVariadoSede(config: SedeVariadoConfig, sedeIndice: number)
     const genero: 'H' | 'M' = i % 2 === 0 ? 'M' : 'H';
     const p = generarPersona(sedeIndice, i, genero);
     const matricula = `${config.matriculaPrefijo}-2026-${String(9 + i).padStart(4, '0')}`;
-    const nombreEmail = quitarAcentos(p.nombres.toLowerCase().split(' ')[0]);
-    const apellidoEmail = quitarAcentos(p.apellidoPaterno.toLowerCase());
+    const email = construirEmail(p, i, config.dominio);
     await seedAlumno({
-      email: `${nombreEmail}.${apellidoEmail}${i}@${config.dominio}`,
+      email,
       sedeId: sede.id,
       nombres: p.nombres,
       apellidoPaterno: p.apellidoPaterno,
       apellidoMaterno: p.apellidoMaterno,
       curp: p.curp,
       matricula,
-      correoPersonal: `${nombreEmail}.${apellidoEmail}${i}.personal@example.com`,
+      correoPersonal: email.replace(`@${config.dominio}`, '.personal@example.com'),
       fechaNacimiento: new Date(p.anioNacimiento, i % 12, ((i * 3) % 27) + 1),
       carreraId: todasLasCarreras[i % todasLasCarreras.length].id,
       contacto: p.contacto,
@@ -250,17 +289,16 @@ async function sembrarVariadoSede(config: SedeVariadoConfig, sedeIndice: number)
     const indiceGlobal = 100 + i;
     const genero: 'H' | 'M' = i % 2 === 0 ? 'H' : 'M';
     const p = generarPersona(sedeIndice, indiceGlobal, genero);
-    const nombreEmail = quitarAcentos(p.nombres.toLowerCase().split(' ')[0]);
-    const apellidoEmail = quitarAcentos(p.apellidoPaterno.toLowerCase());
+    const email = construirEmail(p, i, config.dominio);
     await seedMaestro({
-      email: `${nombreEmail}.${apellidoEmail}${i}@${config.dominio}`,
+      email,
       sedeId: sede.id,
       nombres: p.nombres,
       apellidoPaterno: p.apellidoPaterno,
       apellidoMaterno: p.apellidoMaterno,
       curp: p.curp,
       cedulaProfesional: `${1000000 + sedeIndice * 10000 + i}`,
-      correoPersonal: `${nombreEmail}.${apellidoEmail}${i}.personal@example.com`,
+      correoPersonal: email.replace(`@${config.dominio}`, '.personal@example.com'),
       telefono: p.telefono,
       contacto: p.contacto,
       estatus: distribucionMaestros[i],
@@ -276,16 +314,15 @@ async function sembrarVariadoSede(config: SedeVariadoConfig, sedeIndice: number)
     const indiceGlobal = 200 + i;
     const genero: 'H' | 'M' = i % 2 === 0 ? 'M' : 'H';
     const p = generarPersona(sedeIndice, indiceGlobal, genero);
-    const nombreEmail = quitarAcentos(p.nombres.toLowerCase().split(' ')[0]);
-    const apellidoEmail = quitarAcentos(p.apellidoPaterno.toLowerCase());
+    const email = construirEmail(p, i, config.dominio);
     await seedAdministrativo({
-      email: `${nombreEmail}.${apellidoEmail}${i}@${config.dominio}`,
+      email,
       sedeId: sede.id,
       nombres: p.nombres,
       apellidoPaterno: p.apellidoPaterno,
       apellidoMaterno: p.apellidoMaterno,
       curp: p.curp,
-      correoPersonal: `${nombreEmail}.${apellidoEmail}${i}.personal@example.com`,
+      correoPersonal: email.replace(`@${config.dominio}`, '.personal@example.com'),
       telefono: p.telefono,
       puesto: PUESTOS_VARIADOS[i],
       nivelPermiso: NivelPermiso.AUXILIAR,
@@ -305,11 +342,16 @@ async function main() {
   console.log('Siembra variada completa.');
 }
 
-main()
-  .catch((e) => {
-    console.error('Error corriendo la siembra variada:', e);
-    process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+// Guard — `limpiar-datos-prueba.ts` importa `obtenerEmailsVariados` de este
+// archivo (para no duplicar la lista de emails a proteger); sin este guard,
+// ese import dispararía toda la siembra de nuevo como efecto colateral.
+if (require.main === module) {
+  main()
+    .catch((e) => {
+      console.error('Error corriendo la siembra variada:', e);
+      process.exit(1);
+    })
+    .finally(async () => {
+      await prisma.$disconnect();
+    });
+}
