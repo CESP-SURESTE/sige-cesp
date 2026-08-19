@@ -434,4 +434,127 @@ describe('CRUD /sedes con PlatformAdminGuard (e2e)', () => {
       await prisma.sede.delete({ where: { id } });
     });
   });
+
+  describe('GET /platform-admin/resumen', () => {
+    interface ResumenBody {
+      data: {
+        totalSedes: number;
+        totalAlumnosActivos: number;
+        totalMaestrosActivos: number;
+        totalAdministrativosActivos: number;
+        alumnosPorSede: { sedeId: string; nombre: string; cantidad: number }[];
+      };
+    }
+
+    async function crearSedeDePrueba(nombre: string): Promise<string> {
+      const res = await request(app.getHttpServer())
+        .post('/sedes')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          nombre,
+          direccion: 'Calle Falsa 123',
+          ubicacionReferencia: 'Frente al parque',
+          telefono: '9991234567',
+        });
+      return (res.body as SedeBody).data.id;
+    }
+
+    it('devuelve conteos globales correctos cruzando 2 sedes distintas', async () => {
+      const sedeAId = await crearSedeDePrueba(
+        `Sede E2E Resumen A ${Date.now()}`,
+      );
+      const sedeBId = await crearSedeDePrueba(
+        `Sede E2E Resumen B ${Date.now()}`,
+      );
+
+      const usuariosCreados = await Promise.all([
+        prisma.usuario.create({
+          data: {
+            id: randomUUID(),
+            email: `fixture.resumen.${randomUUID()}@example.com`,
+            rol: RolUsuario.ALUMNO,
+            sedeId: sedeAId,
+            activo: true,
+          },
+        }),
+        prisma.usuario.create({
+          data: {
+            id: randomUUID(),
+            email: `fixture.resumen.${randomUUID()}@example.com`,
+            rol: RolUsuario.ALUMNO,
+            sedeId: sedeAId,
+            activo: true,
+          },
+        }),
+        prisma.usuario.create({
+          data: {
+            id: randomUUID(),
+            email: `fixture.resumen.${randomUUID()}@example.com`,
+            rol: RolUsuario.ALUMNO,
+            sedeId: sedeBId,
+            activo: true,
+          },
+        }),
+        // Alumno inactivo — no debe contar.
+        prisma.usuario.create({
+          data: {
+            id: randomUUID(),
+            email: `fixture.resumen.${randomUUID()}@example.com`,
+            rol: RolUsuario.ALUMNO,
+            sedeId: sedeBId,
+            activo: false,
+          },
+        }),
+        prisma.usuario.create({
+          data: {
+            id: randomUUID(),
+            email: `fixture.resumen.${randomUUID()}@example.com`,
+            rol: RolUsuario.MAESTRO,
+            sedeId: sedeAId,
+            activo: true,
+          },
+        }),
+        prisma.usuario.create({
+          data: {
+            id: randomUUID(),
+            email: `fixture.resumen.${randomUUID()}@example.com`,
+            rol: RolUsuario.ADMINISTRATIVO,
+            sedeId: sedeBId,
+            activo: true,
+          },
+        }),
+      ]);
+
+      const totalSedesAntes = await prisma.sede.count();
+
+      const res = await request(app.getHttpServer())
+        .get('/platform-admin/resumen')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(res.status).toBe(200);
+      const data = (res.body as ResumenBody).data;
+      expect(data.totalSedes).toBe(totalSedesAntes);
+      expect(data.totalAlumnosActivos).toBeGreaterThanOrEqual(3);
+      expect(data.totalMaestrosActivos).toBeGreaterThanOrEqual(1);
+      expect(data.totalAdministrativosActivos).toBeGreaterThanOrEqual(1);
+
+      const filaSedeA = data.alumnosPorSede.find((f) => f.sedeId === sedeAId);
+      const filaSedeB = data.alumnosPorSede.find((f) => f.sedeId === sedeBId);
+      expect(filaSedeA?.cantidad).toBe(2);
+      expect(filaSedeB?.cantidad).toBe(1);
+
+      await prisma.usuario.deleteMany({
+        where: { id: { in: usuariosCreados.map((u) => u.id) } },
+      });
+    });
+
+    it('sin JWT de plataforma válido -> 401 UNAUTHORIZED', async () => {
+      const res = await request(app.getHttpServer()).get(
+        '/platform-admin/resumen',
+      );
+
+      expect(res.status).toBe(401);
+      expect((res.body as ErrorBody).code).toBe('UNAUTHORIZED');
+    });
+  });
 });

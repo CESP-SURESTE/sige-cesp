@@ -25,7 +25,7 @@ export default function PlataformaLoginPage() {
       savePlatformToken(token);
     },
     onSuccess: () => {
-      router.push('/plataforma/sedes');
+      router.push('/plataforma');
     },
     onError: (err) => {
       const mensaje =

@@ -46,3 +46,16 @@ export function eliminarSede(id: string): Promise<{ ok: true }> {
     method: 'DELETE',
   });
 }
+
+/** Espejo de `ResumenGlobal` (backend, `platform-admin.service.ts`). */
+export interface ResumenGlobal {
+  totalSedes: number;
+  totalAlumnosActivos: number;
+  totalMaestrosActivos: number;
+  totalAdministrativosActivos: number;
+  alumnosPorSede: { sedeId: string; nombre: string; cantidad: number }[];
+}
+
+export function obtenerResumenGlobal(): Promise<ResumenGlobal> {
+  return platformFetch<ResumenGlobal>('/platform-admin/resumen');
+}
