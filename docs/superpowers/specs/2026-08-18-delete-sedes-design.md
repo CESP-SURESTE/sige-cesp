@@ -128,6 +128,30 @@ se le agrega el describe block de `DELETE`):
 - Verificar que el `RegistroAuditoria` de la `ALTA` original de una sede que
   se borra sobrevive después, con `sedeId: null`.
 
+## Hallazgo adicional, descubierto durante la implementación (Task 2)
+
+`Usuario.sedeId` es también un FK obligatorio a `Sede`, **sin `onDelete`**
+(a diferencia de `RegistroAuditoria`, que sí se volvió nullable/`SetNull` en
+Task 1) — cualquier fila `Usuario` ligada a la sede, de cualquier rol,
+activa o no, bloquea el `DELETE` por `P2003` vía el catch genérico. Esto
+significa que, en la práctica, **una sede solo es borrable de verdad si
+nunca tuvo ninguna cuenta creada** (ningún alumno, maestro ni
+administrativo, activo o no) — más estricto que el chequeo explícito de
+"alumnos activos", que solo cubre el caso más común y da un mensaje más
+específico.
+
+Se investigó volver `Usuario.sedeId` nullable/`SetNull` también (el Auth
+Hook de Supabase y `SedeGuard` ya manejan un `sede_id` nulo con gracia —
+`SEDE_NO_ASIGNADA`, código de error ya existente — y RLS deniega por
+defecto con `sede_id` nulo) y se descartó: el chequeo de negocio explícito
+de este endpoint solo cubre `rol: ALUMNO, activo: true` — nunca contempló
+maestros/administrativos. El FK sin `onDelete` de `Usuario` hoy protege
+*sin querer* contra borrar una sede con un maestro/administrativo activo;
+aflojarlo sin extender el chequeo explícito a todos los roles dejaría esas
+cuentas huérfanas (`sedeId: null`) silenciosamente. Extender el chequeo a
+"ninguna cuenta activa de ningún rol" queda fuera de alcance de este
+sub-proyecto — el roadmap pidió específicamente "alumnos activos".
+
 ## Fuera de alcance de este sub-proyecto
 
 - "Mensajes de error en UI" (pulido general, no solo de este flujo) y

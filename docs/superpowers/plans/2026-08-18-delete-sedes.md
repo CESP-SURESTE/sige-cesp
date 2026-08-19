@@ -197,7 +197,19 @@ Agregar al final de `App/backend/test/sedes-crud.e2e-spec.ts`, antes del `});` q
       await prisma.usuario.delete({ where: { id: usuario.id } });
     });
 
-    it('sede con alumno dado de baja (activo=false) SÍ se elimina', async () => {
+    it('sede con alumno dado de baja (activo=false) -> 409 CONFLICT igual (Usuario.sedeId sigue siendo FK sin onDelete)', async () => {
+      // Corregido durante la implementación (Task 2): `Usuario.sedeId` es un
+      // FK obligatorio SIN `onDelete` (a diferencia de `RegistroAuditoria`,
+      // que Task 1 sí volvió nullable/SetNull) — cualquier fila `Usuario`
+      // ligada a la sede, de cualquier rol, activa o no, bloquea el DELETE
+      // por P2003. El chequeo explícito de "alumnos activos" da el mensaje
+      // específico para el caso más común; un alumno de baja cae en el catch
+      // genérico de P2003 en vez de dejar pasar el borrado. Se investigó
+      // volver `Usuario.sedeId` nullable/SetNull también y se descartó — el
+      // FK implícito hoy protege sin querer a maestros/administrativos
+      // activos (nada en el chequeo de negocio explícito los cubre); sin
+      // rediseñar ese chequeo para todos los roles, aflojar el FK dejaría
+      // huérfano a un maestro/administrativo activo silenciosamente.
       const id = await crearSedeDePrueba(`Sede E2E Delete AlumnoBaja ${Date.now()}`);
       await prisma.usuario.create({
         data: {
@@ -213,9 +225,11 @@ Agregar al final de `App/backend/test/sedes-crud.e2e-spec.ts`, antes del `});` q
         .delete(`/sedes/${id}`)
         .set('Authorization', `Bearer ${token}`);
 
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(409);
+      expect((res.body as ErrorBody).code).toBe('CONFLICT');
+
       const sedeEnDb = await prisma.sede.findUnique({ where: { id } });
-      expect(sedeEnDb).toBeNull();
+      expect(sedeEnDb).not.toBeNull();
     });
 
     it('sede con una carrera asociada (sin alumnos) -> 409 CONFLICT por datos asociados', async () => {
