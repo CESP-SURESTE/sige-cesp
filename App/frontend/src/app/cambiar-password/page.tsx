@@ -120,6 +120,12 @@ export default function CambiarPasswordPage() {
       window.location.href = '/';
     },
     onError: (err) => {
+      // Regla 12 de `CLAUDE.md` raíz — loguear el error antes de responder.
+      // A diferencia de `LoginPage`, acá NO hay ninguna variable segura que
+      // agregar de contexto: las 3 únicas variables de este componente son
+      // las 3 contraseñas (`passwordActual`/`passwordNueva`/`passwordConfirmar`),
+      // ninguna debe llegar jamás a la consola. Se loguea solo `err`.
+      console.error('[CambiarPasswordPage] Error al cambiar contraseña:', err);
       const mensaje =
         err instanceof ApiError
           ? (MENSAJES_ERROR[err.code] ?? 'Ocurrió un error inesperado. Intenta de nuevo.')
