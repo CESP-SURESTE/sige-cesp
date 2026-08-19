@@ -8,6 +8,7 @@ import {
   MENSAJE_ERROR_GENERICO,
   resolverMensajeError,
 } from '@/components/admin/ui/persona-alta/mensajes-error';
+import { Select } from '@/components/admin/ui/persona-alta/Select';
 import { ApiError } from '@/lib/api/http';
 import {
   actualizarCarrera,
@@ -271,27 +272,21 @@ export default function AdminCarrerasPage() {
             <label htmlFor="estatus" className={LABEL_CLASS}>
               Estatus
             </label>
-            <select
+            <Select
               id="estatus"
               disabled={actualizarMutation.isPending}
-              className={INPUT_CLASS}
               value={formEdicion.estatus}
-              onChange={(e) =>
-                setFormEdicion((f) => ({
-                  ...f,
-                  estatus: e.target.value as EstatusCarrera | '',
-                }))
+              onChange={(value) =>
+                setFormEdicion((f) => ({ ...f, estatus: value as EstatusCarrera | '' }))
               }
-            >
-              <option value="">Sin cambio</option>
-              {(Object.entries(ESTATUS_LABEL) as [EstatusCarrera, string][]).map(
-                ([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
+              options={[
+                { value: '', label: 'Sin cambio' },
+                ...(Object.entries(ESTATUS_LABEL) as [EstatusCarrera, string][]).map(
+                  ([value, label]) => ({ value, label }),
                 ),
-              )}
-            </select>
+              ]}
+              placeholder="Sin cambio"
+            />
           </div>
 
           <div className="flex gap-3">
@@ -472,43 +467,38 @@ function CamposCarrera({
         <label htmlFor="nivel" className={LABEL_CLASS}>
           Nivel
         </label>
-        <select
+        <Select
           id="nivel"
-          required={requerido}
           disabled={disabled}
-          className={INPUT_CLASS}
           value={form.nivel}
-          onChange={(e) => onChange({ nivel: e.target.value as NivelCarrera | '' })}
-        >
-          <option value="">{requerido ? 'Selecciona un nivel' : 'Sin cambio'}</option>
-          {(Object.entries(NIVEL_LABEL) as [NivelCarrera, string][]).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
+          onChange={(value) => onChange({ nivel: value as NivelCarrera | '' })}
+          options={[
+            { value: '', label: requerido ? 'Selecciona un nivel' : 'Sin cambio' },
+            ...(Object.entries(NIVEL_LABEL) as [NivelCarrera, string][]).map(([value, label]) => ({
+              value,
+              label,
+            })),
+          ]}
+          placeholder={requerido ? 'Selecciona un nivel' : 'Sin cambio'}
+        />
       </div>
       <div>
         <label htmlFor="modalidad" className={LABEL_CLASS}>
           Modalidad
         </label>
-        <select
+        <Select
           id="modalidad"
-          required={requerido}
           disabled={disabled}
-          className={INPUT_CLASS}
           value={form.modalidad}
-          onChange={(e) => onChange({ modalidad: e.target.value as ModalidadCarrera | '' })}
-        >
-          <option value="">{requerido ? 'Selecciona una modalidad' : 'Sin cambio'}</option>
-          {(Object.entries(MODALIDAD_LABEL) as [ModalidadCarrera, string][]).map(
-            ([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
+          onChange={(value) => onChange({ modalidad: value as ModalidadCarrera | '' })}
+          options={[
+            { value: '', label: requerido ? 'Selecciona una modalidad' : 'Sin cambio' },
+            ...(Object.entries(MODALIDAD_LABEL) as [ModalidadCarrera, string][]).map(
+              ([value, label]) => ({ value, label }),
             ),
-          )}
-        </select>
+          ]}
+          placeholder={requerido ? 'Selecciona una modalidad' : 'Sin cambio'}
+        />
       </div>
       <div className="sm:col-span-2">
         <label htmlFor="descripcion" className={LABEL_CLASS}>

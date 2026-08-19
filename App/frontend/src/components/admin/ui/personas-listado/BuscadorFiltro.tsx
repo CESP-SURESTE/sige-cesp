@@ -1,6 +1,7 @@
 'use client';
 
 import { INPUT_CLASS, LABEL_CLASS } from '../persona-alta/estilos';
+import { Select } from '../persona-alta/Select';
 
 /**
  * `BuscadorFiltro` — Fase 5, Día 19.
@@ -54,19 +55,13 @@ export function BuscadorFiltro({
         <label className={LABEL_CLASS} htmlFor="estatus">
           Estatus
         </label>
-        <select
+        <Select
           id="estatus"
-          className={INPUT_CLASS}
           value={estatus}
-          onChange={(e) => onEstatusChange(e.target.value)}
-        >
-          <option value="">Todos</option>
-          {estatusOptions.map((opcion) => (
-            <option key={opcion.value} value={opcion.value}>
-              {opcion.label}
-            </option>
-          ))}
-        </select>
+          onChange={onEstatusChange}
+          options={[{ value: '', label: 'Todos' }, ...estatusOptions]}
+          placeholder="Todos"
+        />
       </div>
     </div>
   );
