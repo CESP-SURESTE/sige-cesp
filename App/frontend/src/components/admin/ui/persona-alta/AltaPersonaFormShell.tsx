@@ -35,7 +35,7 @@ export function AltaPersonaFormShell({
   submitLabel = 'Dar de alta',
 }: AltaPersonaFormShellProps) {
   return (
-    <div className="max-w-7xl rounded-lg border-l-4 border-navy bg-white px-6 py-6 shadow-sm sm:px-8 sm:py-6">
+    <div className="w-full rounded-lg border-l-4 border-navy bg-white px-6 py-6 shadow-sm sm:px-8 sm:py-6">
       <h1 className="font-display text-xl font-semibold text-slate">{titulo}</h1>
       <p className="mt-1 text-sm text-slate/60">{descripcion}</p>
 

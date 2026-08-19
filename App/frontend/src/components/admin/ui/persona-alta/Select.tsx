@@ -50,13 +50,13 @@ export function Select({
           <ListboxButton
             id={id}
             onBlur={onBlur}
-            className={`${INPUT_CLASS} flex items-center justify-between text-left`}
+            className={`${INPUT_CLASS} flex items-center justify-between gap-2 text-left`}
           >
-            <span className={selected ? 'text-slate' : 'text-slate/40'}>
+            <span className={`truncate ${selected ? 'text-slate' : 'text-slate/40'}`}>
               {selected ? selected.label : placeholder}
             </span>
             <svg
-              className={`size-4 text-slate/60 transition-transform ${open ? 'rotate-180' : ''}`}
+              className={`size-4 shrink-0 text-slate/60 transition-transform ${open ? 'rotate-180' : ''}`}
               viewBox="0 0 20 20"
               fill="currentColor"
               aria-hidden="true"
@@ -68,13 +68,18 @@ export function Select({
               />
             </svg>
           </ListboxButton>
-          <ListboxOptions className="absolute z-20 mt-1 max-h-60 w-full overflow-auto rounded-lg border border-mist bg-white py-1 text-sm shadow-lg focus:outline-none">
+          {/* `min-w-full` + `w-max` (en vez de `w-full`) — el panel nunca es
+              más angosto que el botón, pero SÍ puede crecer más ancho que él
+              para que las opciones largas (ej. "COORDINADOR_ADMINISTRATIVO")
+              nunca se corten. `overflow-y-auto` sin `overflow-x` — nunca
+              scroll horizontal, la opción se ve completa siempre. */}
+          <ListboxOptions className="absolute z-20 mt-1 max-h-60 w-max min-w-full max-w-xs overflow-y-auto rounded-lg border border-mist bg-white py-1 text-sm shadow-lg focus:outline-none">
             {options.map((option) => (
               <ListboxOption
                 key={option.value}
                 value={option.value}
                 className={({ focus, selected: isSelected }) =>
-                  `cursor-pointer px-3 py-2 ${focus ? 'bg-navy/10' : ''} ${
+                  `cursor-pointer px-3 py-2 whitespace-normal break-words ${focus ? 'bg-navy/10' : ''} ${
                     isSelected ? 'font-semibold text-navy' : 'text-slate'
                   }`
                 }
