@@ -1,6 +1,6 @@
 'use client';
 
-import { useFieldArray } from 'react-hook-form';
+import { Controller, useFieldArray } from 'react-hook-form';
 import type {
   Control,
   FieldArrayPath,
@@ -10,6 +10,7 @@ import type {
   UseFormRegister,
 } from 'react-hook-form';
 import { FieldError } from './FieldError';
+import { Select } from './Select';
 import { INPUT_CLASS, LABEL_CLASS } from './estilos';
 import type { PerfilPrefix } from './DatosPersonalesFieldset';
 
@@ -201,16 +202,24 @@ export function ContactosFieldset<
                     >
                       Tipo
                     </label>
-                    <select
-                      id={`${prefix}-contactos-${index}-tipo`}
-                      disabled={disabled}
-                      className={INPUT_CLASS}
-                      {...register(path(index, 'tipo'))}
-                    >
-                      <option value="">Selecciona un tipo</option>
-                      <option value="TUTOR">Tutor</option>
-                      <option value="EMERGENCIA">Emergencia</option>
-                    </select>
+                    <Controller
+                      control={control}
+                      name={path(index, 'tipo')}
+                      render={({ field }) => (
+                        <Select
+                          id={`${prefix}-contactos-${index}-tipo`}
+                          value={(field.value as string | undefined) ?? ''}
+                          onChange={field.onChange}
+                          onBlur={field.onBlur}
+                          disabled={disabled}
+                          placeholder="Selecciona un tipo"
+                          options={[
+                            { value: 'TUTOR', label: 'Tutor' },
+                            { value: 'EMERGENCIA', label: 'Emergencia' },
+                          ]}
+                        />
+                      )}
+                    />
                     <FieldError message={fieldErrors?.tipo?.message} />
                   </div>
                 )}

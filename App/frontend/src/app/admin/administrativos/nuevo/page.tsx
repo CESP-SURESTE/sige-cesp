@@ -3,7 +3,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation } from '@tanstack/react-query';
 import { useState } from 'react';
-import { useForm, useWatch } from 'react-hook-form';
+import { Controller, useForm, useWatch } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import { AltaPersonaFormShell } from '@/components/admin/ui/persona-alta/AltaPersonaFormShell';
@@ -19,6 +19,7 @@ import {
 } from '@/components/admin/ui/persona-alta/mensajes-error';
 import { ResultadoAltaPersona } from '@/components/admin/ui/persona-alta/ResultadoAltaPersona';
 import { contactosSchema, infoMedicaSchema } from '@/components/admin/ui/persona-alta/schemas';
+import { Select } from '@/components/admin/ui/persona-alta/Select';
 import { crearAdministrativo, type AltaPersonaResult } from '@/lib/api/personas';
 
 /**
@@ -245,38 +246,45 @@ export default function NuevoAdministrativoPage() {
               <label htmlFor="puesto" className={LABEL_CLASS}>
                 Puesto
               </label>
-              <select
-                id="puesto"
-                disabled={mutation.isPending}
-                className={INPUT_CLASS}
-                {...register('perfilAdministrativo.puesto')}
-              >
-                <option value="">Selecciona un puesto</option>
-                {PUESTO_OPCIONES.map((valor) => (
-                  <option key={valor} value={valor}>
-                    {valor}
-                  </option>
-                ))}
-              </select>
+              <Controller
+                control={control}
+                name="perfilAdministrativo.puesto"
+                render={({ field }) => (
+                  <Select
+                    id="puesto"
+                    value={field.value}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                    disabled={mutation.isPending}
+                    placeholder="Selecciona un puesto"
+                    options={PUESTO_OPCIONES.map((valor) => ({ value: valor, label: valor }))}
+                  />
+                )}
+              />
               <FieldError message={errors.perfilAdministrativo?.puesto?.message} />
             </div>
             <div className="sm:col-span-2">
               <label htmlFor="nivelPermiso" className={LABEL_CLASS}>
                 Nivel de permiso (opcional, por defecto AUXILIAR)
               </label>
-              <select
-                id="nivelPermiso"
-                disabled={mutation.isPending}
-                className={INPUT_CLASS}
-                {...register('perfilAdministrativo.nivelPermiso')}
-              >
-                <option value="">AUXILIAR (por defecto)</option>
-                {NIVEL_PERMISO_OPCIONES.map((valor) => (
-                  <option key={valor} value={valor}>
-                    {valor}
-                  </option>
-                ))}
-              </select>
+              <Controller
+                control={control}
+                name="perfilAdministrativo.nivelPermiso"
+                render={({ field }) => (
+                  <Select
+                    id="nivelPermiso"
+                    value={field.value ?? ''}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                    disabled={mutation.isPending}
+                    placeholder="AUXILIAR (por defecto)"
+                    options={NIVEL_PERMISO_OPCIONES.map((valor) => ({
+                      value: valor,
+                      label: valor,
+                    }))}
+                  />
+                )}
+              />
               <p className="mt-1 text-xs text-slate/60">
                 Solo puedes asignar un nivel igual o menor al tuyo — el backend rechaza la
                 solicitud con <code>NIVEL_PERMISO_INSUFICIENTE</code> si intentas asignar más.

@@ -3,7 +3,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import { useForm, useWatch } from 'react-hook-form';
+import { Controller, useForm, useWatch } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import { AltaPersonaFormShell } from '@/components/admin/ui/persona-alta/AltaPersonaFormShell';
@@ -22,6 +22,7 @@ import {
   contactosAlumnoSchema,
   infoMedicaSchema,
 } from '@/components/admin/ui/persona-alta/schemas';
+import { Select } from '@/components/admin/ui/persona-alta/Select';
 import { listarCarreras } from '@/lib/api/carreras';
 import { crearAlumno, type AltaPersonaResult } from '@/lib/api/personas';
 
@@ -268,21 +269,26 @@ export default function NuevoAlumnoPage() {
               <label htmlFor="carreraId" className={LABEL_CLASS}>
                 Carrera
               </label>
-              <select
-                id="carreraId"
-                disabled={mutation.isPending || carrerasQuery.isLoading}
-                className={INPUT_CLASS}
-                {...register('perfilAlumno.carreraId')}
-              >
-                <option value="">
-                  {carrerasQuery.isLoading ? 'Cargando carreras…' : 'Selecciona una carrera'}
-                </option>
-                {carrerasQuery.data?.map((carrera) => (
-                  <option key={carrera.id} value={carrera.id}>
-                    {carrera.clave} — {carrera.nombre}
-                  </option>
-                ))}
-              </select>
+              <Controller
+                control={control}
+                name="perfilAlumno.carreraId"
+                render={({ field }) => (
+                  <Select
+                    id="carreraId"
+                    value={field.value}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                    disabled={mutation.isPending || carrerasQuery.isLoading}
+                    placeholder={
+                      carrerasQuery.isLoading ? 'Cargando carreras…' : 'Selecciona una carrera'
+                    }
+                    options={(carrerasQuery.data ?? []).map((c) => ({
+                      value: c.id,
+                      label: `${c.clave} — ${c.nombre}`,
+                    }))}
+                  />
+                )}
+              />
               {carrerasQuery.isError && (
                 <p className="mt-1 text-xs text-crimson">
                   No se pudieron cargar las carreras. Intenta de nuevo más tarde.
