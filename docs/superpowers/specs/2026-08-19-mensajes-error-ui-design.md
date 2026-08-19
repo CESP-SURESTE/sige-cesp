@@ -75,9 +75,16 @@ patrón visual correcto, solo le faltaba el logging.
 
 ## Diseño de la corrección
 
-Mismo patrón en los 6 casos, sin inventar uno nuevo:
+Mismo patrón en los 6 casos, sin inventar uno nuevo — con un ajuste pedido
+por el usuario: los `console.error` deben llevar **contexto real de debug**,
+no solo el string genérico `'[Componente] Error al <acción>:'` + `err`. Donde
+haya variables relevantes (id, payload del form), se loguean junto al error
+en un objeto — así el log sirve para reproducir el caso sin adivinar qué se
+mandó. Nunca se loguea `password`/`passwordActual`/`passwordNueva` ni
+cualquier credencial, aunque esté disponible en la función.
 
-**Para queries (`useQuery`)** — envolver `queryFn` en `try/catch`:
+**Para queries (`useQuery`) sin parámetros relevantes** — envolver `queryFn`
+en `try/catch`:
 ```ts
 queryFn: async () => {
   try {
@@ -89,14 +96,23 @@ queryFn: async () => {
 },
 ```
 
-**Para mutaciones (`useMutation`)** — agregar `console.error` al inicio de
-`onError`, antes del `toast.error` ya existente:
+**Para mutaciones (`useMutation`) con variables** — agregar `console.error`
+al inicio de `onError`, con las `vars` que trae el propio `onError` (React
+Query las pasa como segundo argumento, no hay que capturarlas aparte):
 ```ts
-onError: (err) => {
-  console.error('[Componente] Error al <acción>:', err);
+onError: (err, vars) => {
+  console.error('[Componente] Error al <acción>:', { vars, err });
   toast.error(...); // ya existente, sin cambios de mensaje/lógica
 },
 ```
+
+Aplicado a los casos concretos de este spec:
+- `plataforma/sedes` `crearMutation.onError` → `{ input: vars, err }`.
+- `plataforma/sedes` `actualizarMutation.onError` → `{ id: vars.id, input: vars.input, err }`.
+- `plataforma/sedes` `eliminarMutation.onError` → `{ id: vars, err }` (`vars` ya es el `id` en esta mutation, ver `mutationFn: (id: string) => eliminarSede(id)`).
+- `plataforma/login` `onError` → `{ email, err }` — **nunca** `password` (el valor vive en el closure del componente, no en `vars`, así que hay que loguearlo explícito con cuidado de excluir la contraseña).
+- `admin/perfil` y `plataforma` (dashboard) — sin variables relevantes (queries sin params), se quedan con el patrón simple de arriba.
+- `admin/alumnos/nuevo` `carrerasQuery` — sin parámetros (lista completa), patrón simple.
 
 **Para el gap real de UI (punto 3, `sedesQuery`)** — agregar la rama
 `isError` a la tabla, mismo bloque visual que ya usa
