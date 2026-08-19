@@ -1,5 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { randomUUID } from 'node:crypto';
+import { RolUsuario } from '@prisma/client';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
@@ -51,14 +53,49 @@ describe('CRUD /sedes con PlatformAdminGuard (e2e)', () => {
   });
 
   afterAll(async () => {
-    // `RegistroAuditoria.sedeId` es FK requerida sin cascade — hay que
-    // limpiar los registros de auditoría que referencian las sedes de
-    // prueba antes de poder borrar las sedes mismas.
+    // Orden importa acá — cada paso depende de que el anterior haya
+    // terminado antes de que la siguiente FK se vuelva imposible de
+    // resolver:
+    //
+    // 1) Borrar TODO el rastro de auditoría de este admin de prueba por
+    //    `adminPlataformaId` (no por `sedeId`, ver nota abajo) — antes de
+    //    tocar sedes/admin.
+    // 2) Borrar los `Usuario` de prueba que quedaron colgando de una sede
+    //    (`Usuario.sedeId` es FK obligatoria SIN `onDelete` — el test
+    //    "alumno dado de baja -> 409 CONFLICT igual" del bloque
+    //    `DELETE /sedes/:id`, Task 2, deja a propósito un `Usuario`
+    //    inactivo sin borrar: es justo el comportamiento que prueba, que el
+    //    `DELETE` real falle con P2003. Sin este paso, `sede.deleteMany` de
+    //    abajo revienta con el mismo P2003).
+    // 3) Borrar las sedes de prueba.
+    // 4) Borrar el admin de prueba.
+    //
+    // Por qué el paso 1 filtra por `adminPlataformaId` y no por `sedeId`
+    // (como antes de Task 2): el bloque `DELETE /sedes/:id` prueba a
+    // propósito que el `RegistroAuditoria` de la `ALTA` original sobrevive
+    // con `sedeId: null` después de borrar la sede — esas filas ya NO
+    // calzan con `sedeId: { in: idsSedesPrueba } }` (null no está "in" una
+    // lista de UUIDs) y quedan huérfanas apuntando a este admin. Si después
+    // se intenta borrar el admin (paso 4) con esas filas todavía vivas,
+    // Postgres intenta `SET NULL` en `admin_plataforma_id` (FK opcional) y
+    // el CHECK `registro_auditoria_actor_check` revienta — quedaría un
+    // registro sin actor (`usuarioId` y `adminPlataformaId` null a la vez).
+    // Filtrar por `adminPlataformaId` en vez de `sedeId` evita esto sin
+    // importar si la sede detrás del registro sigue viva o no.
+    const admin = await prisma.adminPlataforma.findFirst({
+      where: { email: emailAdmin },
+    });
+    if (admin) {
+      await prisma.registroAuditoria.deleteMany({
+        where: { adminPlataformaId: admin.id },
+      });
+    }
+
     const sedesPrueba = await prisma.sede.findMany({
       where: { nombre: { startsWith: 'Sede E2E ' } },
       select: { id: true },
     });
-    await prisma.registroAuditoria.deleteMany({
+    await prisma.usuario.deleteMany({
       where: { sedeId: { in: sedesPrueba.map((s) => s.id) } },
     });
     await prisma.sede.deleteMany({
@@ -205,5 +242,167 @@ describe('CRUD /sedes con PlatformAdminGuard (e2e)', () => {
     });
 
     expect(res.status).toBe(401);
+  });
+
+  describe('DELETE /sedes/:id', () => {
+    async function crearSedeDePrueba(nombre: string): Promise<string> {
+      const res = await request(app.getHttpServer())
+        .post('/sedes')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          nombre,
+          direccion: 'Calle Falsa 123',
+          ubicacionReferencia: 'Frente al parque',
+          telefono: '9991234567',
+        });
+      return (res.body as SedeBody).data.id;
+    }
+
+    it('sede vacía se elimina exitosamente', async () => {
+      const id = await crearSedeDePrueba(`Sede E2E Delete Vacia ${Date.now()}`);
+
+      const res = await request(app.getHttpServer())
+        .delete(`/sedes/${id}`)
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(res.status).toBe(200);
+      expect((res.body as { data: { ok: boolean } }).data.ok).toBe(true);
+
+      const sedeEnDb = await prisma.sede.findUnique({ where: { id } });
+      expect(sedeEnDb).toBeNull();
+    });
+
+    it('el RegistroAuditoria de la ALTA original sobrevive con sedeId null', async () => {
+      const nombre = `Sede E2E Delete Auditoria ${Date.now()}`;
+      const id = await crearSedeDePrueba(nombre);
+
+      const registroAlta = await prisma.registroAuditoria.findFirst({
+        where: { entidad: 'Sede', entidadId: id, accion: 'ALTA' },
+      });
+      expect(registroAlta).not.toBeNull();
+
+      const res = await request(app.getHttpServer())
+        .delete(`/sedes/${id}`)
+        .set('Authorization', `Bearer ${token}`);
+      expect(res.status).toBe(200);
+
+      const registroAltaDespues = await prisma.registroAuditoria.findUnique({
+        where: { id: registroAlta!.id },
+      });
+      expect(registroAltaDespues).not.toBeNull();
+      expect(registroAltaDespues!.sedeId).toBeNull();
+
+      const registroEliminacion = await prisma.registroAuditoria.findFirst({
+        where: { entidad: 'Sede', entidadId: id, accion: 'ELIMINACION' },
+      });
+      expect(registroEliminacion).not.toBeNull();
+      expect(registroEliminacion!.sedeId).toBeNull();
+      expect(registroEliminacion!.detalle).toEqual({ nombre });
+    });
+
+    it('sede con alumno activo -> 409 CONFLICT, no se borra', async () => {
+      const id = await crearSedeDePrueba(
+        `Sede E2E Delete AlumnoActivo ${Date.now()}`,
+      );
+      const usuario = await prisma.usuario.create({
+        data: {
+          id: randomUUID(),
+          email: `fixture.delete-sede.${randomUUID()}@example.com`,
+          rol: RolUsuario.ALUMNO,
+          sedeId: id,
+          activo: true,
+        },
+      });
+
+      const res = await request(app.getHttpServer())
+        .delete(`/sedes/${id}`)
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(res.status).toBe(409);
+      expect((res.body as ErrorBody).code).toBe('CONFLICT');
+      expect((res.body as ErrorBody).error).toMatch(/alumno/i);
+
+      const sedeEnDb = await prisma.sede.findUnique({ where: { id } });
+      expect(sedeEnDb).not.toBeNull();
+
+      await prisma.usuario.delete({ where: { id: usuario.id } });
+    });
+
+    it('sede con alumno dado de baja (activo=false) -> 409 CONFLICT igual (Usuario.sedeId sigue siendo FK sin onDelete)', async () => {
+      const id = await crearSedeDePrueba(
+        `Sede E2E Delete AlumnoBaja ${Date.now()}`,
+      );
+      await prisma.usuario.create({
+        data: {
+          id: randomUUID(),
+          email: `fixture.delete-sede.${randomUUID()}@example.com`,
+          rol: RolUsuario.ALUMNO,
+          sedeId: id,
+          activo: false,
+        },
+      });
+
+      const res = await request(app.getHttpServer())
+        .delete(`/sedes/${id}`)
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(res.status).toBe(409);
+      expect((res.body as ErrorBody).code).toBe('CONFLICT');
+
+      const sedeEnDb = await prisma.sede.findUnique({ where: { id } });
+      expect(sedeEnDb).not.toBeNull();
+    });
+
+    it('sede con una carrera asociada (sin alumnos) -> 409 CONFLICT por datos asociados', async () => {
+      const id = await crearSedeDePrueba(
+        `Sede E2E Delete Carrera ${Date.now()}`,
+      );
+      const carrera = await prisma.carrera.create({
+        data: {
+          sedeId: id,
+          nombre: `Carrera E2E Delete ${Date.now()}`,
+          clave: `CED${Date.now()}`,
+          duracion: 8,
+          nivel: 'LICENCIATURA',
+          modalidad: 'PRESENCIAL',
+          rvoe: 'RVOE-E2E-DELETE',
+          descripcion: 'Carrera de prueba para el test de DELETE /sedes',
+        },
+      });
+
+      const res = await request(app.getHttpServer())
+        .delete(`/sedes/${id}`)
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(res.status).toBe(409);
+      expect((res.body as ErrorBody).code).toBe('CONFLICT');
+
+      const sedeEnDb = await prisma.sede.findUnique({ where: { id } });
+      expect(sedeEnDb).not.toBeNull();
+
+      await prisma.carrera.delete({ where: { id: carrera.id } });
+    });
+
+    it('id inexistente -> 404 NOT_FOUND', async () => {
+      const res = await request(app.getHttpServer())
+        .delete('/sedes/00000000-0000-0000-0000-000000000000')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(res.status).toBe(404);
+      expect((res.body as ErrorBody).code).toBe('NOT_FOUND');
+    });
+
+    it('sin token -> 401 UNAUTHORIZED', async () => {
+      const id = await crearSedeDePrueba(
+        `Sede E2E Delete SinToken ${Date.now()}`,
+      );
+
+      const res = await request(app.getHttpServer()).delete(`/sedes/${id}`);
+
+      expect(res.status).toBe(401);
+
+      await prisma.registroAuditoria.deleteMany({ where: { sedeId: id } });
+      await prisma.sede.delete({ where: { id } });
+    });
   });
 });

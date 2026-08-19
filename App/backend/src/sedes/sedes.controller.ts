@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   Param,
@@ -69,6 +70,16 @@ export class SedesController {
     @PlatformAdminActual() actorId: string,
   ) {
     const data = await this.sedesService.actualizar(id, body, actorId);
+    return { data };
+  }
+
+  @Delete(':id')
+  @UseGuards(PlatformAdminGuard)
+  async eliminar(
+    @Param('id') id: string,
+    @PlatformAdminActual() actorId: string,
+  ) {
+    const data = await this.sedesService.eliminar(id, actorId);
     return { data };
   }
 }
