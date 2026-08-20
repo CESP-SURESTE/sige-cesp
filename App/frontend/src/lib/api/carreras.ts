@@ -1,4 +1,4 @@
-import { apiFetchAuth } from './http';
+import { apiFetchAuth, API_URL, ApiError, obtenerAccessToken } from './http';
 
 /**
  * `GET /carreras` — Fase 4, Día 14, extendido en Fase 6 Día 21 (backend,
@@ -58,6 +58,7 @@ export interface CarreraCompleta {
   descripcion: string;
   createdAt: string;
   updatedAt: string;
+  tieneMalla: boolean;
 }
 
 /** Body de `POST /carreras` — los 6 campos son requeridos (`sedeId`/`estatus` nunca van acá, ver `CrearCarreraDto` del backend). */
@@ -108,18 +109,84 @@ export interface MallaCurricular {
 }
 
 /**
- * `POST /carreras/:id/malla` — sube el PDF de malla curricular (multipart,
- * campo `archivo`). Upsert 1-a-1 con la carrera (regla 6 de `CLAUDE.md`
- * raíz) — reemplaza la malla vigente si ya había una.
+ * `GET /carreras/:id/malla` — detalle de quién y cuándo subió la malla
+ * vigente. `null` si la carrera todavía no tiene malla (no es un error).
+ */
+export interface MallaCurricularInfo {
+  nombreArchivo: string;
+  subidaEn: string;
+  subidaPor: {
+    nombres: string;
+    apellidoPaterno: string;
+    apellidoMaterno: string | null;
+  };
+}
+
+export function obtenerMallaCurricular(
+  carreraId: string,
+): Promise<MallaCurricularInfo | null> {
+  return apiFetchAuth<MallaCurricularInfo | null>(
+    `/carreras/${carreraId}/malla`,
+  );
+}
+
+/**
+ * `POST /carreras/:id/malla` con progreso real de subida — usa
+ * `XMLHttpRequest` en vez de `apiFetchAuth`/`fetch` (2026-08-19) porque
+ * `fetch` no expone eventos de progreso de subida de forma práctica en el
+ * navegador; es la única llamada de este árbol que lo necesita. Mismo
+ * contrato de retorno y de errores (`ApiError` con `code`/`status`) que
+ * el resto de la API — `onProgress` es opcional, sin cambio de
+ * comportamiento para callers que no lo pasan.
  */
 export function subirMallaCurricular(
   carreraId: string,
   file: File,
+  onProgress?: (porcentaje: number) => void,
 ): Promise<MallaCurricular> {
-  const formData = new FormData();
-  formData.append('archivo', file);
-  return apiFetchAuth<MallaCurricular>(`/carreras/${carreraId}/malla`, {
-    method: 'POST',
-    body: formData,
+  return new Promise((resolve, reject) => {
+    obtenerAccessToken()
+      .then((token) => {
+        const formData = new FormData();
+        formData.append('archivo', file);
+
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', `${API_URL}/carreras/${carreraId}/malla`);
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+
+        xhr.upload.onprogress = (e) => {
+          if (onProgress && e.lengthComputable) {
+            onProgress(Math.round((e.loaded / e.total) * 100));
+          }
+        };
+
+        xhr.onload = () => {
+          let body: unknown = null;
+          try {
+            body = JSON.parse(xhr.responseText);
+          } catch {
+            body = null;
+          }
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve((body as { data: MallaCurricular }).data);
+          } else {
+            const failure = body as Partial<{ error: string; code: string }> | null;
+            reject(
+              new ApiError(
+                failure?.error ?? 'Error inesperado del servidor',
+                failure?.code ?? 'SERVER_ERROR',
+                xhr.status,
+              ),
+            );
+          }
+        };
+
+        xhr.onerror = () => {
+          reject(new Error('Error de red al subir la malla curricular.'));
+        };
+
+        xhr.send(formData);
+      })
+      .catch(reject);
   });
 }

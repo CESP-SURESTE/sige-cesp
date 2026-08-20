@@ -14,7 +14,7 @@ import { createClient } from '@/lib/supabase/client';
  * mensaje.
  */
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL;
+export const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 export class ApiError extends Error {
   constructor(
@@ -110,11 +110,14 @@ export async function apiFetchPaginado<T>(
   return body as ApiListaPaginada<T>;
 }
 
-/** Compartido entre `apiFetchAuth` y `apiFetchAuthPaginado` — resuelve el
- * mismo `Authorization: Bearer <token>` una sola vez. */
-async function resolveAuthHeaders(
-  init?: RequestInit,
-): Promise<RequestInit> {
+/**
+ * Resuelve el `access_token` de la sesión actual — extraído de
+ * `resolveAuthHeaders` (2026-08-19) porque `subirMallaCurricular`
+ * (`carreras.ts`) lo necesita para construir un `XMLHttpRequest` a mano
+ * (progreso real de subida, `fetch` no lo expone de forma práctica) sin
+ * pasar por `apiFetchAuth`.
+ */
+export async function obtenerAccessToken(): Promise<string> {
   const supabase = createClient();
   const { data: sessionData } = await supabase.auth.getSession();
   const accessToken = sessionData.session?.access_token;
@@ -122,7 +125,15 @@ async function resolveAuthHeaders(
   if (!accessToken) {
     throw new Error('No hay una sesión activa. Vuelve a iniciar sesión.');
   }
+  return accessToken;
+}
 
+/** Compartido entre `apiFetchAuth` y `apiFetchAuthPaginado` — resuelve el
+ * mismo `Authorization: Bearer <token>` una sola vez. */
+async function resolveAuthHeaders(
+  init?: RequestInit,
+): Promise<RequestInit> {
+  const accessToken = await obtenerAccessToken();
   return {
     ...init,
     headers: {
