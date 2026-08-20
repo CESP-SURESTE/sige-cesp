@@ -17,7 +17,7 @@ interface ErrorBody {
 }
 
 interface ListarCarrerasBody {
-  data: Array<{ id: string; nombre: string; clave: string }>;
+  data: Array<{ id: string; nombre: string; clave: string; sedeId: string }>;
 }
 
 /**
@@ -83,7 +83,7 @@ describe('CarrerasController — GET /carreras (e2e)', () => {
     await app.close();
   });
 
-  it('caso feliz -> 200, solo las carreras de la sede del actor (seed real, 2 sedes)', async () => {
+  it('caso feliz -> 200, solo las carreras de la sede del actor (anclas de seed.ts presentes, filtro real por sede)', async () => {
     const token = await firmarToken({
       role: 'authenticated',
       sede_id: sedeMeridaId,
@@ -97,13 +97,17 @@ describe('CarrerasController — GET /carreras (e2e)', () => {
     expect(res.status).toBe(200);
     const body = res.body as ListarCarrerasBody;
     expect(body.data.length).toBeGreaterThan(0);
-    expect(body.data.map((c) => c.clave).sort()).toEqual([
-      'ING-SIS-MID',
-      'LAE-MID',
-    ]);
-    // Ninguna carrera de Valladolid se filtra al admin de Mérida.
-    expect(body.data.map((c) => c.clave)).not.toContain('LC-VLD');
-    expect(body.data.map((c) => c.clave)).not.toContain('ING-IND-VLD');
+    // NO se asume lista cerrada — `seed-variado.ts` (Día 22) agrega carreras
+    // extra por sede con el tiempo (ej. `MAE-EDU-MID`/`TEC-GAST-MID`), y
+    // futuras carreras reales de CESP también aparecerán acá. Solo se
+    // verifica que las 2 anclas de `seed.ts` sigan presentes, y que el
+    // filtro de sede es real: cada carrera devuelta pertenece a Mérida.
+    expect(body.data.map((c) => c.clave)).toEqual(
+      expect.arrayContaining(['ING-SIS-MID', 'LAE-MID']),
+    );
+    for (const carrera of body.data) {
+      expect(carrera.sedeId).toBe(sedeMeridaId);
+    }
     // Extendido en Día 21: objeto Carrera completo (antes solo
     // id/nombre/clave). El dropdown de alta de alumno sigue leyendo solo
     // esos 3 campos e ignora el resto, sin cambio de comportamiento ahí.
@@ -135,10 +139,13 @@ describe('CarrerasController — GET /carreras (e2e)', () => {
 
     expect(res.status).toBe(200);
     const body = res.body as ListarCarrerasBody;
-    expect(body.data.map((c) => c.clave).sort()).toEqual([
-      'ING-IND-VLD',
-      'LC-VLD',
-    ]);
+    // Mismo criterio que el test de Mérida arriba — sin lista cerrada.
+    expect(body.data.map((c) => c.clave)).toEqual(
+      expect.arrayContaining(['ING-IND-VLD', 'LC-VLD']),
+    );
+    for (const carrera of body.data) {
+      expect(carrera.sedeId).toBe(sedeValladolidId);
+    }
   });
 
   it('rol no ADMINISTRATIVO -> 403 ROL_NO_AUTORIZADO', async () => {
