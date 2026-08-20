@@ -237,3 +237,17 @@ export interface Perfil {
 export function obtenerPerfil(): Promise<Perfil> {
   return apiFetchAuth<Perfil>('/perfil');
 }
+
+/**
+ * `GET /perfil/malla` — Fase 7, Día 24. Signed URL (5 min) de la malla
+ * curricular de la carrera del propio alumno. `null` si su carrera
+ * todavía no tiene malla subida — estado normal, no un error (ver
+ * `SeccionCarrera` en `app/alumno/page.tsx`, que muestra un mensaje
+ * tranquilizador en ese caso en vez de un `toast.error`).
+ */
+export function obtenerUrlDescargaMalla(): Promise<{
+  url: string;
+  nombreArchivo: string;
+} | null> {
+  return apiFetchAuth('/perfil/malla');
+}

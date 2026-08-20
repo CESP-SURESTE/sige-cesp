@@ -1,9 +1,12 @@
 'use client';
 
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { ApiError } from '@/lib/api/http';
 import {
   obtenerPerfil,
+  obtenerUrlDescargaMalla,
   type ContactoAlumno,
   type Perfil,
   type PerfilAlumno,
@@ -164,6 +167,30 @@ function SeccionSede({ sede }: { sede: Perfil['sede'] }) {
 
 function SeccionCarrera({ alumno }: { alumno: PerfilAlumno }) {
   const carrera = alumno.carrera;
+  const [descargando, setDescargando] = useState(false);
+
+  async function handleDescargar() {
+    setDescargando(true);
+    try {
+      const resultado = await obtenerUrlDescargaMalla();
+      if (!resultado) {
+        toast.info(
+          'Tu malla curricular aún no ha sido cargada por la escuela. Estará disponible pronto.',
+        );
+        return;
+      }
+      window.open(resultado.url, '_blank');
+    } catch (err) {
+      console.error('[SeccionCarrera] Error al descargar malla curricular:', err);
+      toast.error(
+        err instanceof ApiError
+          ? err.message
+          : 'No se pudo descargar la malla curricular. Intenta de nuevo.',
+      );
+    } finally {
+      setDescargando(false);
+    }
+  }
 
   return (
     <section className="rounded-lg border border-mist p-5">
@@ -190,6 +217,13 @@ function SeccionCarrera({ alumno }: { alumno: PerfilAlumno }) {
           </div>
         )}
       </dl>
+      <button
+        onClick={handleDescargar}
+        disabled={descargando}
+        className="mt-4 rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-navy-deep disabled:opacity-50"
+      >
+        {descargando ? 'Generando enlace…' : 'Descargar malla curricular'}
+      </button>
     </section>
   );
 }
