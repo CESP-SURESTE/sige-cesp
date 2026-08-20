@@ -10,6 +10,7 @@ import { AuthModule } from './auth/auth.module';
 import { PruebaRolesModule } from './prueba-roles/prueba-roles.module';
 import { PersonasModule } from './personas/personas.module';
 import { CarrerasModule } from './carreras/carreras.module';
+import { MallaCurricularModule } from './malla-curricular/malla-curricular.module';
 import { PerfilModule } from './perfil/perfil.module';
 import { PlatformAdminModule } from './platform-admin/platform-admin.module';
 import { MailModule } from './mail/mail.module';
@@ -26,6 +27,7 @@ import { MailModule } from './mail/mail.module';
     MailModule,
     PersonasModule,
     CarrerasModule,
+    MallaCurricularModule,
     PerfilModule,
     PlatformAdminModule,
   ],
