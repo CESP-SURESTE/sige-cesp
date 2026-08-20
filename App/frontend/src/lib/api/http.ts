@@ -61,10 +61,16 @@ async function apiFetchRaw(path: string, init?: RequestInit): Promise<unknown> {
     );
   }
 
+  // `FormData` (subida de archivos, ej. malla curricular) necesita que el
+  // navegador ponga su propio `Content-Type: multipart/form-data;
+  // boundary=...` — forzar `application/json` acá rompería el parseo del
+  // archivo en el backend. Para cualquier otro body (JSON, el caso normal)
+  // el default de siempre se mantiene igual.
+  const esFormData = init?.body instanceof FormData;
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
     headers: {
-      'Content-Type': 'application/json',
+      ...(esFormData ? {} : { 'Content-Type': 'application/json' }),
       ...init?.headers,
     },
   });

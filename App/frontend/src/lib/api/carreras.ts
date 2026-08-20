@@ -92,3 +92,34 @@ export function actualizarCarrera(
     body: JSON.stringify(input),
   });
 }
+
+/**
+ * `MallaCurricular` — Fase 7, Día 23. Espejo de `model MallaCurricular`
+ * (`schema.prisma`) tal como lo devuelve `POST /carreras/:id/malla` —
+ * sin `carrera` (relación completa, el frontend no la necesita acá).
+ */
+export interface MallaCurricular {
+  id: string;
+  carreraId: string;
+  storagePath: string;
+  nombreArchivo: string;
+  subidaEn: string;
+  subidaPorId: string;
+}
+
+/**
+ * `POST /carreras/:id/malla` — sube el PDF de malla curricular (multipart,
+ * campo `archivo`). Upsert 1-a-1 con la carrera (regla 6 de `CLAUDE.md`
+ * raíz) — reemplaza la malla vigente si ya había una.
+ */
+export function subirMallaCurricular(
+  carreraId: string,
+  file: File,
+): Promise<MallaCurricular> {
+  const formData = new FormData();
+  formData.append('archivo', file);
+  return apiFetchAuth<MallaCurricular>(`/carreras/${carreraId}/malla`, {
+    method: 'POST',
+    body: formData,
+  });
+}

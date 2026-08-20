@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { toast } from 'sonner';
 import { INPUT_CLASS, LABEL_CLASS } from '@/components/admin/ui/persona-alta/estilos';
 import {
@@ -14,6 +14,7 @@ import {
   actualizarCarrera,
   crearCarrera,
   listarCarreras,
+  subirMallaCurricular,
   type ActualizarCarreraInput,
   type Carrera,
   type CrearCarreraInput,
@@ -207,6 +208,47 @@ export default function AdminCarrerasPage() {
     },
   });
 
+  const [carreraIdParaMalla, setCarreraIdParaMalla] = useState<string | null>(null);
+  const inputMallaRef = useRef<HTMLInputElement>(null);
+
+  const subirMallaMutation = useMutation({
+    mutationFn: (vars: { carreraId: string; file: File }) =>
+      subirMallaCurricular(vars.carreraId, vars.file),
+    onSuccess: () => {
+      toast.success('Malla curricular actualizada');
+    },
+    onError: (err, vars) => {
+      console.error('[AdminCarrerasPage] Error al subir malla curricular:', {
+        carreraId: vars.carreraId,
+        nombreArchivo: vars.file.name,
+        err,
+      });
+      toast.error(resolverMensajeError(err, MENSAJES_ERROR_CARRERA) ?? MENSAJE_ERROR_GENERICO);
+    },
+  });
+
+  function iniciarSubidaMalla(carreraId: string) {
+    setCarreraIdParaMalla(carreraId);
+    inputMallaRef.current?.click();
+  }
+
+  function handleArchivoMallaSeleccionado(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // permite volver a seleccionar el mismo archivo dos veces seguidas
+    if (!file || !carreraIdParaMalla) return;
+
+    if (file.type !== 'application/pdf') {
+      toast.error('El archivo debe ser un PDF.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('El archivo no puede pesar más de 5MB.');
+      return;
+    }
+
+    subirMallaMutation.mutate({ carreraId: carreraIdParaMalla, file });
+  }
+
   function handleSubmitNuevo(e: FormEvent) {
     e.preventDefault();
     const payload = construirPayloadAlta(formNuevo);
@@ -331,6 +373,14 @@ export default function AdminCarrerasPage() {
         </form>
       )}
 
+      <input
+        ref={inputMallaRef}
+        type="file"
+        accept="application/pdf"
+        className="hidden"
+        onChange={handleArchivoMallaSeleccionado}
+      />
+
       <div className="overflow-x-auto rounded-lg border-l-4 border-navy bg-white shadow-sm">
         <table className="w-full text-sm">
           <thead>
@@ -371,6 +421,15 @@ export default function AdminCarrerasPage() {
                 <td className="px-4 py-3 text-slate">{carrera.nombre}</td>
                 <td className="px-4 py-3 text-slate/80">{carrera.clave}</td>
                 <td className="px-4 py-3 text-right">
+                  <button
+                    onClick={() => iniciarSubidaMalla(carrera.id)}
+                    disabled={subirMallaMutation.isPending}
+                    className="mr-4 text-navy hover:underline disabled:opacity-50"
+                  >
+                    {subirMallaMutation.isPending && subirMallaMutation.variables?.carreraId === carrera.id
+                      ? 'Subiendo…'
+                      : 'Subir malla'}
+                  </button>
                   <button
                     onClick={() => iniciarEdicion(carrera)}
                     className="text-navy hover:underline"
