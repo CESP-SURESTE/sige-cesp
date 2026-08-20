@@ -100,17 +100,6 @@ describe('MallaCurricularController — POST /carreras/:id/malla (e2e)', () => {
       where: { email: 'ana.canul@cesp-merida.edu.mx' },
     });
     actorUsuarioId = actor.id;
-
-    // Limpia cualquier malla de LC-VLD que pueda existir desde ejecuciones
-    // previas, para asegurar un estado limpio al inicio de los tests
-    const carreraSinMallaLcVld = await prisma.carrera.findFirst({
-      where: { clave: 'LC-VLD' },
-    });
-    if (carreraSinMallaLcVld) {
-      await prisma.mallaCurricular.deleteMany({
-        where: { carreraId: carreraSinMallaLcVld.id },
-      });
-    }
   });
 
   afterEach(() => {
@@ -119,17 +108,6 @@ describe('MallaCurricularController — POST /carreras/:id/malla (e2e)', () => {
   });
 
   afterAll(async () => {
-    // Limpia mallas de ambas sedes (Mérida y Valladolid) para asegurar
-    // estado limpio en futuras corridas
-    const carreraSinMallaLcVld = await prisma.carrera.findFirst({
-      where: { clave: 'LC-VLD' },
-    });
-    if (carreraSinMallaLcVld) {
-      await prisma.mallaCurricular.deleteMany({
-        where: { carreraId: carreraSinMallaLcVld.id },
-      });
-    }
-
     await prisma.registroAuditoria.deleteMany({
       where: { entidad: 'MallaCurricular', sedeId: sedeMeridaId },
     });
@@ -339,21 +317,35 @@ describe('MallaCurricularController — POST /carreras/:id/malla (e2e)', () => {
   });
 
   it('GET /carreras/:id/malla sin malla previa -> 200 con data null', async () => {
-    const token = await firmarToken({
-      role: 'authenticated',
-      sede_id: sedeValladolidId,
-      rol: RolUsuario.ADMINISTRATIVO,
-    });
-    const carreraSinMalla = await prisma.carrera.findUniqueOrThrow({
-      where: { clave: 'LC-VLD' },
+    const carreraSinMalla = await prisma.carrera.create({
+      data: {
+        nombre: `Carrera Sin Malla ${randomUUID()}`,
+        clave: `SINMALLA-${randomUUID().slice(0, 8)}`,
+        duracion: 6,
+        nivel: 'LICENCIATURA',
+        modalidad: 'PRESENCIAL',
+        rvoe: 'TEST-RVOE-SINMALLA',
+        descripcion: 'Carrera de test sin malla',
+        sedeId: sedeValladolidId,
+      },
     });
 
-    const res = await request(app.getHttpServer())
-      .get(`/carreras/${carreraSinMalla.id}/malla`)
-      .set('Authorization', `Bearer ${token}`);
+    try {
+      const token = await firmarToken({
+        role: 'authenticated',
+        sede_id: sedeValladolidId,
+        rol: RolUsuario.ADMINISTRATIVO,
+      });
 
-    expect(res.status).toBe(200);
-    expect((res.body as { data: unknown }).data).toBeNull();
+      const res = await request(app.getHttpServer())
+        .get(`/carreras/${carreraSinMalla.id}/malla`)
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(res.status).toBe(200);
+      expect((res.body as { data: unknown }).data).toBeNull();
+    } finally {
+      await prisma.carrera.delete({ where: { id: carreraSinMalla.id } });
+    }
   });
 
   it('GET /carreras/:id/malla con malla previa -> 200 con nombreArchivo/subidaEn/subidaPor', async () => {
@@ -544,6 +536,7 @@ describe('MallaCurricularController — POST /carreras/:id/malla (e2e)', () => {
       expect(createSignedUrl).toHaveBeenCalledWith(
         `${carreraMeridaId}/malla.pdf`,
         300,
+        { download: 'malla-dia24.pdf' },
       );
     });
 

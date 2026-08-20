@@ -266,7 +266,7 @@ export class MallaCurricularService {
     const client = await this.getClient();
     const { data, error } = await client.storage
       .from(BUCKET_MALLA_CURRICULAR)
-      .createSignedUrl(malla.storagePath, 300);
+      .createSignedUrl(malla.storagePath, 300, { download: malla.nombreArchivo });
     if (error || !data) {
       console.error(
         '[MallaCurricularService.obtenerUrlDescargaPropia] error generando signed URL:',

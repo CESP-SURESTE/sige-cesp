@@ -179,7 +179,12 @@ function SeccionCarrera({ alumno }: { alumno: PerfilAlumno }) {
         );
         return;
       }
-      window.open(resultado.url, '_blank');
+      const ventana = window.open(resultado.url, '_blank', 'noopener');
+      if (!ventana) {
+        toast.error(
+          'Tu navegador bloqueó la ventana emergente. Permite las ventanas emergentes para este sitio e intenta de nuevo.',
+        );
+      }
     } catch (err) {
       console.error('[SeccionCarrera] Error al descargar malla curricular:', err);
       toast.error(
