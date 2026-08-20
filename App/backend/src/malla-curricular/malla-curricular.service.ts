@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Inject,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
   Optional,
 } from '@nestjs/common';
@@ -107,7 +108,10 @@ export class MallaCurricularService {
         '[MallaCurricularService.subir] error subiendo a Storage:',
         error,
       );
-      throw error;
+      throw new InternalServerErrorException({
+        error: 'No se pudo subir la malla curricular. Intenta de nuevo.',
+        code: 'SERVER_ERROR',
+      });
     }
 
     return this.prisma.mallaCurricular.upsert({
