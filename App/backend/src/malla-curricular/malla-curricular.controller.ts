@@ -1,4 +1,14 @@
-import { Controller, HttpCode, HttpStatus, Param, Post, UseGuards, UseInterceptors, UploadedFile } from '@nestjs/common';
+import {
+  Controller,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  UseFilters,
+  UseGuards,
+  UseInterceptors,
+  UploadedFile,
+} from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { RolUsuario } from '@prisma/client';
 import { ActorUsuarioId } from '../common/decorators/actor-usuario-id.decorator';
@@ -6,6 +16,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { SedeActual } from '../common/decorators/sede-actual.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { SedeGuard } from '../common/guards/sede.guard';
+import { ArchivoMuyGrandeFilter } from './archivo-muy-grande.filter';
 import { MallaCurricularService } from './malla-curricular.service';
 
 const CINCO_MB = 5 * 1024 * 1024;
@@ -19,19 +30,29 @@ const CINCO_MB = 5 * 1024 * 1024;
 @Controller('carreras')
 @UseGuards(SedeGuard, RolesGuard)
 export class MallaCurricularController {
-  constructor(private readonly mallaCurricularService: MallaCurricularService) {}
+  constructor(
+    private readonly mallaCurricularService: MallaCurricularService,
+  ) {}
 
   @Post(':id/malla')
   @HttpCode(HttpStatus.OK)
   @Roles(RolUsuario.ADMINISTRATIVO)
-  @UseInterceptors(FileInterceptor('archivo', { limits: { fileSize: CINCO_MB } }))
+  @UseInterceptors(
+    FileInterceptor('archivo', { limits: { fileSize: CINCO_MB } }),
+  )
+  @UseFilters(ArchivoMuyGrandeFilter)
   async subir(
     @Param('id') id: string,
     @SedeActual() sedeId: string,
     @ActorUsuarioId() actorUsuarioId: string,
     @UploadedFile() file: Express.Multer.File,
   ) {
-    const data = await this.mallaCurricularService.subir(id, sedeId, actorUsuarioId, file);
+    const data = await this.mallaCurricularService.subir(
+      id,
+      sedeId,
+      actorUsuarioId,
+      file,
+    );
     return { data };
   }
 }

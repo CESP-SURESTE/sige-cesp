@@ -75,13 +75,21 @@ describe('MallaCurricularController — POST /carreras/:id/malla (e2e)', () => {
     await app.init();
 
     prisma = moduleFixture.get(PrismaService);
-    const merida = await prisma.sede.findUniqueOrThrow({ where: { nombre: 'CESP Mérida' } });
+    const merida = await prisma.sede.findUniqueOrThrow({
+      where: { nombre: 'CESP Mérida' },
+    });
     sedeMeridaId = merida.id;
-    const valladolid = await prisma.sede.findUniqueOrThrow({ where: { nombre: 'CESP Valladolid' } });
+    const valladolid = await prisma.sede.findUniqueOrThrow({
+      where: { nombre: 'CESP Valladolid' },
+    });
     sedeValladolidId = valladolid.id;
-    const carrera = await prisma.carrera.findUniqueOrThrow({ where: { clave: 'LAE-MID' } });
+    const carrera = await prisma.carrera.findUniqueOrThrow({
+      where: { clave: 'LAE-MID' },
+    });
     carreraMeridaId = carrera.id;
-    const actor = await prisma.usuario.findUniqueOrThrow({ where: { email: 'ana.canul@cesp-merida.edu.mx' } });
+    const actor = await prisma.usuario.findUniqueOrThrow({
+      where: { email: 'ana.canul@cesp-merida.edu.mx' },
+    });
     actorUsuarioId = actor.id;
   });
 
@@ -90,12 +98,21 @@ describe('MallaCurricularController — POST /carreras/:id/malla (e2e)', () => {
   });
 
   afterAll(async () => {
-    await prisma.mallaCurricular.deleteMany({ where: { carreraId: carreraMeridaId } });
+    await prisma.registroAuditoria.deleteMany({
+      where: { entidad: 'MallaCurricular', sedeId: sedeMeridaId },
+    });
+    await prisma.mallaCurricular.deleteMany({
+      where: { carreraId: carreraMeridaId },
+    });
     await app.close();
   });
 
   it('POST /carreras/:id/malla sube un PDF y crea el registro (primera vez)', async () => {
-    const token = await firmarToken({ role: 'authenticated', sede_id: sedeMeridaId, rol: RolUsuario.ADMINISTRATIVO });
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
 
     const res = await request(app.getHttpServer())
       .post(`/carreras/${carreraMeridaId}/malla`)
@@ -115,30 +132,61 @@ describe('MallaCurricularController — POST /carreras/:id/malla (e2e)', () => {
       expect.any(Buffer),
       { contentType: 'application/pdf', upsert: true },
     );
+
+    const registro = await prisma.registroAuditoria.findFirst({
+      where: { entidad: 'MallaCurricular', entidadId: body.data.id },
+    });
+    expect(registro?.usuarioId).toBe(actorUsuarioId);
+    expect(registro?.accion).toBe('ALTA');
   });
 
   it('POST /carreras/:id/malla una segunda vez actualiza (upsert, no duplica)', async () => {
-    const token = await firmarToken({ role: 'authenticated', sede_id: sedeMeridaId, rol: RolUsuario.ADMINISTRATIVO });
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
 
     await request(app.getHttpServer())
       .post(`/carreras/${carreraMeridaId}/malla`)
       .set('Authorization', `Bearer ${token}`)
-      .attach('archivo', Buffer.from('%PDF-1.4 v1'), { filename: 'v1.pdf', contentType: 'application/pdf' });
+      .attach('archivo', Buffer.from('%PDF-1.4 v1'), {
+        filename: 'v1.pdf',
+        contentType: 'application/pdf',
+      });
 
     const res = await request(app.getHttpServer())
       .post(`/carreras/${carreraMeridaId}/malla`)
       .set('Authorization', `Bearer ${token}`)
-      .attach('archivo', Buffer.from('%PDF-1.4 v2'), { filename: 'v2.pdf', contentType: 'application/pdf' });
+      .attach('archivo', Buffer.from('%PDF-1.4 v2'), {
+        filename: 'v2.pdf',
+        contentType: 'application/pdf',
+      });
 
     expect(res.status).toBe(200);
     expect((res.body as MallaBody).data.nombreArchivo).toBe('v2.pdf');
 
-    const total = await prisma.mallaCurricular.count({ where: { carreraId: carreraMeridaId } });
+    const total = await prisma.mallaCurricular.count({
+      where: { carreraId: carreraMeridaId },
+    });
     expect(total).toBe(1);
+
+    const registroEdicion = await prisma.registroAuditoria.findFirst({
+      where: {
+        entidad: 'MallaCurricular',
+        entidadId: (res.body as MallaBody).data.id,
+      },
+      orderBy: { fecha: 'desc' },
+    });
+    expect(registroEdicion?.accion).toBe('EDICION');
   });
 
   it('POST /carreras/:id/malla sin archivo -> 400 VALIDATION_ERROR', async () => {
-    const token = await firmarToken({ role: 'authenticated', sede_id: sedeMeridaId, rol: RolUsuario.ADMINISTRATIVO });
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
 
     const res = await request(app.getHttpServer())
       .post(`/carreras/${carreraMeridaId}/malla`)
@@ -149,12 +197,19 @@ describe('MallaCurricularController — POST /carreras/:id/malla (e2e)', () => {
   });
 
   it('POST /carreras/:id/malla con archivo que no es PDF -> 400 VALIDATION_ERROR', async () => {
-    const token = await firmarToken({ role: 'authenticated', sede_id: sedeMeridaId, rol: RolUsuario.ADMINISTRATIVO });
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
 
     const res = await request(app.getHttpServer())
       .post(`/carreras/${carreraMeridaId}/malla`)
       .set('Authorization', `Bearer ${token}`)
-      .attach('archivo', Buffer.from('no soy un pdf'), { filename: 'malla.txt', contentType: 'text/plain' });
+      .attach('archivo', Buffer.from('no soy un pdf'), {
+        filename: 'malla.txt',
+        contentType: 'text/plain',
+      });
 
     expect(res.status).toBe(400);
     expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
@@ -162,24 +217,38 @@ describe('MallaCurricularController — POST /carreras/:id/malla (e2e)', () => {
   });
 
   it('POST /carreras/:id/malla con carrera de otra sede -> 404 NOT_FOUND', async () => {
-    const token = await firmarToken({ role: 'authenticated', sede_id: sedeValladolidId, rol: RolUsuario.ADMINISTRATIVO });
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeValladolidId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
 
     const res = await request(app.getHttpServer())
       .post(`/carreras/${carreraMeridaId}/malla`)
       .set('Authorization', `Bearer ${token}`)
-      .attach('archivo', Buffer.from('%PDF-1.4'), { filename: 'malla.pdf', contentType: 'application/pdf' });
+      .attach('archivo', Buffer.from('%PDF-1.4'), {
+        filename: 'malla.pdf',
+        contentType: 'application/pdf',
+      });
 
     expect(res.status).toBe(404);
     expect((res.body as ErrorBody).code).toBe('NOT_FOUND');
   });
 
   it('POST /carreras/:id/malla rol no ADMINISTRATIVO -> 403 ROL_NO_AUTORIZADO', async () => {
-    const token = await firmarToken({ role: 'authenticated', sede_id: sedeMeridaId, rol: RolUsuario.ALUMNO });
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ALUMNO,
+    });
 
     const res = await request(app.getHttpServer())
       .post(`/carreras/${carreraMeridaId}/malla`)
       .set('Authorization', `Bearer ${token}`)
-      .attach('archivo', Buffer.from('%PDF-1.4'), { filename: 'malla.pdf', contentType: 'application/pdf' });
+      .attach('archivo', Buffer.from('%PDF-1.4'), {
+        filename: 'malla.pdf',
+        contentType: 'application/pdf',
+      });
 
     expect(res.status).toBe(403);
     expect((res.body as ErrorBody).code).toBe('ROL_NO_AUTORIZADO');
@@ -188,9 +257,52 @@ describe('MallaCurricularController — POST /carreras/:id/malla (e2e)', () => {
   it('POST /carreras/:id/malla sin Authorization -> 401 UNAUTHORIZED', async () => {
     const res = await request(app.getHttpServer())
       .post(`/carreras/${carreraMeridaId}/malla`)
-      .attach('archivo', Buffer.from('%PDF-1.4'), { filename: 'malla.pdf', contentType: 'application/pdf' });
+      .attach('archivo', Buffer.from('%PDF-1.4'), {
+        filename: 'malla.pdf',
+        contentType: 'application/pdf',
+      });
 
     expect(res.status).toBe(401);
     expect((res.body as ErrorBody).code).toBe('UNAUTHORIZED');
+  });
+
+  it('POST /carreras/:id/malla con archivo mayor a 5MB -> 400 VALIDATION_ERROR', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+
+    const archivoGrande = Buffer.alloc(6 * 1024 * 1024, 'a');
+    const res = await request(app.getHttpServer())
+      .post(`/carreras/${carreraMeridaId}/malla`)
+      .set('Authorization', `Bearer ${token}`)
+      .attach('archivo', archivoGrande, {
+        filename: 'grande.pdf',
+        contentType: 'application/pdf',
+      });
+
+    expect(res.status).toBe(400);
+    expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+  });
+
+  it('POST /carreras/:id/malla con falla de Storage -> 500 SERVER_ERROR', async () => {
+    upload.mockResolvedValueOnce({ data: null, error: { message: 'boom' } });
+
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+    const res = await request(app.getHttpServer())
+      .post(`/carreras/${carreraMeridaId}/malla`)
+      .set('Authorization', `Bearer ${token}`)
+      .attach('archivo', Buffer.from('%PDF-1.4'), {
+        filename: 'malla.pdf',
+        contentType: 'application/pdf',
+      });
+
+    expect(res.status).toBe(500);
+    expect((res.body as ErrorBody).code).toBe('SERVER_ERROR');
   });
 });

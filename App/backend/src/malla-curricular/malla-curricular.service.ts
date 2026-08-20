@@ -6,7 +6,7 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
-import type { MallaCurricular } from '@prisma/client';
+import { AccionAuditoria, type MallaCurricular } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 /**
@@ -114,20 +114,40 @@ export class MallaCurricularService {
       });
     }
 
-    return this.prisma.mallaCurricular.upsert({
+    const mallaExistente = await this.prisma.mallaCurricular.findUnique({
       where: { carreraId },
-      create: {
-        carreraId,
-        storagePath,
-        nombreArchivo: file.originalname,
-        subidaPorId: actorUsuarioId,
-      },
-      update: {
-        storagePath,
-        nombreArchivo: file.originalname,
-        subidaPorId: actorUsuarioId,
-        subidaEn: new Date(),
-      },
+    });
+
+    return this.prisma.$transaction(async (tx) => {
+      const malla = await tx.mallaCurricular.upsert({
+        where: { carreraId },
+        create: {
+          carreraId,
+          storagePath,
+          nombreArchivo: file.originalname,
+          subidaPorId: actorUsuarioId,
+        },
+        update: {
+          storagePath,
+          nombreArchivo: file.originalname,
+          subidaPorId: actorUsuarioId,
+          subidaEn: new Date(),
+        },
+      });
+
+      await tx.registroAuditoria.create({
+        data: {
+          usuarioId: actorUsuarioId,
+          sedeId,
+          accion: mallaExistente
+            ? AccionAuditoria.EDICION
+            : AccionAuditoria.ALTA,
+          entidad: 'MallaCurricular',
+          entidadId: malla.id,
+        },
+      });
+
+      return malla;
     });
   }
 }
