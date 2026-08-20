@@ -37,7 +37,16 @@ export default function MaestroPerfilPage() {
     error,
   } = useQuery({
     queryKey: ['maestro', 'perfil'],
-    queryFn: obtenerPerfil,
+    queryFn: async () => {
+      try {
+        return await obtenerPerfil();
+      } catch (err) {
+        // Regla 12 de `CLAUDE.md` raíz — loguear antes de dejar que React
+        // Query marque `isError` y la UI muestre el mensaje genérico.
+        console.error('[MaestroPerfilPage] Error al obtener el perfil:', err);
+        throw err;
+      }
+    },
   });
 
   if (isLoading) {
