@@ -14,8 +14,12 @@ import {
  * — mismo patrón que `PERSONAS_SUPABASE_CLIENT_OVERRIDE` en
  * `personas.module.ts`. Sin este provider registrado acá, `overrideProvider`
  * no tiene token que sobreescribir y el service cae al cliente real
- * (bug detectado en Task 2 al correr el e2e — el primer intento subió un
- * archivo real al bucket en vez de usar el mock).
+ * (bug detectado en Task 2 de Día 23 al correr el e2e — el primer intento
+ * subió un archivo real al bucket en vez de usar el mock).
+ *
+ * `MallaCurricularService` se exporta desde Día 24 — `PerfilModule` lo
+ * importa para exponer `GET /perfil/malla` sin duplicar la lógica de
+ * Storage (cliente admin, bucket, `storagePath`) dentro de `PerfilService`.
  */
 @Module({
   controllers: [MallaCurricularController],
@@ -23,6 +27,6 @@ import {
     MallaCurricularService,
     { provide: MALLA_SUPABASE_CLIENT_OVERRIDE, useValue: undefined },
   ],
-  exports: [MALLA_SUPABASE_CLIENT_OVERRIDE],
+  exports: [MALLA_SUPABASE_CLIENT_OVERRIDE, MallaCurricularService],
 })
 export class MallaCurricularModule {}

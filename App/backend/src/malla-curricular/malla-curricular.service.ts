@@ -224,4 +224,60 @@ export class MallaCurricularService {
       subidaPor: malla.subidaPor.perfilAdministrativo,
     };
   }
+
+  /**
+   * `GET /perfil/malla` — Fase 7, Día 24. Genera una signed URL (5 min) de
+   * la malla curricular de la carrera del propio alumno — sin `:id`, la
+   * carrera sale de su `PerfilAlumno` (`actorUsuarioId` = JWT `sub`, ver
+   * `PerfilController.obtenerUrlDescargaMalla`). `null` (200, NUNCA error)
+   * si su carrera todavía no tiene malla subida — mismo criterio que
+   * `obtener()`.
+   */
+  async obtenerUrlDescargaPropia(
+    actorUsuarioId: string,
+  ): Promise<{ url: string; nombreArchivo: string } | null> {
+    const perfilAlumno = await this.prisma.perfilAlumno.findUnique({
+      where: { usuarioId: actorUsuarioId },
+      select: { carreraId: true },
+    });
+    if (!perfilAlumno) {
+      // Defensivo — no debería pasar nunca en la práctica (regla 3: baja
+      // lógica, un `Usuario` con rol ALUMNO siempre tiene su
+      // `PerfilAlumno`, el `RolesGuard` ya filtró por `ALUMNO` antes de
+      // llegar acá).
+      console.error(
+        '[MallaCurricularService.obtenerUrlDescargaPropia] actor ALUMNO sin PerfilAlumno:',
+        actorUsuarioId,
+      );
+      throw new NotFoundException({
+        error: 'Perfil de alumno no encontrado',
+        code: 'NOT_FOUND',
+      });
+    }
+
+    const malla = await this.prisma.mallaCurricular.findUnique({
+      where: { carreraId: perfilAlumno.carreraId },
+      select: { storagePath: true, nombreArchivo: true },
+    });
+    if (!malla) {
+      return null;
+    }
+
+    const client = await this.getClient();
+    const { data, error } = await client.storage
+      .from(BUCKET_MALLA_CURRICULAR)
+      .createSignedUrl(malla.storagePath, 300);
+    if (error || !data) {
+      console.error(
+        '[MallaCurricularService.obtenerUrlDescargaPropia] error generando signed URL:',
+        error,
+      );
+      throw new InternalServerErrorException({
+        error: 'No se pudo generar el enlace de descarga. Intenta de nuevo.',
+        code: 'SERVER_ERROR',
+      });
+    }
+
+    return { url: data.signedUrl, nombreArchivo: malla.nombreArchivo };
+  }
 }
