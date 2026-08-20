@@ -41,6 +41,20 @@ export const MALLA_SUPABASE_CLIENT_OVERRIDE = 'MALLA_SUPABASE_CLIENT_OVERRIDE';
 /** Bucket privado creado por `prisma/crear-bucket-malla.ts` (Task 1). */
 export const BUCKET_MALLA_CURRICULAR = 'mallas-curriculares';
 
+/**
+ * `GET /carreras/:id/malla` — detalle de la malla vigente (quién y cuándo
+ * la subió), consumido por el modal de subida al abrirse.
+ */
+export interface MallaCurricularInfo {
+  nombreArchivo: string;
+  subidaEn: Date;
+  subidaPor: {
+    nombres: string;
+    apellidoPaterno: string;
+    apellidoMaterno: string | null;
+  };
+}
+
 @Injectable()
 export class MallaCurricularService {
   constructor(
@@ -149,5 +163,65 @@ export class MallaCurricularService {
 
       return malla;
     });
+  }
+
+  /**
+   * `GET /carreras/:id/malla` — `null` (200, NUNCA 404 para este caso) si
+   * la carrera todavía no tiene malla, es un estado normal. La carrera
+   * debe existir y pertenecer a la sede del actor, mismo criterio que
+   * `subir` — `404 NOT_FOUND` si no.
+   */
+  async obtener(
+    carreraId: string,
+    sedeId: string,
+  ): Promise<MallaCurricularInfo | null> {
+    const carrera = await this.prisma.carrera.findFirst({
+      where: { id: carreraId, sedeId },
+    });
+    if (!carrera) {
+      throw new NotFoundException({
+        error: 'Carrera no encontrada en tu sede',
+        code: 'NOT_FOUND',
+      });
+    }
+
+    const malla = await this.prisma.mallaCurricular.findUnique({
+      where: { carreraId },
+      select: {
+        nombreArchivo: true,
+        subidaEn: true,
+        subidaPor: {
+          select: {
+            perfilAdministrativo: {
+              select: {
+                nombres: true,
+                apellidoPaterno: true,
+                apellidoMaterno: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!malla) {
+      return null;
+    }
+    if (!malla.subidaPor.perfilAdministrativo) {
+      // Defensivo — no debería pasar nunca en la práctica (regla 3: baja
+      // lógica, un `Usuario` que alguna vez subió una malla siempre tuvo
+      // rol ADMINISTRATIVO, y su `PerfilAdministrativo` nunca se borra).
+      console.error(
+        '[MallaCurricularService.obtener] malla sin perfilAdministrativo del actor:',
+        carreraId,
+      );
+      return null;
+    }
+
+    return {
+      nombreArchivo: malla.nombreArchivo,
+      subidaEn: malla.subidaEn,
+      subidaPor: malla.subidaPor.perfilAdministrativo,
+    };
   }
 }

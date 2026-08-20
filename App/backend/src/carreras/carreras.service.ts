@@ -53,12 +53,24 @@ export class CarrerasService {
    * única fuente de datos completos. El dropdown de alta de alumno sigue
    * funcionando igual — solo lee `id`/`nombre`/`clave` del objeto e ignora
    * el resto, sin cambio de comportamiento para ese consumidor.
+   *
+   * `tieneMalla` (2026-08-19) — booleano derivado de si existe la relación
+   * 1-a-1 con `MallaCurricular` (regla 1: nunca se persiste, se deriva al
+   * vuelo); alimenta el indicador de la tabla del modal de subida de malla.
    */
-  async listarPorSede(sedeId: string): Promise<Carrera[]> {
-    return this.prisma.carrera.findMany({
+  async listarPorSede(
+    sedeId: string,
+  ): Promise<Array<Carrera & { tieneMalla: boolean }>> {
+    const carreras = await this.prisma.carrera.findMany({
       where: { sedeId },
       orderBy: { nombre: 'asc' },
+      include: { mallaCurricular: { select: { id: true } } },
     });
+
+    return carreras.map(({ mallaCurricular, ...carrera }) => ({
+      ...carrera,
+      tieneMalla: mallaCurricular !== null,
+    }));
   }
 
   /**

@@ -305,4 +305,95 @@ describe('MallaCurricularController — POST /carreras/:id/malla (e2e)', () => {
     expect(res.status).toBe(500);
     expect((res.body as ErrorBody).code).toBe('SERVER_ERROR');
   });
+
+  it('GET /carreras/:id/malla sin malla previa -> 200 con data null', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeValladolidId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+    const carreraSinMalla = await prisma.carrera.findUniqueOrThrow({
+      where: { clave: 'LC-VLD' },
+    });
+
+    const res = await request(app.getHttpServer())
+      .get(`/carreras/${carreraSinMalla.id}/malla`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect((res.body as { data: unknown }).data).toBeNull();
+  });
+
+  it('GET /carreras/:id/malla con malla previa -> 200 con nombreArchivo/subidaEn/subidaPor', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+
+    await request(app.getHttpServer())
+      .post(`/carreras/${carreraMeridaId}/malla`)
+      .set('Authorization', `Bearer ${token}`)
+      .attach('archivo', Buffer.from('%PDF-1.4'), {
+        filename: 'malla.pdf',
+        contentType: 'application/pdf',
+      });
+
+    const res = await request(app.getHttpServer())
+      .get(`/carreras/${carreraMeridaId}/malla`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    const body = res.body as {
+      data: {
+        nombreArchivo: string;
+        subidaEn: string;
+        subidaPor: { nombres: string; apellidoPaterno: string };
+      };
+    };
+    expect(body.data.nombreArchivo).toBe('malla.pdf');
+    expect(body.data.subidaPor.nombres).toBe('Ana María');
+    expect(body.data.subidaPor.apellidoPaterno).toBe('Canul');
+  });
+
+  it('GET /carreras/:id/malla con carrera de otra sede -> 404 NOT_FOUND', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeValladolidId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+
+    const res = await request(app.getHttpServer())
+      .get(`/carreras/${carreraMeridaId}/malla`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(404);
+    expect((res.body as ErrorBody).code).toBe('NOT_FOUND');
+  });
+
+  it('GET /carreras refleja tieneMalla:true tras una subida exitosa', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+
+    await request(app.getHttpServer())
+      .post(`/carreras/${carreraMeridaId}/malla`)
+      .set('Authorization', `Bearer ${token}`)
+      .attach('archivo', Buffer.from('%PDF-1.4'), {
+        filename: 'malla.pdf',
+        contentType: 'application/pdf',
+      });
+
+    const listado = await request(app.getHttpServer())
+      .get('/carreras')
+      .set('Authorization', `Bearer ${token}`);
+
+    const body = listado.body as {
+      data: Array<{ id: string; tieneMalla: boolean }>;
+    };
+    const carreraListada = body.data.find((c) => c.id === carreraMeridaId);
+    expect(carreraListada?.tieneMalla).toBe(true);
+  });
 });

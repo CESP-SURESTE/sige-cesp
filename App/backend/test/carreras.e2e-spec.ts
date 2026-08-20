@@ -17,7 +17,13 @@ interface ErrorBody {
 }
 
 interface ListarCarrerasBody {
-  data: Array<{ id: string; nombre: string; clave: string; sedeId: string }>;
+  data: Array<{
+    id: string;
+    nombre: string;
+    clave: string;
+    sedeId: string;
+    tieneMalla: boolean;
+  }>;
 }
 
 /**
@@ -123,6 +129,8 @@ describe('CarrerasController — GET /carreras (e2e)', () => {
       expect(claves).toContain('estatus');
       expect(claves).toContain('rvoe');
       expect(claves).toContain('descripcion');
+      expect(claves).toContain('tieneMalla');
+      expect(typeof carrera.tieneMalla).toBe('boolean');
     }
   });
 

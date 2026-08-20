@@ -1,5 +1,6 @@
 import {
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
   Param,
@@ -53,6 +54,13 @@ export class MallaCurricularController {
       actorUsuarioId,
       file,
     );
+    return { data };
+  }
+
+  @Get(':id/malla')
+  @Roles(RolUsuario.ADMINISTRATIVO)
+  async obtener(@Param('id') id: string, @SedeActual() sedeId: string) {
+    const data = await this.mallaCurricularService.obtener(id, sedeId);
     return { data };
   }
 }
