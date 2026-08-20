@@ -8,12 +8,14 @@ import { ROLES_KEY } from '../decorators/roles.decorator';
 /**
  * Test unitario — Fase 2, Día 8.
  *
- * Complementa `test/roles-guard.e2e-spec.ts` (que cubre rol correcto/
- * incorrecto y el guard mal compuesto contra la app real) con el caso que no
- * tiene una ruta natural en `PruebaRolesController`: una ruta SIN
- * `@Roles(...)` declarado, donde el guard debe dejar pasar sin restringir
- * nada (comportamiento estándar de Nest para guards basados en metadata
- * opcional).
+ * Cubre `RolesGuard` de forma aislada contra un `ExecutionContext` sintético:
+ * ruta sin `@Roles(...)` declarado (debe dejar pasar sin restringir nada,
+ * comportamiento estándar de Nest para guards basados en metadata opcional),
+ * lectura de metadata vía `Reflector`, y el caso de guard mal compuesto (sin
+ * `request.jwtClaims` porque `SedeGuard` no corrió antes) -> 500
+ * `InternalServerErrorException`. El caso de rol correcto/incorrecto contra
+ * la app real ya está cubierto de sobra por cualquier endpoint con
+ * `@Roles(...)` (ej. `carreras.e2e-spec.ts`, `personas.e2e-spec.ts`).
  */
 describe('RolesGuard (unit)', () => {
   function crearContexto(

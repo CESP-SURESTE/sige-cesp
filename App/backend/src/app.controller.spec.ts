@@ -15,8 +15,10 @@ describe('AppController', () => {
   });
 
   describe('root', () => {
-    it('should return "Hello World!"', () => {
-      expect(appController.getHello()).toBe('Hello World!');
+    it('debe responder el contrato { data: { status: "ok" } }', () => {
+      expect(appController.obtenerEstado()).toEqual({
+        data: { status: 'ok' },
+      });
     });
   });
 });
