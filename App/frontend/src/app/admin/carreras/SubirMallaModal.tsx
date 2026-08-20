@@ -22,8 +22,10 @@ function formatearPeso(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/** Mismo criterio exacto que `app/admin/perfil/page.tsx` (fechas ISO 8601
- * del backend, se formatea solo la parte de fecha, sin hora). */
+/** A diferencia de `perfil/page.tsx` (que formatea fechas sin hora tipo
+ * `fechaNacimiento`), acá NO se fija `timeZone: 'UTC'`: `subidaEn` es un
+ * timestamp real (`now()`), no una fecha sin hora — pinearlo a UTC correría
+ * el día para subidas después de las 18:00 hora de Yucatán. */
 function formatearFecha(iso: string): string {
   const fecha = new Date(iso);
   if (Number.isNaN(fecha.getTime())) return iso;
@@ -31,7 +33,6 @@ function formatearFecha(iso: string): string {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
-    timeZone: 'UTC',
   }).format(fecha);
 }
 

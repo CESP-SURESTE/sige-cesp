@@ -168,7 +168,18 @@ export function subirMallaCurricular(
             body = null;
           }
           if (xhr.status >= 200 && xhr.status < 300) {
-            resolve((body as { data: MallaCurricular }).data);
+            const success = body as { data?: MallaCurricular } | null;
+            if (success && success.data) {
+              resolve(success.data);
+            } else {
+              reject(
+                new ApiError(
+                  'Respuesta inesperada del servidor al subir la malla curricular.',
+                  'SERVER_ERROR',
+                  xhr.status,
+                ),
+              );
+            }
           } else {
             const failure = body as Partial<{ error: string; code: string }> | null;
             reject(
