@@ -167,7 +167,7 @@ function EncabezadoPerfil({ alumno }: { alumno: PerfilAlumno }) {
         <BannerArcos />
       </div>
       <div className="flex flex-col items-center px-6 pb-6">
-        <div className="-mt-12 flex h-24 w-24 items-center justify-center rounded-full border-4 border-white bg-mist text-navy shadow-sm sm:-mt-16 sm:h-32 sm:w-32">
+        <div className="relative -mt-12 flex h-24 w-24 items-center justify-center rounded-full border-4 border-white bg-mist text-navy shadow-sm sm:-mt-16 sm:h-32 sm:w-32">
           <IconPerfil className="h-12 w-12 sm:h-16 sm:w-16" />
         </div>
         <h1 className="mt-4 text-center font-display text-2xl font-semibold text-navy">
