@@ -56,6 +56,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
   let prisma: PrismaService;
   let sedeMeridaId: string;
   let carreraMeridaId: string;
+  let carreraValladolidId: string;
   let actorAdminId: string;
   let actorAuxiliarId: string;
   let actorSuperAdminId: string;
@@ -274,6 +275,15 @@ describe('PersonasController — POST /personas (e2e)', () => {
       where: { clave: 'LAE-MID' },
     });
     carreraMeridaId = carrera.id;
+
+    // Ancla de Día 25 (aislamiento cruzado) — carrera real de OTRA sede
+    // (Valladolid, `prisma/seed.ts`), usada para probar que `POST /personas`
+    // rechaza un `perfilAlumno.carreraId` que existe pero pertenece a una
+    // sede distinta a la del actor (`sedeMeridaId`).
+    const carreraOtraSede = await prisma.carrera.findUniqueOrThrow({
+      where: { clave: 'LC-VLD' },
+    });
+    carreraValladolidId = carreraOtraSede.id;
 
     // Actor real: el administrativo sembrado por `prisma/seed.ts` en
     // Mérida — necesario porque `RegistroAuditoria.usuarioId` (el actor) es
@@ -526,6 +536,35 @@ describe('PersonasController — POST /personas (e2e)', () => {
     expect(res.status).toBe(403);
     expect((res.body as ErrorBody).code).toBe('ROL_NO_AUTORIZADO');
     expect(createUser).not.toHaveBeenCalled();
+  });
+
+  it('aislamiento cruzado (Día 25): carreraId real pero de OTRA sede -> 404 NOT_FOUND, sin llamar a Supabase Auth', async () => {
+    const correoPersonalUnico = `cruzado.${randomUUID()}@example.com`;
+
+    const res = await request(app.getHttpServer())
+      .post('/personas')
+      .set('Authorization', `Bearer ${await tokenAdmin()}`)
+      .send({
+        rol: RolUsuario.ALUMNO,
+        perfilAlumno: perfilAlumnoValido({
+          carreraId: carreraValladolidId,
+          correoPersonal: correoPersonalUnico,
+        }),
+      });
+
+    expect(res.status).toBe(404);
+    expect((res.body as ErrorBody).code).toBe('NOT_FOUND');
+    expect(createUser).not.toHaveBeenCalled();
+
+    // Confirma que no quedó ninguna fila huérfana — el pre-check falla
+    // ANTES de tocar Supabase Auth/Postgres (regla 9 de CLAUDE.md raíz).
+    // Busca por el `correoPersonal` único de ESTE intento (no por
+    // `carreraId`, que ya pertenece a un alumno real y preexistente de
+    // Valladolid sembrado por `prisma/seed.ts`).
+    const usuarioCreado = await prisma.perfilAlumno.findFirst({
+      where: { correoPersonal: correoPersonalUnico },
+    });
+    expect(usuarioCreado).toBeNull();
   });
 
   it('body sin perfilAlumno (campos faltantes) -> 400 VALIDATION_ERROR', async () => {

@@ -75,6 +75,8 @@ describe('PersonasController — GET /personas (e2e)', () => {
   let adminMeridaId: string;
   let adminValladolidId: string;
   let alumnoMeridaId: string;
+  let alumnoValladolidId: string;
+  let alumnoValladolidMatricula: string;
   let markerMerida: string;
   let markerValladolid: string;
   let privateKey: CryptoKey;
@@ -148,6 +150,17 @@ describe('PersonasController — GET /personas (e2e)', () => {
       where: { email: 'luis.chan@cesp-merida.edu.mx' },
     });
     alumnoMeridaId = alumnoMerida.id;
+
+    // Ancla de Día 25 (aislamiento cruzado) — alumno REAL de Valladolid
+    // (`prisma/seed.ts`), usado para probar que `GET /personas?rol=ALUMNO`
+    // nunca lo devuelve a un admin de Mérida, ni siquiera con un `buscar`
+    // genérico que calza con su nombre.
+    const alumnoValladolid = await prisma.usuario.findUniqueOrThrow({
+      where: { email: 'mariajose.pech@cesp-valladolid.edu.mx' },
+      include: { perfilAlumno: { select: { matricula: true } } },
+    });
+    alumnoValladolidId = alumnoValladolid.id;
+    alumnoValladolidMatricula = alumnoValladolid.perfilAlumno!.matricula;
 
     // --- Fixtures MAESTRO en Mérida (búsqueda/estatus/paginación) ---
     markerMerida = `QA19MID${randomUUID().slice(0, 8)}`;
@@ -505,6 +518,46 @@ describe('PersonasController — GET /personas (e2e)', () => {
     expect(body.data[0].apellidoPaterno).toBe('Uno');
   });
 
+  it('aislamiento por sede (Día 25, rol=ALUMNO) -> admin de Mérida no ve un alumno REAL de Valladolid, ni con un buscar genérico que calza con su nombre', async () => {
+    // `buscar: 'a'` es a propósito un término genérico que calza con
+    // "María José Pech Tun" (y con prácticamente cualquier otro nombre real
+    // sembrado) — si el filtro de sede fallara, este alumno de Valladolid
+    // aparecería en la lista de un admin de Mérida solo por la coincidencia
+    // de texto. `limit: 100` para no depender del orden/paginación.
+    const res = await request(app.getHttpServer())
+      .get('/personas')
+      .query({ rol: 'ALUMNO', buscar: 'a', limit: 100 })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(adminMeridaId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+
+    expect(res.status).toBe(200);
+    const body = res.body as ListadoBody<AlumnoListItem>;
+    expect(
+      body.data.some((a) => a.usuarioId === alumnoValladolidId),
+    ).toBe(false);
+    expect(
+      body.data.some((a) => a.matricula === alumnoValladolidMatricula),
+    ).toBe(false);
+  });
+
+  it('aislamiento por sede (Día 25, rol=ALUMNO) -> admin de Valladolid SÍ ve su propio alumno con el mismo buscar genérico (confirma el filtro, no solo la ausencia)', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/personas')
+      .query({ rol: 'ALUMNO', buscar: 'a', limit: 100 })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(adminValladolidId, RolUsuario.ADMINISTRATIVO, sedeValladolidId)}`,
+      );
+
+    expect(res.status).toBe(200);
+    const body = res.body as ListadoBody<AlumnoListItem>;
+    expect(body.data.some((a) => a.usuarioId === alumnoValladolidId)).toBe(
+      true,
+    );
+  });
+
   it('rol distinto de ADMINISTRATIVO (ALUMNO real, luis.chan) -> 403 ROL_NO_AUTORIZADO', async () => {
     const res = await request(app.getHttpServer())
       .get('/personas')
@@ -654,6 +707,72 @@ describe('PersonasController — GET /personas (e2e)', () => {
       for (const alta of bodyValladolid.altasRecientes) {
         expect(idsMerida.has(alta.usuarioId)).toBe(false);
       }
+    });
+
+    it('aislamiento por sede (Día 25) -> los 3 totales de cada sede coinciden EXACTO con un count directo por sede en DB', async () => {
+      const [resMerida, resValladolid] = await Promise.all([
+        request(app.getHttpServer())
+          .get('/personas/resumen')
+          .set(
+            'Authorization',
+            `Bearer ${await firmarToken(adminMeridaId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+          ),
+        request(app.getHttpServer())
+          .get('/personas/resumen')
+          .set(
+            'Authorization',
+            `Bearer ${await firmarToken(adminValladolidId, RolUsuario.ADMINISTRATIVO, sedeValladolidId)}`,
+          ),
+      ]);
+
+      expect(resMerida.status).toBe(200);
+      expect(resValladolid.status).toBe(200);
+      const bodyMerida = (resMerida.body as ResumenBody).data;
+      const bodyValladolid = (resValladolid.body as ResumenBody).data;
+
+      const contarPorSedeYRol = (sedeId: string, rol: RolUsuario) =>
+        prisma.usuario.count({ where: { sedeId, rol, activo: true } });
+
+      const [
+        alumnosMeridaDirecto,
+        maestrosMeridaDirecto,
+        administrativosMeridaDirecto,
+        alumnosValladolidDirecto,
+        maestrosValladolidDirecto,
+        administrativosValladolidDirecto,
+      ] = await Promise.all([
+        contarPorSedeYRol(sedeMeridaId, RolUsuario.ALUMNO),
+        contarPorSedeYRol(sedeMeridaId, RolUsuario.MAESTRO),
+        contarPorSedeYRol(sedeMeridaId, RolUsuario.ADMINISTRATIVO),
+        contarPorSedeYRol(sedeValladolidId, RolUsuario.ALUMNO),
+        contarPorSedeYRol(sedeValladolidId, RolUsuario.MAESTRO),
+        contarPorSedeYRol(sedeValladolidId, RolUsuario.ADMINISTRATIVO),
+      ]);
+
+      expect(bodyMerida.totalAlumnosActivos).toBe(alumnosMeridaDirecto);
+      expect(bodyMerida.totalMaestrosActivos).toBe(maestrosMeridaDirecto);
+      expect(bodyMerida.totalAdministrativosActivos).toBe(
+        administrativosMeridaDirecto,
+      );
+      expect(bodyValladolid.totalAlumnosActivos).toBe(
+        alumnosValladolidDirecto,
+      );
+      expect(bodyValladolid.totalMaestrosActivos).toBe(
+        maestrosValladolidDirecto,
+      );
+      expect(bodyValladolid.totalAdministrativosActivos).toBe(
+        administrativosValladolidDirecto,
+      );
+
+      // Confirma que las 2 sedes tienen datos reales (no ambas en 0, lo que
+      // haría la comparación de arriba trivial/sin valor). No se compara
+      // que los totales sean DISTINTOS entre sedes a propósito — en una DB
+      // recién sembrada (antes de que otros specs de este dominio acumulen
+      // fixtures, ver nota de "no limpiar en afterAll" arriba) ambas sedes
+      // parten con el mismo número de alumnos reales de `seed.ts` (8 y 8),
+      // así que esa igualdad sería un falso negativo, no un bug.
+      expect(alumnosMeridaDirecto).toBeGreaterThan(0);
+      expect(alumnosValladolidDirecto).toBeGreaterThan(0);
     });
 
     it('rol MAESTRO (no ADMINISTRATIVO) -> 403 ROL_NO_AUTORIZADO', async () => {
