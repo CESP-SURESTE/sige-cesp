@@ -70,3 +70,12 @@ export function IconSalir({ className }: IconProps) {
     </svg>
   );
 }
+
+export function IconCandado({ className }: IconProps) {
+  return (
+    <svg {...BASE} className={className} aria-hidden="true">
+      <rect x="5" y="11" width="14" height="9" rx="2" />
+      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+    </svg>
+  );
+}

@@ -11,6 +11,7 @@ import {
   type Perfil,
   type PerfilAlumno,
 } from '@/lib/api/perfil';
+import { IconPerfil } from '@/components/alumno/ui/shell/icons';
 
 /**
  * Perfil de alumno — Fase 5, Día 16.
@@ -90,7 +91,7 @@ function PerfilContenido({ perfil }: { perfil: Perfil }) {
   // por el rol esperado.
   if (!perfil.alumno) {
     return (
-      <div className="max-w-3xl rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm">
+      <div className="max-w-4xl rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm">
         <h1 className="font-display text-2xl font-semibold text-navy">Mi perfil</h1>
         <p className="mt-4 rounded-lg border border-error-border bg-error-bg px-4 py-3 text-sm text-crimson">
           No se encontraron datos de perfil de alumno para tu cuenta.
@@ -100,14 +101,89 @@ function PerfilContenido({ perfil }: { perfil: Perfil }) {
   }
 
   return (
-    <div className="max-w-3xl rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm">
-      <h1 className="font-display text-2xl font-semibold text-navy">Mi perfil</h1>
+    <div className="max-w-4xl space-y-6">
+      <EncabezadoPerfil alumno={perfil.alumno} />
+      <div className="rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm">
+        <div className="space-y-6">
+          <SeccionDatosPersonales alumno={perfil.alumno} email={perfil.email} />
+          <SeccionSede sede={perfil.sede} />
+          <SeccionCarrera alumno={perfil.alumno} />
+          <SeccionContactos alumno={perfil.alumno} />
+        </div>
+      </div>
+    </div>
+  );
+}
 
-      <div className="mt-6 space-y-6">
-        <SeccionDatosPersonales alumno={perfil.alumno} email={perfil.email} />
-        <SeccionSede sede={perfil.sede} />
-        <SeccionCarrera alumno={perfil.alumno} />
-        <SeccionContactos alumno={perfil.alumno} />
+/**
+ * Patrón de arcos concéntricos del banner — signature visual del rediseño
+ * (2026-08-21, ver `docs/superpowers/specs/2026-08-21-rediseno-perfil-
+ * alumno-design.md`). SVG inline, sin imagen cargada — el sistema no tiene
+ * fotos reales de alumnos. Colores: tokens `gold` ya existentes en
+ * `globals.css`, sobre el degradado `navy` del contenedor padre.
+ */
+function BannerArcos() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="absolute inset-0 h-full w-full"
+      viewBox="0 0 400 160"
+      preserveAspectRatio="xMidYMid slice"
+    >
+      <g className="stroke-gold/20" fill="none" strokeWidth="1.5">
+        <circle cx="360" cy="170" r="40" />
+        <circle cx="360" cy="170" r="80" />
+        <circle cx="360" cy="170" r="120" />
+        <circle cx="360" cy="170" r="160" />
+        <circle cx="360" cy="170" r="200" />
+      </g>
+    </svg>
+  );
+}
+
+/**
+ * Encabezado del perfil — banner + avatar + nombre + badges de estatus.
+ * Reemplaza el `<h1>Mi perfil</h1>` suelto que había antes. El avatar es un
+ * ícono placeholder (`IconPerfil`, no una foto real ni iniciales — no
+ * existe feature de subida de foto todavía). `estatusAcademico` y
+ * `esMenorDeEdad` ya se mostraban como campo/badge dentro de "Datos
+ * personales"; acá se repiten como badges destacados del encabezado, el
+ * dato es el mismo, solo se muestra también en un lugar más prominente.
+ */
+function EncabezadoPerfil({ alumno }: { alumno: PerfilAlumno }) {
+  const nombreCompleto = [
+    alumno.nombres,
+    alumno.apellidoPaterno,
+    alumno.apellidoMaterno,
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-mist bg-white shadow-sm">
+      <div className="relative h-32 overflow-hidden bg-gradient-to-br from-navy via-navy-deep to-navy sm:h-56">
+        <BannerArcos />
+      </div>
+      <div className="flex flex-col items-center px-6 pb-6">
+        <div className="-mt-12 flex h-24 w-24 items-center justify-center rounded-full border-4 border-white bg-mist text-navy shadow-sm sm:-mt-16 sm:h-32 sm:w-32">
+          <IconPerfil className="h-12 w-12 sm:h-16 sm:w-16" />
+        </div>
+        <h1 className="mt-4 text-center font-display text-2xl font-semibold text-navy">
+          {nombreCompleto}
+        </h1>
+        <p className="mt-1 text-sm text-slate/70">
+          {alumno.matricula} · {alumno.carrera.nombre}
+        </p>
+        <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+          <span className="inline-flex items-center rounded-full bg-mist px-2.5 py-0.5 text-xs font-medium text-navy">
+            {ESTATUS_ACADEMICO_LABEL[alumno.estatusAcademico]}
+          </span>
+          {alumno.esMenorDeEdad && (
+            <span className="inline-flex items-center rounded-full bg-gold/20 px-2.5 py-0.5 text-xs font-medium text-gold-deep">
+              Menor de edad
+            </span>
+          )}
+        </div>
       </div>
     </div>
   );
