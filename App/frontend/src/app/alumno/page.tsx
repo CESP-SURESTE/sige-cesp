@@ -11,7 +11,7 @@ import {
   type Perfil,
   type PerfilAlumno,
 } from '@/lib/api/perfil';
-import { IconPerfil } from '@/components/alumno/ui/shell/icons';
+import { IconCandado, IconPerfil } from '@/components/alumno/ui/shell/icons';
 
 /**
  * Perfil de alumno — Fase 5, Día 16.
@@ -85,6 +85,8 @@ export default function AlumnoPerfilPage() {
 }
 
 function PerfilContenido({ perfil }: { perfil: Perfil }) {
+  const [seccion, setSeccion] = useState<SeccionId>('datos');
+
   // `alumno` viene lleno para `rol === 'ALUMNO'` (el único caso que aplica en
   // este árbol de rutas — ver nota de `SedeGuard`/`proxy.ts` arriba). Se
   // maneja el `null` de forma defensiva de todos modos, sin asumir el shape
@@ -100,15 +102,15 @@ function PerfilContenido({ perfil }: { perfil: Perfil }) {
     );
   }
 
+  const alumno = perfil.alumno;
+
   return (
     <div className="max-w-4xl space-y-6">
-      <EncabezadoPerfil alumno={perfil.alumno} />
-      <div className="rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm">
-        <div className="space-y-6">
-          <SeccionDatosPersonales alumno={perfil.alumno} email={perfil.email} />
-          <SeccionSede sede={perfil.sede} />
-          <SeccionCarrera alumno={perfil.alumno} />
-          <SeccionContactos alumno={perfil.alumno} />
+      <EncabezadoPerfil alumno={alumno} />
+      <div className="flex flex-col gap-4 rounded-lg border border-mist bg-white p-4 shadow-sm sm:flex-row sm:gap-6 sm:p-6">
+        <SidebarSecciones activa={seccion} onCambiar={setSeccion} />
+        <div className="min-w-0 flex-1">
+          <PanelSeccion seccion={seccion} alumno={alumno} email={perfil.email} sede={perfil.sede} />
         </div>
       </div>
     </div>
@@ -187,6 +189,88 @@ function EncabezadoPerfil({ alumno }: { alumno: PerfilAlumno }) {
       </div>
     </div>
   );
+}
+
+type SeccionId = 'datos' | 'sede' | 'carrera' | 'contactos';
+
+const SECCIONES_REALES: { id: SeccionId; etiqueta: string }[] = [
+  { id: 'datos', etiqueta: 'Datos personales' },
+  { id: 'sede', etiqueta: 'Sede' },
+  { id: 'carrera', etiqueta: 'Carrera' },
+  { id: 'contactos', etiqueta: 'Contactos' },
+];
+
+/**
+ * Secciones sin backend ni dato real detrás todavía — decisión explícita
+ * del usuario de mostrarlas igual en el sidebar, deshabilitadas, con la
+ * leyenda "Próximamente en futuras versiones" (ver spec de esta feature).
+ */
+const SECCIONES_PROXIMAMENTE = ['Calificaciones', 'Horario', 'Documentos', 'Pagos'];
+
+function SidebarSecciones({
+  activa,
+  onCambiar,
+}: {
+  activa: SeccionId;
+  onCambiar: (id: SeccionId) => void;
+}) {
+  return (
+    <nav className="flex gap-1 overflow-x-auto pb-1 sm:w-48 sm:shrink-0 sm:flex-col sm:overflow-visible sm:border-r sm:border-mist sm:pr-4 sm:pb-0">
+      {SECCIONES_REALES.map((item) => {
+        const esActiva = item.id === activa;
+        return (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => onCambiar(item.id)}
+            className={
+              esActiva
+                ? 'shrink-0 rounded-full bg-mist px-4 py-2 text-left text-sm font-medium text-navy sm:rounded-none sm:border-l-4 sm:border-navy sm:bg-transparent sm:pl-3'
+                : 'shrink-0 rounded-full px-4 py-2 text-left text-sm font-medium text-slate/70 hover:text-navy sm:rounded-none sm:border-l-4 sm:border-transparent sm:pl-3'
+            }
+          >
+            {item.etiqueta}
+          </button>
+        );
+      })}
+      <div className="mx-1 hidden shrink-0 border-t border-mist sm:my-2 sm:block" />
+      {SECCIONES_PROXIMAMENTE.map((etiqueta) => (
+        <button
+          key={etiqueta}
+          type="button"
+          disabled
+          title="Próximamente en futuras versiones"
+          className="flex shrink-0 cursor-not-allowed items-center gap-1.5 rounded-full px-4 py-2 text-left text-sm text-slate/40 sm:rounded-none sm:border-l-4 sm:border-transparent sm:pl-3"
+        >
+          <IconCandado className="h-3.5 w-3.5 shrink-0" />
+          {etiqueta}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+function PanelSeccion({
+  seccion,
+  alumno,
+  email,
+  sede,
+}: {
+  seccion: SeccionId;
+  alumno: PerfilAlumno;
+  email: string;
+  sede: Perfil['sede'];
+}) {
+  switch (seccion) {
+    case 'datos':
+      return <SeccionDatosPersonales alumno={alumno} email={email} />;
+    case 'sede':
+      return <SeccionSede sede={sede} />;
+    case 'carrera':
+      return <SeccionCarrera alumno={alumno} />;
+    case 'contactos':
+      return <SeccionContactos alumno={alumno} />;
+  }
 }
 
 function SeccionDatosPersonales({
