@@ -157,7 +157,7 @@ describe('AuthController — PATCH /auth/cambiar-password (e2e)', () => {
       .set('Authorization', `Bearer ${await firmarToken(actorId, actorEmail)}`)
       .send({
         passwordActual: 'password-actual',
-        passwordNueva: 'password-nueva-123',
+        passwordNueva: 'NuevaClave2026!Segura',
       });
 
     expect(res.status).toBe(200);
@@ -168,7 +168,7 @@ describe('AuthController — PATCH /auth/cambiar-password (e2e)', () => {
       password: 'password-actual',
     });
     expect(updateUserById).toHaveBeenCalledWith(actorId, {
-      password: 'password-nueva-123',
+      password: 'NuevaClave2026!Segura',
     });
 
     const usuario = await prisma.usuario.findUniqueOrThrow({
@@ -203,7 +203,7 @@ describe('AuthController — PATCH /auth/cambiar-password (e2e)', () => {
       )
       .send({
         passwordActual: 'password-incorrecta',
-        passwordNueva: 'password-nueva-123',
+        passwordNueva: 'NuevaClave2026!Segura',
       });
 
     expect(res.status).toBe(401);
@@ -233,7 +233,7 @@ describe('AuthController — PATCH /auth/cambiar-password (e2e)', () => {
       .patch('/auth/cambiar-password')
       .send({
         passwordActual: 'password-actual',
-        passwordNueva: 'password-nueva-123',
+        passwordNueva: 'NuevaClave2026!Segura',
       });
 
     expect(res.status).toBe(401);

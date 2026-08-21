@@ -27,7 +27,7 @@ import {
  * Día 11) — esas las genera el sistema, no las escribe un humano, no
  * tiene sentido pedirles "sin secuencias obvias" de la misma forma.
  */
-export const POLITICA_PASSWORD_HABILITADA = false;
+export const POLITICA_PASSWORD_HABILITADA = true;
 
 const LONGITUD_MINIMA = 10; // "más de 10" del encargo → 11+ caracteres reales
 
