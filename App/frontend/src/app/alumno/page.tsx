@@ -19,7 +19,8 @@ import { IconCandado, IconPerfil } from '@/components/alumno/ui/shell/icons';
  * Reemplaza el placeholder de Día 9. Solo lectura (sin formulario de
  * edición — fuera de alcance del roadmap de hoy): datos personales, sede,
  * carrera/plan de estudios, consumidos de `GET /perfil`
- * (`App/backend/src/perfil/`) vía `lib/api/perfil.ts`.
+ * (`App/backend/src/perfil/`) vía `lib/api/perfil.ts`. Desde 2026-08-13
+ * también incluye `contactos` (tutor/emergencia) como sección propia.
  *
  * `SedeGuard` (backend) ya obliga sesión válida antes de responder, y
  * `src/proxy.ts` (check optimista) ya garantiza que solo entra un JWT con
@@ -29,6 +30,15 @@ import { IconCandado, IconPerfil } from '@/components/alumno/ui/shell/icons';
  * Regla 11 de CLAUDE.md raíz: árbol propio, sin componentes compartidos con
  * `app/admin/` — este archivo no reutiliza nada de
  * `components/admin/ui/persona-alta/`.
+ *
+ * Rediseño visual (2026-08-21, ver
+ * `docs/superpowers/specs/2026-08-21-rediseno-perfil-alumno-design.md`):
+ * el layout de una sola tarjeta con secciones apiladas se reemplazó por un
+ * encabezado (`EncabezadoPerfil`, banner + avatar + badges) y un sidebar de
+ * navegación (`SidebarSecciones` + `PanelSeccion`) que muestra una sección a
+ * la vez (Datos personales, Sede, Carrera, Contactos), más 4 secciones
+ * "próximamente" deshabilitadas. Los datos y el contrato con el backend no
+ * cambiaron, solo cómo se presentan.
  */
 export default function AlumnoPerfilPage() {
   const {
@@ -153,13 +163,7 @@ function BannerArcos() {
  * dato es el mismo, solo se muestra también en un lugar más prominente.
  */
 function EncabezadoPerfil({ alumno }: { alumno: PerfilAlumno }) {
-  const nombreCompleto = [
-    alumno.nombres,
-    alumno.apellidoPaterno,
-    alumno.apellidoMaterno,
-  ]
-    .filter(Boolean)
-    .join(' ');
+  const nombreCompleto = nombreCompletoDe(alumno);
 
   return (
     <div className="overflow-hidden rounded-lg border border-mist bg-white shadow-sm">
@@ -223,6 +227,7 @@ function SidebarSecciones({
             key={item.id}
             type="button"
             onClick={() => onCambiar(item.id)}
+            aria-current={esActiva ? 'page' : undefined}
             className={
               esActiva
                 ? 'shrink-0 rounded-full bg-mist px-4 py-2 text-left text-sm font-medium text-navy sm:rounded-none sm:border-l-4 sm:border-navy sm:bg-transparent sm:pl-3'
@@ -270,6 +275,14 @@ function PanelSeccion({
       return <SeccionCarrera alumno={alumno} />;
     case 'contactos':
       return <SeccionContactos alumno={alumno} />;
+    default: {
+      // Guard de exhaustividad — si se agrega un 5to `SeccionId` sin
+      // actualizar este switch, esto deja de compilar en vez de devolver
+      // `undefined` en silencio (hallazgo de la revisión final del
+      // rediseño, 2026-08-21).
+      const _exhaustivo: never = seccion;
+      return _exhaustivo;
+    }
   }
 }
 
@@ -280,24 +293,11 @@ function SeccionDatosPersonales({
   alumno: PerfilAlumno;
   email: string;
 }) {
-  const nombreCompleto = [
-    alumno.nombres,
-    alumno.apellidoPaterno,
-    alumno.apellidoMaterno,
-  ]
-    .filter(Boolean)
-    .join(' ');
+  const nombreCompleto = nombreCompletoDe(alumno);
 
   return (
     <section className="rounded-lg border border-mist p-5">
-      <div className="flex items-center gap-2">
-        <h2 className="text-sm font-semibold text-navy">Datos personales</h2>
-        {alumno.esMenorDeEdad && (
-          <span className="inline-flex items-center rounded-full bg-mist px-2.5 py-0.5 text-xs font-medium text-navy">
-            Menor de edad
-          </span>
-        )}
-      </div>
+      <h2 className="text-sm font-semibold text-navy">Datos personales</h2>
       <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
         <Campo etiqueta="Nombre completo" valor={nombreCompleto} />
         <Campo etiqueta="Matrícula" valor={alumno.matricula} />
@@ -482,6 +482,17 @@ function Campo({
       <dd className="mt-0.5 text-sm text-slate">{valor || '—'}</dd>
     </div>
   );
+}
+
+/**
+ * Nombre completo del alumno — helper compartido entre `EncabezadoPerfil` y
+ * `SeccionDatosPersonales` (antes duplicado en ambos, extraído en la ronda
+ * final de fixes del rediseño de 2026-08-21).
+ */
+function nombreCompletoDe(alumno: PerfilAlumno): string {
+  return [alumno.nombres, alumno.apellidoPaterno, alumno.apellidoMaterno]
+    .filter(Boolean)
+    .join(' ');
 }
 
 /** Fechas del backend vienen ISO 8601 completo (regla de `CLAUDE.md` raíz) —
