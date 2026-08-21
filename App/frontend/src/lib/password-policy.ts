@@ -13,7 +13,7 @@
  * "mantener en sync a mano" que ya usa este archivo con el backend para
  * `esMenorDeEdad` — si cambias una regla acá, cambia la otra allá.
  */
-export const POLITICA_PASSWORD_HABILITADA = false;
+export const POLITICA_PASSWORD_HABILITADA = true;
 
 export const LONGITUD_MINIMA = 10; // "más de 10" del encargo → 11+ caracteres reales
 
