@@ -52,7 +52,7 @@ export default function AlumnoPerfilPage() {
 
   if (isLoading) {
     return (
-      <div className="max-w-3xl rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm">
+      <div className="max-w-4xl rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm">
         <h1 className="font-display text-2xl font-semibold text-navy">Mi perfil</h1>
         <p className="mt-4 text-sm text-slate/60">Cargando…</p>
       </div>
@@ -66,7 +66,7 @@ export default function AlumnoPerfilPage() {
         : 'No se pudo cargar tu perfil. Intenta de nuevo más tarde.';
 
     return (
-      <div className="max-w-3xl rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm">
+      <div className="max-w-4xl rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm">
         <h1 className="font-display text-2xl font-semibold text-navy">Mi perfil</h1>
         <p className="mt-4 rounded-lg border border-error-border bg-error-bg px-4 py-3 text-sm text-crimson">
           {mensaje}
