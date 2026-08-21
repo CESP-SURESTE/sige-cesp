@@ -52,7 +52,7 @@ export default function AlumnoPerfilPage() {
 
   if (isLoading) {
     return (
-      <div className="max-w-6xl rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm">
+      <div className="mx-auto max-w-6xl rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm">
         <h1 className="font-display text-2xl font-semibold text-navy">Mi perfil</h1>
         <p className="mt-4 text-sm text-slate/60">Cargando…</p>
       </div>
@@ -66,7 +66,7 @@ export default function AlumnoPerfilPage() {
         : 'No se pudo cargar tu perfil. Intenta de nuevo más tarde.';
 
     return (
-      <div className="max-w-6xl rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm">
+      <div className="mx-auto max-w-6xl rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm">
         <h1 className="font-display text-2xl font-semibold text-navy">Mi perfil</h1>
         <p className="mt-4 rounded-lg border border-error-border bg-error-bg px-4 py-3 text-sm text-crimson">
           {mensaje}
@@ -93,7 +93,7 @@ function PerfilContenido({ perfil }: { perfil: Perfil }) {
   // por el rol esperado.
   if (!perfil.alumno) {
     return (
-      <div className="max-w-6xl rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm">
+      <div className="mx-auto max-w-6xl rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm">
         <h1 className="font-display text-2xl font-semibold text-navy">Mi perfil</h1>
         <p className="mt-4 rounded-lg border border-error-border bg-error-bg px-4 py-3 text-sm text-crimson">
           No se encontraron datos de perfil de alumno para tu cuenta.
@@ -105,7 +105,7 @@ function PerfilContenido({ perfil }: { perfil: Perfil }) {
   const alumno = perfil.alumno;
 
   return (
-    <div className="max-w-6xl space-y-6">
+    <div className="mx-auto max-w-6xl space-y-6">
       <EncabezadoPerfil alumno={alumno} />
       <div className="flex flex-col gap-4 rounded-lg border border-mist bg-white p-4 shadow-sm sm:flex-row sm:gap-6 sm:p-6">
         <SidebarSecciones activa={seccion} onCambiar={setSeccion} />
