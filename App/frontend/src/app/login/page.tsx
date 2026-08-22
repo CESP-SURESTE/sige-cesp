@@ -81,6 +81,11 @@ export default function LoginPage() {
   return (
     <main className="flex min-h-screen items-center justify-center p-8">
       <div className="w-full max-w-sm rounded-lg border-l-4 border-navy bg-white px-6 py-8 shadow-sm">
+        {process.env.NEXT_PUBLIC_ENV_LABEL && (
+          <div className="mb-4 rounded-md bg-amber-100 px-3 py-2 text-center text-xs font-bold tracking-wide text-amber-800 uppercase">
+            Ambiente de {process.env.NEXT_PUBLIC_ENV_LABEL} — solo pruebas internas
+          </div>
+        )}
         <p className="font-display text-sm font-semibold tracking-[0.14em] text-navy uppercase">
           SIGE
         </p>
