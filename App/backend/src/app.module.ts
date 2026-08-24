@@ -13,6 +13,7 @@ import { MallaCurricularModule } from './malla-curricular/malla-curricular.modul
 import { PerfilModule } from './perfil/perfil.module';
 import { PlatformAdminModule } from './platform-admin/platform-admin.module';
 import { MailModule } from './mail/mail.module';
+import { GruposModule } from './grupos/grupos.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { MailModule } from './mail/mail.module';
     MallaCurricularModule,
     PerfilModule,
     PlatformAdminModule,
+    GruposModule,
   ],
   controllers: [AppController],
   providers: [AppService],
