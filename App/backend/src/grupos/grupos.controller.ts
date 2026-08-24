@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Post, Query, UseGuards } from '@nestjs/common';
 import { RolUsuario } from '@prisma/client';
 import { ActorUsuarioId } from '../common/decorators/actor-usuario-id.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -6,6 +6,7 @@ import { SedeActual } from '../common/decorators/sede-actual.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { SedeGuard } from '../common/guards/sede.guard';
 import { CrearGrupoDto } from './dto/crear-grupo.dto';
+import { ListarGruposQueryDto } from './dto/listar-grupos.query.dto';
 import { GruposService } from './grupos.service';
 
 /**
@@ -19,6 +20,15 @@ import { GruposService } from './grupos.service';
 @UseGuards(SedeGuard, RolesGuard)
 export class GruposController {
   constructor(private readonly gruposService: GruposService) {}
+
+  @Get()
+  @Roles(RolUsuario.ADMINISTRATIVO)
+  async listar(
+    @Query() query: ListarGruposQueryDto,
+    @SedeActual() sedeId: string,
+  ) {
+    return this.gruposService.listar(query, sedeId);
+  }
 
   @Post()
   @HttpCode(201)

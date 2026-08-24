@@ -318,4 +318,146 @@ describe('GruposController — POST /grupos (e2e)', () => {
     expect(res.status).toBe(401);
     expect((res.body as ErrorBody).code).toBe('UNAUTHORIZED');
   });
+
+  it('GET /grupos sin filtros devuelve los grupos de la sede paginados, con carrera/salon expandidos', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+
+    const res = await request(app.getHttpServer())
+      .get('/grupos')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    const body = res.body as {
+      data: Array<{
+        id: string;
+        nombre: string;
+        carrera: { id: string; nombre: string };
+        salon: { id: string; nombre: string };
+      }>;
+      page: number;
+      limit: number;
+      total: number;
+    };
+    expect(body.page).toBe(1);
+    expect(body.limit).toBe(20);
+    expect(body.total).toBeGreaterThanOrEqual(3); // 2 seed (1A/1B) + el creado en este archivo
+    const creado = body.data.find((g) => g.nombre === nombrePrueba);
+    expect(creado).toBeDefined();
+    expect(creado?.carrera.id).toBe(carreraMeridaId);
+    expect(creado?.salon.id).toBe(salonMeridaId);
+  });
+
+  it('GET /grupos?carreraId=... filtra por carrera', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+
+    const res = await request(app.getHttpServer())
+      .get('/grupos')
+      .query({ carreraId: carreraMeridaId })
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    const body = res.body as { data: Array<{ carrera: { id: string } }> };
+    expect(body.data.every((g) => g.carrera.id === carreraMeridaId)).toBe(
+      true,
+    );
+  });
+
+  it('GET /grupos?anioInicio=&cicloActual= filtra por periodo exacto', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+
+    const res = await request(app.getHttpServer())
+      .get('/grupos')
+      .query({ anioInicio: 2027, cicloActual: 1 })
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    const body = res.body as {
+      data: Array<{ nombre: string; anioInicio: number; cicloActual: number }>;
+    };
+    expect(
+      body.data.every((g) => g.anioInicio === 2027 && g.cicloActual === 1),
+    ).toBe(true);
+    expect(body.data.some((g) => g.nombre === nombrePrueba)).toBe(true);
+  });
+
+  it('GET /grupos respeta el aislamiento por sede — grupo de Valladolid no aparece en Mérida', async () => {
+    const tokenValladolid = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeValladolidId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+    await request(app.getHttpServer())
+      .post('/grupos')
+      .set('Authorization', `Bearer ${tokenValladolid}`)
+      .send({
+        carreraId: carreraValladolidId,
+        salonId: salonValladolidId,
+        nombre: `Grupo E2E Valladolid ${Date.now()}`,
+        anioInicio: 2027,
+        cicloActual: 1,
+        capacidad: 30,
+      });
+
+    const tokenMerida = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+    const res = await request(app.getHttpServer())
+      .get('/grupos')
+      .query({ limit: 100 })
+      .set('Authorization', `Bearer ${tokenMerida}`);
+
+    expect(res.status).toBe(200);
+    const body = res.body as { data: Array<{ nombre: string }> };
+    expect(
+      body.data.some((g) => g.nombre.startsWith('Grupo E2E Valladolid')),
+    ).toBe(false);
+  });
+
+  it('GET /grupos con limit=1 pagina correctamente', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+
+    const res = await request(app.getHttpServer())
+      .get('/grupos')
+      .query({ limit: 1, page: 1 })
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    const body = res.body as { data: unknown[]; limit: number; total: number };
+    expect(body.data.length).toBe(1);
+    expect(body.limit).toBe(1);
+    expect(body.total).toBeGreaterThanOrEqual(3);
+  });
+
+  it('GET /grupos rol no ADMINISTRATIVO -> 403 ROL_NO_AUTORIZADO', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ALUMNO,
+    });
+
+    const res = await request(app.getHttpServer())
+      .get('/grupos')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(403);
+    expect((res.body as ErrorBody).code).toBe('ROL_NO_AUTORIZADO');
+  });
 });

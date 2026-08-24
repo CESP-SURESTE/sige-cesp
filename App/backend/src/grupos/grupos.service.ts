@@ -4,9 +4,27 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { AccionAuditoria, type Grupo } from '@prisma/client';
+import { AccionAuditoria, Prisma, type Grupo } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { CrearGrupoDto } from './dto/crear-grupo.dto';
+import type { ListarGruposQueryDto } from './dto/listar-grupos.query.dto';
+
+export interface GrupoListItem {
+  id: string;
+  nombre: string;
+  anioInicio: number;
+  cicloActual: number;
+  capacidad: number;
+  carrera: { id: string; nombre: string };
+  salon: { id: string; nombre: string };
+}
+
+export interface ListarGruposResult {
+  data: GrupoListItem[];
+  page: number;
+  limit: number;
+  total: number;
+}
 
 @Injectable()
 export class GruposService {
@@ -107,5 +125,57 @@ export class GruposService {
 
       return grupo;
     });
+  }
+
+  /**
+   * `GET /grupos` — Fase 9, Día 28. Todos los filtros opcionales. Orden:
+   * periodos más recientes primero (`anioInicio desc, cicloActual desc`),
+   * luego `nombre asc`. `carrera`/`salon` expandidos a `{ id, nombre }`
+   * para que la UI de Día 29 no haga N+1 requests — a diferencia de
+   * `crear`, que devuelve el `Grupo` plano sin relaciones.
+   */
+  async listar(
+    filtros: ListarGruposQueryDto,
+    sedeId: string,
+  ): Promise<ListarGruposResult> {
+    const page = filtros.page ?? 1;
+    const limit = filtros.limit ?? 20;
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.GrupoWhereInput = {
+      sedeId,
+      ...(filtros.anioInicio !== undefined
+        ? { anioInicio: filtros.anioInicio }
+        : {}),
+      ...(filtros.cicloActual !== undefined
+        ? { cicloActual: filtros.cicloActual }
+        : {}),
+      ...(filtros.carreraId ? { carreraId: filtros.carreraId } : {}),
+    };
+
+    const [total, grupos] = await this.prisma.$transaction([
+      this.prisma.grupo.count({ where }),
+      this.prisma.grupo.findMany({
+        where,
+        orderBy: [
+          { anioInicio: 'desc' },
+          { cicloActual: 'desc' },
+          { nombre: 'asc' },
+        ],
+        skip,
+        take: limit,
+        select: {
+          id: true,
+          nombre: true,
+          anioInicio: true,
+          cicloActual: true,
+          capacidad: true,
+          carrera: { select: { id: true, nombre: true } },
+          salon: { select: { id: true, nombre: true } },
+        },
+      }),
+    ]);
+
+    return { data: grupos, page, limit, total };
   }
 }
