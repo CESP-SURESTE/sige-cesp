@@ -95,36 +95,41 @@ export class GruposService {
       });
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      const grupo = await tx.grupo.create({
-        data: {
-          sedeId,
-          carreraId: dto.carreraId,
-          salonId: dto.salonId,
-          nombre: dto.nombre,
-          anioInicio: dto.anioInicio,
-          cicloActual: dto.cicloActual,
-          capacidad: dto.capacidad,
-        },
-      });
-
-      await tx.registroAuditoria.create({
-        data: {
-          usuarioId: actorUsuarioId,
-          sedeId,
-          accion: AccionAuditoria.ALTA,
-          entidad: 'Grupo',
-          entidadId: grupo.id,
-          detalle: {
-            nombre: grupo.nombre,
-            anioInicio: grupo.anioInicio,
-            cicloActual: grupo.cicloActual,
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const grupo = await tx.grupo.create({
+          data: {
+            sedeId,
+            carreraId: dto.carreraId,
+            salonId: dto.salonId,
+            nombre: dto.nombre,
+            anioInicio: dto.anioInicio,
+            cicloActual: dto.cicloActual,
+            capacidad: dto.capacidad,
           },
-        },
-      });
+        });
 
-      return grupo;
-    });
+        await tx.registroAuditoria.create({
+          data: {
+            usuarioId: actorUsuarioId,
+            sedeId,
+            accion: AccionAuditoria.ALTA,
+            entidad: 'Grupo',
+            entidadId: grupo.id,
+            detalle: {
+              nombre: grupo.nombre,
+              anioInicio: grupo.anioInicio,
+              cicloActual: grupo.cicloActual,
+            },
+          },
+        });
+
+        return grupo;
+      });
+    } catch (err) {
+      console.error('[GruposService.crear] error inesperado:', err);
+      throw err;
+    }
   }
 
   /**
@@ -153,29 +158,34 @@ export class GruposService {
       ...(filtros.carreraId ? { carreraId: filtros.carreraId } : {}),
     };
 
-    const [total, grupos] = await this.prisma.$transaction([
-      this.prisma.grupo.count({ where }),
-      this.prisma.grupo.findMany({
-        where,
-        orderBy: [
-          { anioInicio: 'desc' },
-          { cicloActual: 'desc' },
-          { nombre: 'asc' },
-        ],
-        skip,
-        take: limit,
-        select: {
-          id: true,
-          nombre: true,
-          anioInicio: true,
-          cicloActual: true,
-          capacidad: true,
-          carrera: { select: { id: true, nombre: true } },
-          salon: { select: { id: true, nombre: true } },
-        },
-      }),
-    ]);
+    try {
+      const [total, grupos] = await this.prisma.$transaction([
+        this.prisma.grupo.count({ where }),
+        this.prisma.grupo.findMany({
+          where,
+          orderBy: [
+            { anioInicio: 'desc' },
+            { cicloActual: 'desc' },
+            { nombre: 'asc' },
+          ],
+          skip,
+          take: limit,
+          select: {
+            id: true,
+            nombre: true,
+            anioInicio: true,
+            cicloActual: true,
+            capacidad: true,
+            carrera: { select: { id: true, nombre: true } },
+            salon: { select: { id: true, nombre: true } },
+          },
+        }),
+      ]);
 
-    return { data: grupos, page, limit, total };
+      return { data: grupos, page, limit, total };
+    } catch (err) {
+      console.error('[GruposService.listar] error inesperado:', err);
+      throw err;
+    }
   }
 }

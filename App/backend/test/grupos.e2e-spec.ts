@@ -460,4 +460,84 @@ describe('GruposController — POST /grupos (e2e)', () => {
     expect(res.status).toBe(403);
     expect((res.body as ErrorBody).code).toBe('ROL_NO_AUTORIZADO');
   });
+
+  it('GET /grupos?limit=101 fuera de rango -> 400 VALIDATION_ERROR', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+
+    const res = await request(app.getHttpServer())
+      .get('/grupos')
+      .query({ limit: 101 })
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(400);
+    expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+  });
+
+  it('GET /grupos?page=0 fuera de rango -> 400 VALIDATION_ERROR', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+
+    const res = await request(app.getHttpServer())
+      .get('/grupos')
+      .query({ page: 0 })
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(400);
+    expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+  });
+
+  it('GET /grupos?carreraId=not-a-uuid -> 400 VALIDATION_ERROR', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+
+    const res = await request(app.getHttpServer())
+      .get('/grupos')
+      .query({ carreraId: 'not-a-uuid' })
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(400);
+    expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+  });
+
+  it('GET /grupos?anioInicio=abc no numérico -> 400 VALIDATION_ERROR', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+
+    const res = await request(app.getHttpServer())
+      .get('/grupos')
+      .query({ anioInicio: 'abc' })
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(400);
+    expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+  });
+
+  it('GET /grupos?anioInicio=2027.5 no entero -> 400 VALIDATION_ERROR', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+
+    const res = await request(app.getHttpServer())
+      .get('/grupos')
+      .query({ anioInicio: 2027.5 })
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(400);
+    expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+  });
 });
