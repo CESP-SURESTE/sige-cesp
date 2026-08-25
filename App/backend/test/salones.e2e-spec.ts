@@ -47,6 +47,7 @@ describe('SalonesController — GET /salones (e2e)', () => {
   const kid = 'test-key-1';
   const alg = 'ES256';
   const nombrePrueba = `Salon E2E ${Date.now()}`;
+  const salonIdsCreados: string[] = [];
 
   async function firmarToken(claims: Record<string, unknown>): Promise<string> {
     return new jose.SignJWT(claims)
@@ -107,7 +108,7 @@ describe('SalonesController — GET /salones (e2e)', () => {
 
   afterAll(async () => {
     await prisma.registroAuditoria.deleteMany({
-      where: { entidad: 'Salon', sedeId: { in: [sedeMeridaId, sedeValladolidId] } },
+      where: { entidad: 'Salon', entidadId: { in: salonIdsCreados } },
     });
     await prisma.salon.deleteMany({
       where: { nombre: { startsWith: 'Salon E2E' } },
@@ -192,6 +193,7 @@ describe('SalonesController — GET /salones (e2e)', () => {
 
     expect(res.status).toBe(201);
     const body = res.body as SalonBody;
+    salonIdsCreados.push(body.data.id);
     expect(body.data.nombre).toBe(nombrePrueba);
     expect(body.data.capacidad).toBe(40);
     expect(body.data.sedeId).toBe(sedeMeridaId);
@@ -233,6 +235,7 @@ describe('SalonesController — GET /salones (e2e)', () => {
 
     expect(res.status).toBe(201);
     const body = res.body as SalonBody;
+    salonIdsCreados.push(body.data.id);
     expect(body.data.sedeId).toBe(sedeValladolidId);
   });
 
@@ -339,6 +342,7 @@ describe('SalonesController — GET /salones (e2e)', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({ nombre: `${nombrePrueba} patch-parcial`, capacidad: 15 });
     const salonId = (creado.body as SalonBody).data.id;
+    salonIdsCreados.push(salonId);
 
     const res = await request(app.getHttpServer())
       .patch(`/salones/${salonId}`)
@@ -368,6 +372,7 @@ describe('SalonesController — GET /salones (e2e)', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({ nombre: `${nombrePrueba} patch-vacio`, capacidad: 15 });
     const salonId = (creado.body as SalonBody).data.id;
+    salonIdsCreados.push(salonId);
 
     const antes = await prisma.registroAuditoria.count({
       where: { entidad: 'Salon', entidadId: salonId },
@@ -418,7 +423,9 @@ describe('SalonesController — GET /salones (e2e)', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({ nombre: `${nombrePrueba} rename-b`, capacidad: 15 });
     const salonAId = (salonA.body as SalonBody).data.id;
+    const salonBId = (salonB.body as SalonBody).data.id;
     const salonBNombre = (salonB.body as SalonBody).data.nombre;
+    salonIdsCreados.push(salonAId, salonBId);
 
     const res = await request(app.getHttpServer())
       .patch(`/salones/${salonAId}`)
@@ -441,6 +448,7 @@ describe('SalonesController — GET /salones (e2e)', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({ nombre: `${nombrePrueba} sin-cambio`, capacidad: 15 });
     const salonId = (creado.body as SalonBody).data.id;
+    salonIdsCreados.push(salonId);
 
     const antes = await prisma.registroAuditoria.count({
       where: { entidad: 'Salon', entidadId: salonId },
@@ -473,6 +481,7 @@ describe('SalonesController — GET /salones (e2e)', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({ nombre: `${nombrePrueba} para-borrar`, capacidad: 15 });
     const salonId = (creado.body as SalonBody).data.id;
+    salonIdsCreados.push(salonId);
 
     const res = await request(app.getHttpServer())
       .delete(`/salones/${salonId}`)
