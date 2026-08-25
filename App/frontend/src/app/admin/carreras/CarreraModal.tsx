@@ -1,24 +1,39 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
+import { toast } from 'sonner';
 import { LABEL_CLASS, INPUT_CLASS } from '@/components/admin/ui/persona-alta/estilos';
 import { Select } from '@/components/admin/ui/persona-alta/Select';
 import type {
   ActualizarCarreraInput,
   Carrera,
+  CrearCarreraInput,
   EstatusCarrera,
   ModalidadCarrera,
   NivelCarrera,
 } from '@/lib/api/carreras';
 
 /**
- * Modal de edición de carrera — retrofit de swap-inline a modal (regla 13 de
- * `CLAUDE.md` raíz). Mismo estilo que
- * `app/plataforma/sedes/ConfirmarEliminarSedeModal.tsx` (overlay + panel),
- * pero `max-w-lg` en vez de `max-w-md` por tener más campos. Prellenado con
- * los valores reales de `carrera` (no arranca vacío) — `PATCH /carreras/:id`
- * sigue siendo parcial por diseño (en blanco = sin cambio), aunque acá en la
- * práctica todos los campos ya llegan llenos.
+ * Modal único de alta+edición de carrera (Task 1 de la unificación de CRUD
+ * admin, 2026-08-25 — regla 13 ampliada de `CLAUDE.md` raíz). Antes de hoy
+ * había un form fijo de "Nueva carrera" en `page.tsx` + este archivo
+ * (`EditarCarreraModal.tsx`, renombrado a `CarreraModal.tsx`) solo para
+ * editar — ahora ambos flujos comparten el mismo modal.
+ *
+ * `carrera: Carrera | null` decide el modo: `null` → alta (campos vacíos,
+ * todos `required`, botón "Crear carrera", `onCrear`); objeto real → edición
+ * (prellenado, campos opcionales — en blanco = sin cambio, botón "Guardar
+ * cambios", `onEditar`). La página sigue siendo dueña de las 2 mutations
+ * (`crearMutation`/`actualizarMutation`); este modal solo arma el payload
+ * correcto y decide cuál de los 2 callbacks invocar según su propio modo.
+ *
+ * Mismo estilo que `app/plataforma/sedes/ConfirmarEliminarSedeModal.tsx`
+ * (overlay + panel), `max-w-lg` por tener varios campos, `max-h-[90vh]
+ * overflow-y-auto` (fix de scroll ya aplicado en el retrofit anterior — no
+ * reintroducir el bug). Ids con prefijo `carrera-modal-` (antes `editar-`,
+ * que ya no tiene sentido semántico ahora que el modal también sirve para
+ * alta) — sin colisión posible, la página ya no tiene un form fijo con estos
+ * mismos ids.
  */
 
 const NIVEL_LABEL: Record<NivelCarrera, string> = {
@@ -39,7 +54,7 @@ const ESTATUS_LABEL: Record<EstatusCarrera, string> = {
   INACTIVA: 'Inactiva',
 };
 
-interface FormEdicion {
+interface FormCarrera {
   nombre: string;
   clave: string;
   duracion: string;
@@ -50,7 +65,18 @@ interface FormEdicion {
   estatus: EstatusCarrera | '';
 }
 
-function formDesdeCarrera(carrera: Carrera): FormEdicion {
+const FORM_VACIO: FormCarrera = {
+  nombre: '',
+  clave: '',
+  duracion: '',
+  nivel: '',
+  modalidad: '',
+  rvoe: '',
+  descripcion: '',
+  estatus: '',
+};
+
+function formDesdeCarrera(carrera: Carrera): FormCarrera {
   return {
     nombre: carrera.nombre,
     clave: carrera.clave,
@@ -63,8 +89,35 @@ function formDesdeCarrera(carrera: Carrera): FormEdicion {
   };
 }
 
-/** Solo incluye en el `PATCH` los campos que el admin sí llenó — en blanco = sin cambio. */
-function construirPayloadEdicion(form: FormEdicion): ActualizarCarreraInput {
+/** Modo alta — todos los campos son obligatorios, arma el payload completo de `POST /carreras`. */
+function construirPayloadAlta(form: FormCarrera): CrearCarreraInput | null {
+  if (
+    !form.nombre.trim() ||
+    !form.clave.trim() ||
+    !form.duracion.trim() ||
+    !form.nivel ||
+    !form.modalidad ||
+    !form.rvoe.trim() ||
+    !form.descripcion.trim()
+  ) {
+    return null;
+  }
+  const duracion = Number.parseInt(form.duracion, 10);
+  if (!Number.isInteger(duracion) || duracion < 1) return null;
+
+  return {
+    nombre: form.nombre.trim(),
+    clave: form.clave.trim(),
+    duracion,
+    nivel: form.nivel,
+    modalidad: form.modalidad,
+    rvoe: form.rvoe.trim(),
+    descripcion: form.descripcion.trim(),
+  };
+}
+
+/** Modo edición — solo incluye en el `PATCH` los campos que el admin sí llenó; en blanco = sin cambio. */
+function construirPayloadEdicion(form: FormCarrera): ActualizarCarreraInput {
   const payload: ActualizarCarreraInput = {};
 
   if (form.nombre.trim()) payload.nombre = form.nombre.trim();
@@ -82,40 +135,58 @@ function construirPayloadEdicion(form: FormEdicion): ActualizarCarreraInput {
   return payload;
 }
 
-export interface EditarCarreraModalProps {
-  carrera: Carrera;
+export interface CarreraModalProps {
+  /** `null` = modo alta. Objeto real = modo edición, prellena el formulario. */
+  carrera: Carrera | null;
   guardando: boolean;
-  onGuardar: (payload: ActualizarCarreraInput) => void;
+  onCrear: (payload: CrearCarreraInput) => void;
+  onEditar: (payload: ActualizarCarreraInput) => void;
   onCancelar: () => void;
 }
 
-export function EditarCarreraModal({
+export function CarreraModal({
   carrera,
   guardando,
-  onGuardar,
+  onCrear,
+  onEditar,
   onCancelar,
-}: EditarCarreraModalProps) {
-  const [form, setForm] = useState<FormEdicion>(() => formDesdeCarrera(carrera));
+}: CarreraModalProps) {
+  const esAlta = carrera === null;
+  const [form, setForm] = useState<FormCarrera>(() =>
+    carrera ? formDesdeCarrera(carrera) : FORM_VACIO,
+  );
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    onGuardar(construirPayloadEdicion(form));
+    if (esAlta) {
+      const payload = construirPayloadAlta(form);
+      if (!payload) {
+        toast.error('Revisa que todos los campos estén completos y con formato correcto.');
+        return;
+      }
+      onCrear(payload);
+      return;
+    }
+    onEditar(construirPayloadEdicion(form));
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate/40 p-4">
       <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-6 shadow-lg">
-        <h2 className="font-display text-lg font-semibold text-slate">Editar carrera</h2>
+        <h2 className="font-display text-lg font-semibold text-slate">
+          {esAlta ? 'Nueva carrera' : 'Editar carrera'}
+        </h2>
 
         <form onSubmit={handleSubmit} className="mt-4 space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label htmlFor="editar-nombre" className={LABEL_CLASS}>
+              <label htmlFor="carrera-modal-nombre" className={LABEL_CLASS}>
                 Nombre
               </label>
               <input
-                id="editar-nombre"
+                id="carrera-modal-nombre"
                 type="text"
+                required={esAlta}
                 disabled={guardando}
                 className={INPUT_CLASS}
                 value={form.nombre}
@@ -123,12 +194,13 @@ export function EditarCarreraModal({
               />
             </div>
             <div>
-              <label htmlFor="editar-clave" className={LABEL_CLASS}>
+              <label htmlFor="carrera-modal-clave" className={LABEL_CLASS}>
                 Clave
               </label>
               <input
-                id="editar-clave"
+                id="carrera-modal-clave"
                 type="text"
+                required={esAlta}
                 disabled={guardando}
                 className={INPUT_CLASS}
                 value={form.clave}
@@ -136,14 +208,15 @@ export function EditarCarreraModal({
               />
             </div>
             <div>
-              <label htmlFor="editar-duracion" className={LABEL_CLASS}>
+              <label htmlFor="carrera-modal-duracion" className={LABEL_CLASS}>
                 Duración (semestres)
               </label>
               <input
-                id="editar-duracion"
+                id="carrera-modal-duracion"
                 type="number"
                 min={1}
                 step={1}
+                required={esAlta}
                 disabled={guardando}
                 className={INPUT_CLASS}
                 value={form.duracion}
@@ -151,12 +224,13 @@ export function EditarCarreraModal({
               />
             </div>
             <div>
-              <label htmlFor="editar-rvoe" className={LABEL_CLASS}>
+              <label htmlFor="carrera-modal-rvoe" className={LABEL_CLASS}>
                 RVOE
               </label>
               <input
-                id="editar-rvoe"
+                id="carrera-modal-rvoe"
                 type="text"
+                required={esAlta}
                 disabled={guardando}
                 className={INPUT_CLASS}
                 value={form.rvoe}
@@ -164,72 +238,75 @@ export function EditarCarreraModal({
               />
             </div>
             <div>
-              <label htmlFor="editar-nivel" className={LABEL_CLASS}>
+              <label htmlFor="carrera-modal-nivel" className={LABEL_CLASS}>
                 Nivel
               </label>
               <Select
-                id="editar-nivel"
+                id="carrera-modal-nivel"
                 disabled={guardando}
                 value={form.nivel}
                 onChange={(value) =>
                   setForm((f) => ({ ...f, nivel: value as NivelCarrera | '' }))
                 }
                 options={[
-                  { value: '', label: 'Sin cambio' },
+                  { value: '', label: esAlta ? 'Selecciona un nivel' : 'Sin cambio' },
                   ...(Object.entries(NIVEL_LABEL) as [NivelCarrera, string][]).map(
                     ([value, label]) => ({ value, label }),
                   ),
                 ]}
-                placeholder="Sin cambio"
+                placeholder={esAlta ? 'Selecciona un nivel' : 'Sin cambio'}
               />
             </div>
             <div>
-              <label htmlFor="editar-modalidad" className={LABEL_CLASS}>
+              <label htmlFor="carrera-modal-modalidad" className={LABEL_CLASS}>
                 Modalidad
               </label>
               <Select
-                id="editar-modalidad"
+                id="carrera-modal-modalidad"
                 disabled={guardando}
                 value={form.modalidad}
                 onChange={(value) =>
                   setForm((f) => ({ ...f, modalidad: value as ModalidadCarrera | '' }))
                 }
                 options={[
-                  { value: '', label: 'Sin cambio' },
+                  { value: '', label: esAlta ? 'Selecciona una modalidad' : 'Sin cambio' },
                   ...(Object.entries(MODALIDAD_LABEL) as [ModalidadCarrera, string][]).map(
                     ([value, label]) => ({ value, label }),
                   ),
                 ]}
-                placeholder="Sin cambio"
+                placeholder={esAlta ? 'Selecciona una modalidad' : 'Sin cambio'}
               />
             </div>
-            <div>
-              <label htmlFor="editar-estatus" className={LABEL_CLASS}>
-                Estatus
-              </label>
-              <Select
-                id="editar-estatus"
-                disabled={guardando}
-                value={form.estatus}
-                onChange={(value) =>
-                  setForm((f) => ({ ...f, estatus: value as EstatusCarrera | '' }))
-                }
-                options={[
-                  { value: '', label: 'Sin cambio' },
-                  ...(Object.entries(ESTATUS_LABEL) as [EstatusCarrera, string][]).map(
-                    ([value, label]) => ({ value, label }),
-                  ),
-                ]}
-                placeholder="Sin cambio"
-              />
-            </div>
+            {!esAlta && (
+              <div>
+                <label htmlFor="carrera-modal-estatus" className={LABEL_CLASS}>
+                  Estatus
+                </label>
+                <Select
+                  id="carrera-modal-estatus"
+                  disabled={guardando}
+                  value={form.estatus}
+                  onChange={(value) =>
+                    setForm((f) => ({ ...f, estatus: value as EstatusCarrera | '' }))
+                  }
+                  options={[
+                    { value: '', label: 'Sin cambio' },
+                    ...(Object.entries(ESTATUS_LABEL) as [EstatusCarrera, string][]).map(
+                      ([value, label]) => ({ value, label }),
+                    ),
+                  ]}
+                  placeholder="Sin cambio"
+                />
+              </div>
+            )}
             <div className="sm:col-span-2">
-              <label htmlFor="editar-descripcion" className={LABEL_CLASS}>
+              <label htmlFor="carrera-modal-descripcion" className={LABEL_CLASS}>
                 Descripción
               </label>
               <textarea
-                id="editar-descripcion"
+                id="carrera-modal-descripcion"
                 rows={3}
+                required={esAlta}
                 disabled={guardando}
                 className={INPUT_CLASS}
                 value={form.descripcion}
@@ -252,7 +329,7 @@ export function EditarCarreraModal({
               disabled={guardando}
               className="rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-navy-deep disabled:opacity-50"
             >
-              {guardando ? 'Guardando…' : 'Guardar cambios'}
+              {guardando ? 'Guardando…' : esAlta ? 'Crear carrera' : 'Guardar cambios'}
             </button>
           </div>
         </form>

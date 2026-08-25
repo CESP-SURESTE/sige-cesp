@@ -1,9 +1,8 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState, type FormEvent } from 'react';
+import { useState } from 'react';
 import { toast } from 'sonner';
-import { INPUT_CLASS, LABEL_CLASS } from '@/components/admin/ui/persona-alta/estilos';
 import {
   MENSAJE_ERROR_GENERICO,
   resolverMensajeError,
@@ -18,7 +17,7 @@ import {
   type SalonInput,
 } from '@/lib/api/salones';
 import { ConfirmarEliminarSalonModal } from './ConfirmarEliminarSalonModal';
-import { EditarSalonModal } from './EditarSalonModal';
+import { SalonModal } from './SalonModal';
 
 /**
  * Gestión de salones — Fase 9, CRUD completo de `Salon` (Task 2, frontend).
@@ -26,8 +25,8 @@ import { EditarSalonModal } from './EditarSalonModal';
  * /salones` ya existía desde Día 29) — ver `CLAUDE.md` raíz para el
  * contrato exacto.
  *
- * Patrón visual/estructura calcado de `app/admin/carreras/page.tsx` (card de
- * form fijo de alta arriba + tabla abajo, mismas clases Tailwind, mismos
+ * Patrón visual/estructura calcado de `app/admin/carreras/page.tsx` (header
+ * con botón "+ Nuevo salón" + tabla abajo, mismas clases Tailwind, mismos
  * estados isLoading/isError/vacío). El modal de confirmación de borrado
  * (`ConfirmarEliminarSalonModal`) es copia estructural de
  * `app/plataforma/sedes/ConfirmarEliminarSedeModal.tsx`, código propio, sin
@@ -38,37 +37,29 @@ import { EditarSalonModal } from './EditarSalonModal';
  * `DELETE /salones/:id` bloqueado ya viene armado con la cantidad de grupos
  * asociados, así que no hace falta reformularlo acá.
  *
- * ACTUALIZADO (2026-08-25): retrofit de "editar" — swap-inline a modal
- * (`EditarSalonModal`, regla 13 de `CLAUDE.md` raíz), mismo criterio que
- * `carreras/page.tsx`. El form fijo de la página ahora es solo "Nuevo
- * salón"; el botón "Editar" de la tabla abre `EditarSalonModal` con
- * `salonEditando` prellenado.
+ * ACTUALIZADO (2026-08-25): unificación de alta+edición en un solo modal
+ * (`SalonModal`, Task 1 de la unificación de CRUD admin — regla 13 ampliada
+ * de `CLAUDE.md` raíz), mismo criterio que `carreras/page.tsx`. El form
+ * fijo de "Nuevo salón" desapareció — un botón "+ Nuevo salón" abre
+ * `SalonModal` en modo alta (`salon: null`), el botón "Editar" de la tabla
+ * lo abre en modo edición (`salon` prellenado).
  */
 
 const MENSAJES_ERROR_SALON: Record<string, string> = {
   NOT_FOUND: 'Ese salón ya no existe o no pertenece a tu sede.',
 };
 
-interface FormSalon {
-  nombre: string;
-  capacidad: string;
+/** Estado del modal único de alta/edición — `salon: null` es modo alta explícito. */
+interface EstadoModalSalon {
+  abierto: boolean;
+  salon: Salon | null;
 }
 
-const FORM_VACIO: FormSalon = { nombre: '', capacidad: '' };
-
-function construirPayloadAlta(form: FormSalon): SalonInput | null {
-  if (!form.nombre.trim() || !form.capacidad.trim()) return null;
-
-  const capacidad = Number.parseInt(form.capacidad, 10);
-  if (!Number.isInteger(capacidad) || capacidad < 1) return null;
-
-  return { nombre: form.nombre.trim(), capacidad };
-}
+const MODAL_CERRADO: EstadoModalSalon = { abierto: false, salon: null };
 
 export default function AdminSalonesPage() {
   const queryClient = useQueryClient();
-  const [formNuevo, setFormNuevo] = useState<FormSalon>(FORM_VACIO);
-  const [salonEditando, setSalonEditando] = useState<Salon | null>(null);
+  const [modalSalon, setModalSalon] = useState<EstadoModalSalon>(MODAL_CERRADO);
   const [salonAEliminar, setSalonAEliminar] = useState<Salon | null>(null);
 
   const salonesQuery = useQuery({
@@ -89,7 +80,7 @@ export default function AdminSalonesPage() {
     mutationFn: (input: SalonInput) => crearSalon(input),
     onSuccess: () => {
       toast.success('Salón creado');
-      setFormNuevo(FORM_VACIO);
+      setModalSalon(MODAL_CERRADO);
       void queryClient.invalidateQueries({ queryKey: ['admin', 'salones'] });
     },
     onError: (err) => {
@@ -103,7 +94,7 @@ export default function AdminSalonesPage() {
       actualizarSalon(vars.id, vars.input),
     onSuccess: () => {
       toast.success('Salón actualizado');
-      setSalonEditando(null);
+      setModalSalon(MODAL_CERRADO);
       void queryClient.invalidateQueries({ queryKey: ['admin', 'salones'] });
     },
     onError: (err) => {
@@ -117,7 +108,7 @@ export default function AdminSalonesPage() {
     onSuccess: (_data, id) => {
       toast.success('Salón eliminado');
       setSalonAEliminar(null);
-      if (salonEditando?.id === id) setSalonEditando(null);
+      if (modalSalon.salon?.id === id) setModalSalon(MODAL_CERRADO);
       void queryClient.invalidateQueries({ queryKey: ['admin', 'salones'] });
     },
     onError: (err) => {
@@ -127,46 +118,22 @@ export default function AdminSalonesPage() {
     },
   });
 
-  function handleSubmitNuevo(e: FormEvent) {
-    e.preventDefault();
-    const payload = construirPayloadAlta(formNuevo);
-    if (!payload) {
-      toast.error('Revisa que todos los campos estén completos y con formato correcto.');
-      return;
-    }
-    crearMutation.mutate(payload);
-  }
-
   return (
     <div className="space-y-6">
-      <div className="rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm">
-        <h1 className="font-display text-2xl font-semibold text-navy">Salones</h1>
-        <p className="mt-1 text-sm text-slate/60">
-          Alta y edición de los salones de tu sede.
-        </p>
-      </div>
-
-      <form
-        onSubmit={handleSubmitNuevo}
-        className="space-y-4 rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm"
-      >
-        <h2 className="font-display text-lg font-semibold text-slate">Nuevo salón</h2>
-
-        <CamposSalon
-          form={formNuevo}
-          onChange={(cambios) => setFormNuevo((f) => ({ ...f, ...cambios }))}
-          disabled={crearMutation.isPending}
-          requerido
-        />
-
+      <div className="flex items-center justify-between rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm">
+        <div>
+          <h1 className="font-display text-2xl font-semibold text-navy">Salones</h1>
+          <p className="mt-1 text-sm text-slate/60">
+            Alta y edición de los salones de tu sede.
+          </p>
+        </div>
         <button
-          type="submit"
-          disabled={crearMutation.isPending}
-          className="rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-navy-deep disabled:opacity-50"
+          onClick={() => setModalSalon({ abierto: true, salon: null })}
+          className="rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-navy-deep"
         >
-          {crearMutation.isPending ? 'Guardando…' : 'Crear salón'}
+          + Nuevo salón
         </button>
-      </form>
+      </div>
 
       <div className="overflow-x-auto rounded-lg border-l-4 border-navy bg-white shadow-sm">
         <table className="w-full text-sm">
@@ -209,7 +176,7 @@ export default function AdminSalonesPage() {
                 <td className="px-4 py-3 text-slate/80">{salon.capacidad}</td>
                 <td className="px-4 py-3 text-right">
                   <button
-                    onClick={() => setSalonEditando(salon)}
+                    onClick={() => setModalSalon({ abierto: true, salon })}
                     className="text-navy hover:underline"
                   >
                     Editar
@@ -236,68 +203,19 @@ export default function AdminSalonesPage() {
         />
       )}
 
-      {salonEditando && (
-        <EditarSalonModal
-          salon={salonEditando}
-          guardando={actualizarMutation.isPending}
-          onGuardar={(payload) =>
-            actualizarMutation.mutate({ id: salonEditando.id, input: payload })
-          }
-          onCancelar={() => setSalonEditando(null)}
+      {modalSalon.abierto && (
+        <SalonModal
+          salon={modalSalon.salon}
+          guardando={crearMutation.isPending || actualizarMutation.isPending}
+          onCrear={(payload) => crearMutation.mutate(payload)}
+          onEditar={(payload) => {
+            const salonId = modalSalon.salon?.id;
+            if (!salonId) return;
+            actualizarMutation.mutate({ id: salonId, input: payload });
+          }}
+          onCancelar={() => setModalSalon(MODAL_CERRADO)}
         />
       )}
-    </div>
-  );
-}
-
-/**
- * Campos comunes entre "Nuevo salón" y "Editar salón" — `requerido`
- * controla si se marcan como `required` (alta) o no (edición, en blanco =
- * sin cambio, mismo criterio que `CamposCarrera` en `carreras/page.tsx`).
- */
-function CamposSalon({
-  form,
-  onChange,
-  disabled,
-  requerido,
-}: {
-  form: FormSalon;
-  onChange: (cambios: Partial<FormSalon>) => void;
-  disabled: boolean;
-  requerido: boolean;
-}) {
-  return (
-    <div className="grid gap-4 sm:grid-cols-2">
-      <div>
-        <label htmlFor="nombre" className={LABEL_CLASS}>
-          Nombre
-        </label>
-        <input
-          id="nombre"
-          type="text"
-          required={requerido}
-          disabled={disabled}
-          className={INPUT_CLASS}
-          value={form.nombre}
-          onChange={(e) => onChange({ nombre: e.target.value })}
-        />
-      </div>
-      <div>
-        <label htmlFor="capacidad" className={LABEL_CLASS}>
-          Capacidad
-        </label>
-        <input
-          id="capacidad"
-          type="number"
-          min={1}
-          step={1}
-          required={requerido}
-          disabled={disabled}
-          className={INPUT_CLASS}
-          value={form.capacidad}
-          onChange={(e) => onChange({ capacidad: e.target.value })}
-        />
-      </div>
     </div>
   );
 }
