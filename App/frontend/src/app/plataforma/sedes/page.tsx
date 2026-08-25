@@ -8,6 +8,7 @@ import { ApiError } from '@/lib/api/http';
 import { getPlatformToken, clearPlatformToken } from '@/lib/api/platform-http';
 import { listarSedes, crearSede, actualizarSede, eliminarSede, type Sede, type SedeInput } from '@/lib/api/sedes';
 import { ConfirmarEliminarSedeModal } from './ConfirmarEliminarSedeModal';
+import { EditarSedeModal } from './EditarSedeModal';
 
 const FORM_VACIO: SedeInput = {
   nombre: '',
@@ -20,7 +21,7 @@ export default function PlataformaSedesPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [form, setForm] = useState<SedeInput>(FORM_VACIO);
-  const [editandoId, setEditandoId] = useState<string | null>(null);
+  const [sedeEditando, setSedeEditando] = useState<Sede | null>(null);
   const [sedeAEliminar, setSedeAEliminar] = useState<Sede | null>(null);
 
   // Protección de ruta del lado del cliente — app/plataforma está
@@ -63,8 +64,7 @@ export default function PlataformaSedesPage() {
       actualizarSede(vars.id, vars.input),
     onSuccess: () => {
       toast.success('Sede actualizada');
-      setForm(FORM_VACIO);
-      setEditandoId(null);
+      setSedeEditando(null);
       void queryClient.invalidateQueries({ queryKey: ['plataforma', 'sedes'] });
     },
     onError: (err, vars) => {
@@ -82,9 +82,8 @@ export default function PlataformaSedesPage() {
     onSuccess: (_data, id) => {
       toast.success('Sede eliminada');
       setSedeAEliminar(null);
-      if (editandoId === id) {
-        setEditandoId(null);
-        setForm(FORM_VACIO);
+      if (sedeEditando?.id === id) {
+        setSedeEditando(null);
       }
     },
     onError: (err, vars) => {
@@ -99,22 +98,11 @@ export default function PlataformaSedesPage() {
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    if (editandoId) {
-      actualizarMutation.mutate({ id: editandoId, input: form });
-    } else {
-      crearMutation.mutate(form);
-    }
+    crearMutation.mutate(form);
   }
 
   function iniciarEdicion(sede: Sede) {
-    setEditandoId(sede.id);
-    setForm({
-      nombre: sede.nombre,
-      direccion: sede.direccion,
-      ubicacionReferencia: sede.ubicacionReferencia,
-      telefono: sede.telefono,
-      costoRenta: sede.costoRenta ? Number(sede.costoRenta) : undefined,
-    });
+    setSedeEditando(sede);
   }
 
   function cerrarSesion() {
@@ -122,7 +110,7 @@ export default function PlataformaSedesPage() {
     router.push('/plataforma/login');
   }
 
-  const guardando = crearMutation.isPending || actualizarMutation.isPending;
+  const guardando = crearMutation.isPending;
 
   return (
     <main className="mx-auto max-w-4xl p-8">
@@ -145,9 +133,7 @@ export default function PlataformaSedesPage() {
         onSubmit={handleSubmit}
         className="mt-6 space-y-4 rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm"
       >
-        <h2 className="font-display text-lg font-semibold text-slate">
-          {editandoId ? 'Editar sede' : 'Nueva sede'}
-        </h2>
+        <h2 className="font-display text-lg font-semibold text-slate">Nueva sede</h2>
 
         <div className="grid grid-cols-2 gap-4">
           <div>
@@ -200,20 +186,8 @@ export default function PlataformaSedesPage() {
             disabled={guardando}
             className="rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-navy-deep disabled:opacity-50"
           >
-            {guardando ? 'Guardando…' : editandoId ? 'Guardar cambios' : 'Crear sede'}
+            {guardando ? 'Guardando…' : 'Crear sede'}
           </button>
-          {editandoId && (
-            <button
-              type="button"
-              onClick={() => {
-                setEditandoId(null);
-                setForm(FORM_VACIO);
-              }}
-              className="rounded-lg border border-mist px-4 py-2 text-sm font-medium text-slate hover:bg-mist/30"
-            >
-              Cancelar
-            </button>
-          )}
         </div>
       </form>
 
@@ -284,6 +258,17 @@ export default function PlataformaSedesPage() {
           eliminando={eliminarMutation.isPending}
           onConfirmar={() => eliminarMutation.mutate(sedeAEliminar.id)}
           onCancelar={() => setSedeAEliminar(null)}
+        />
+      )}
+
+      {sedeEditando && (
+        <EditarSedeModal
+          sede={sedeEditando}
+          guardando={actualizarMutation.isPending}
+          onGuardar={(input) =>
+            actualizarMutation.mutate({ id: sedeEditando.id, input })
+          }
+          onCancelar={() => setSedeEditando(null)}
         />
       )}
     </main>
