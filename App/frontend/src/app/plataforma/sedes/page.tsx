@@ -2,26 +2,36 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { ApiError } from '@/lib/api/http';
 import { getPlatformToken, clearPlatformToken } from '@/lib/api/platform-http';
 import { listarSedes, crearSede, actualizarSede, eliminarSede, type Sede, type SedeInput } from '@/lib/api/sedes';
 import { ConfirmarEliminarSedeModal } from './ConfirmarEliminarSedeModal';
-import { EditarSedeModal } from './EditarSedeModal';
+import { SedeModal } from './SedeModal';
 
-const FORM_VACIO: SedeInput = {
-  nombre: '',
-  direccion: '',
-  ubicacionReferencia: '',
-  telefono: '',
-};
+/**
+ * ACTUALIZADO (2026-08-25): unificación de alta+edición en un solo modal
+ * (`SedeModal`, Task 2 de la unificación de CRUD admin — regla 13 ampliada
+ * de `CLAUDE.md` raíz, mismo patrón que Task 1 en `app/admin/carreras/`). El
+ * form fijo de "Nueva sede" desapareció — un botón "+ Nueva sede" abre
+ * `SedeModal` en modo alta (`sede: null`), el botón "Editar" de la tabla lo
+ * abre en modo edición (`sede` prellenado). `PATCH /sedes/:id` sigue siendo
+ * parcial por diseño (campos vacíos = sin cambio no se envían).
+ */
+
+/** Estado del modal único de alta/edición — `sede: null` es modo alta explícito. */
+interface EstadoModalSede {
+  abierto: boolean;
+  sede: Sede | null;
+}
+
+const MODAL_CERRADO: EstadoModalSede = { abierto: false, sede: null };
 
 export default function PlataformaSedesPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const [form, setForm] = useState<SedeInput>(FORM_VACIO);
-  const [sedeEditando, setSedeEditando] = useState<Sede | null>(null);
+  const [modalSede, setModalSede] = useState<EstadoModalSede>(MODAL_CERRADO);
   const [sedeAEliminar, setSedeAEliminar] = useState<Sede | null>(null);
 
   // Protección de ruta del lado del cliente — app/plataforma está
@@ -50,7 +60,7 @@ export default function PlataformaSedesPage() {
     mutationFn: (input: SedeInput) => crearSede(input),
     onSuccess: () => {
       toast.success('Sede creada');
-      setForm(FORM_VACIO);
+      setModalSede(MODAL_CERRADO);
       void queryClient.invalidateQueries({ queryKey: ['plataforma', 'sedes'] });
     },
     onError: (err, vars) => {
@@ -60,11 +70,11 @@ export default function PlataformaSedesPage() {
   });
 
   const actualizarMutation = useMutation({
-    mutationFn: (vars: { id: string; input: SedeInput }) =>
+    mutationFn: (vars: { id: string; input: Partial<SedeInput> }) =>
       actualizarSede(vars.id, vars.input),
     onSuccess: () => {
       toast.success('Sede actualizada');
-      setSedeEditando(null);
+      setModalSede(MODAL_CERRADO);
       void queryClient.invalidateQueries({ queryKey: ['plataforma', 'sedes'] });
     },
     onError: (err, vars) => {
@@ -82,8 +92,8 @@ export default function PlataformaSedesPage() {
     onSuccess: (_data, id) => {
       toast.success('Sede eliminada');
       setSedeAEliminar(null);
-      if (sedeEditando?.id === id) {
-        setSedeEditando(null);
+      if (modalSede.sede?.id === id) {
+        setModalSede(MODAL_CERRADO);
       }
     },
     onError: (err, vars) => {
@@ -96,21 +106,10 @@ export default function PlataformaSedesPage() {
     },
   });
 
-  function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    crearMutation.mutate(form);
-  }
-
-  function iniciarEdicion(sede: Sede) {
-    setSedeEditando(sede);
-  }
-
   function cerrarSesion() {
     clearPlatformToken();
     router.push('/plataforma/login');
   }
-
-  const guardando = crearMutation.isPending;
 
   return (
     <main className="mx-auto max-w-4xl p-8">
@@ -129,67 +128,18 @@ export default function PlataformaSedesPage() {
         </button>
       </div>
 
-      <form
-        onSubmit={handleSubmit}
-        className="mt-6 space-y-4 rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm"
-      >
-        <h2 className="font-display text-lg font-semibold text-slate">Nueva sede</h2>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-slate/80">Nombre</label>
-            <input
-              required
-              value={form.nombre}
-              onChange={(e) => setForm({ ...form, nombre: e.target.value })}
-              disabled={guardando}
-              className="mt-1 w-full rounded-lg border border-mist px-3 py-2 text-sm text-slate focus:border-navy focus:ring-2 focus:ring-navy/20 focus:outline-none"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate/80">Teléfono</label>
-            <input
-              required
-              value={form.telefono}
-              onChange={(e) => setForm({ ...form, telefono: e.target.value })}
-              disabled={guardando}
-              className="mt-1 w-full rounded-lg border border-mist px-3 py-2 text-sm text-slate focus:border-navy focus:ring-2 focus:ring-navy/20 focus:outline-none"
-            />
-          </div>
-          <div className="col-span-2">
-            <label className="block text-sm font-medium text-slate/80">Dirección</label>
-            <input
-              required
-              value={form.direccion}
-              onChange={(e) => setForm({ ...form, direccion: e.target.value })}
-              disabled={guardando}
-              className="mt-1 w-full rounded-lg border border-mist px-3 py-2 text-sm text-slate focus:border-navy focus:ring-2 focus:ring-navy/20 focus:outline-none"
-            />
-          </div>
-          <div className="col-span-2">
-            <label className="block text-sm font-medium text-slate/80">
-              Referencia de ubicación
-            </label>
-            <input
-              required
-              value={form.ubicacionReferencia}
-              onChange={(e) => setForm({ ...form, ubicacionReferencia: e.target.value })}
-              disabled={guardando}
-              className="mt-1 w-full rounded-lg border border-mist px-3 py-2 text-sm text-slate focus:border-navy focus:ring-2 focus:ring-navy/20 focus:outline-none"
-            />
-          </div>
+      <div className="mt-6 flex items-center justify-between rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm">
+        <div>
+          <h2 className="font-display text-lg font-semibold text-slate">Sedes registradas</h2>
+          <p className="mt-1 text-sm text-slate/60">Alta y edición de las sedes de la plataforma.</p>
         </div>
-
-        <div className="flex gap-3">
-          <button
-            type="submit"
-            disabled={guardando}
-            className="rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-navy-deep disabled:opacity-50"
-          >
-            {guardando ? 'Guardando…' : 'Crear sede'}
-          </button>
-        </div>
-      </form>
+        <button
+          onClick={() => setModalSede({ abierto: true, sede: null })}
+          className="rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-navy-deep"
+        >
+          + Nueva sede
+        </button>
+      </div>
 
       <div className="mt-8 overflow-x-auto rounded-lg border-l-4 border-navy bg-white shadow-sm">
         <table className="w-full text-sm">
@@ -234,7 +184,7 @@ export default function PlataformaSedesPage() {
                 <td className="px-4 py-3 text-slate/80">{sede.telefono}</td>
                 <td className="px-4 py-3 text-right">
                   <button
-                    onClick={() => iniciarEdicion(sede)}
+                    onClick={() => setModalSede({ abierto: true, sede })}
                     className="text-navy hover:underline"
                   >
                     Editar
@@ -261,14 +211,17 @@ export default function PlataformaSedesPage() {
         />
       )}
 
-      {sedeEditando && (
-        <EditarSedeModal
-          sede={sedeEditando}
-          guardando={actualizarMutation.isPending}
-          onGuardar={(input) =>
-            actualizarMutation.mutate({ id: sedeEditando.id, input })
-          }
-          onCancelar={() => setSedeEditando(null)}
+      {modalSede.abierto && (
+        <SedeModal
+          sede={modalSede.sede}
+          guardando={crearMutation.isPending || actualizarMutation.isPending}
+          onCrear={(payload) => crearMutation.mutate(payload)}
+          onEditar={(payload) => {
+            const sedeId = modalSede.sede?.id;
+            if (!sedeId) return;
+            actualizarMutation.mutate({ id: sedeId, input: payload });
+          }}
+          onCancelar={() => setModalSede(MODAL_CERRADO)}
         />
       )}
     </main>
