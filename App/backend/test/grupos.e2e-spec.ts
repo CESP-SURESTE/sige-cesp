@@ -370,6 +370,97 @@ describe('GruposController — POST /grupos (e2e)', () => {
     );
   });
 
+  it('GET /grupos?salonId=... filtra por salón', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+
+    const res = await request(app.getHttpServer())
+      .get('/grupos')
+      .query({ salonId: salonMeridaId })
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    const body = res.body as { data: Array<{ salon: { id: string } }> };
+    expect(body.data.length).toBeGreaterThan(0);
+    expect(body.data.every((g) => g.salon.id === salonMeridaId)).toBe(true);
+  });
+
+  it('GET /grupos?salonId=... combinado con carreraId/anioInicio/cicloActual sigue funcionando', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+
+    const res = await request(app.getHttpServer())
+      .get('/grupos')
+      .query({
+        salonId: salonMeridaId,
+        carreraId: carreraMeridaId,
+        anioInicio: 2027,
+        cicloActual: 1,
+      })
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    const body = res.body as {
+      data: Array<{
+        nombre: string;
+        salon: { id: string };
+        carrera: { id: string };
+        anioInicio: number;
+        cicloActual: number;
+      }>;
+    };
+    expect(body.data.some((g) => g.nombre === nombrePrueba)).toBe(true);
+    expect(
+      body.data.every(
+        (g) =>
+          g.salon.id === salonMeridaId &&
+          g.carrera.id === carreraMeridaId &&
+          g.anioInicio === 2027 &&
+          g.cicloActual === 1,
+      ),
+    ).toBe(true);
+  });
+
+  it('GET /grupos?salonId=... de otra sede -> 200 con data vacío (no error)', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+
+    const res = await request(app.getHttpServer())
+      .get('/grupos')
+      .query({ salonId: salonValladolidId })
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    const body = res.body as { data: unknown[]; total: number };
+    expect(body.data).toEqual([]);
+    expect(body.total).toBe(0);
+  });
+
+  it('GET /grupos?salonId=not-a-uuid -> 400 VALIDATION_ERROR', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+
+    const res = await request(app.getHttpServer())
+      .get('/grupos')
+      .query({ salonId: 'not-a-uuid' })
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(400);
+    expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+  });
+
   it('GET /grupos?anioInicio=&cicloActual= filtra por periodo exacto', async () => {
     const token = await firmarToken({
       role: 'authenticated',

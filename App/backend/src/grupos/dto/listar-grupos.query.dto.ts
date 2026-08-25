@@ -25,6 +25,10 @@ export class ListarGruposQueryDto {
   carreraId?: string;
 
   @IsOptional()
+  @IsUUID('4', { message: 'salonId debe ser un UUID válido' })
+  salonId?: string;
+
+  @IsOptional()
   @Type(() => Number)
   @IsInt({ message: 'page debe ser un entero' })
   @Min(1, { message: 'page debe ser al menos 1' })

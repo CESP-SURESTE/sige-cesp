@@ -156,6 +156,7 @@ export class GruposService {
         ? { cicloActual: filtros.cicloActual }
         : {}),
       ...(filtros.carreraId ? { carreraId: filtros.carreraId } : {}),
+      ...(filtros.salonId ? { salonId: filtros.salonId } : {}),
     };
 
     try {
