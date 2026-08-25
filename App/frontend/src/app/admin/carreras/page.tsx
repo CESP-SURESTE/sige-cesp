@@ -10,6 +10,7 @@ import {
 } from '@/components/admin/ui/persona-alta/mensajes-error';
 import { Select } from '@/components/admin/ui/persona-alta/Select';
 import { SubirMallaModal } from './SubirMallaModal';
+import { EditarCarreraModal } from './EditarCarreraModal';
 import { ApiError } from '@/lib/api/http';
 import {
   actualizarCarrera,
@@ -18,7 +19,6 @@ import {
   type ActualizarCarreraInput,
   type Carrera,
   type CrearCarreraInput,
-  type EstatusCarrera,
   type ModalidadCarrera,
   type NivelCarrera,
 } from '@/lib/api/carreras';
@@ -30,8 +30,7 @@ import {
  * exacto de `POST`/`GET`/`PATCH /carreras`.
  *
  * Patrón visual/estructura inspirado en `app/plataforma/sedes/page.tsx`
- * (tabla + form inline, un solo `useState` de formulario que alterna entre
- * "nuevo" y "editar" según `editandoId`) — código propio, NO import desde
+ * (tabla + form fijo de alta) — código propio, NO import desde
  * `app/plataforma/` (árbol completamente aislado, regla 11 de `CLAUDE.md`
  * raíz solo prohíbe compartir con alumno/maestro, pero por prudencia
  * tampoco se comparte con plataforma, que es una identidad distinta). Los
@@ -41,14 +40,13 @@ import {
  * de alta de persona, son helpers de formulario/estilo reutilizables dentro
  * del mismo árbol admin (regla 11 solo prohíbe cruzar con alumno/maestro).
  *
- * ACTUALIZADO (2026-08-17): el gap de backend documentado originalmente acá
- * (`GET /carreras` con shape mínimo, edición "a ciegas") ya se corrigió —
- * `GET /carreras` devuelve el objeto `Carrera` completo (ver
- * `lib/api/carreras.ts`), así que el formulario de "Editar" ahora se
- * prellena con los valores reales de la carrera seleccionada
- * (`iniciarEdicion`). `PATCH /carreras/:id` sigue siendo parcial por diseño
- * (campos vacíos = sin cambio no se envían), pero ya no es una edición a
- * ciegas — el admin ve y modifica los valores reales.
+ * ACTUALIZADO (2026-08-25): retrofit de "editar" — swap-inline (el form de
+ * alta se sustituía por uno de edición dentro de la misma tarjeta) a modal
+ * (`EditarCarreraModal`, regla 13 de `CLAUDE.md` raíz). El form fijo de la
+ * página ahora es solo "Nueva carrera"; el botón "Editar" de la tabla abre
+ * `EditarCarreraModal` con `carreraEditando` prellenado con los valores
+ * reales de la carrera seleccionada. `PATCH /carreras/:id` sigue siendo
+ * parcial por diseño (campos vacíos = sin cambio no se envían).
  */
 
 const NIVEL_LABEL: Record<NivelCarrera, string> = {
@@ -62,11 +60,6 @@ const MODALIDAD_LABEL: Record<ModalidadCarrera, string> = {
   PRESENCIAL: 'Presencial',
   SEMIPRESENCIAL: 'Semipresencial',
   EN_LINEA: 'En línea',
-};
-
-const ESTATUS_LABEL: Record<EstatusCarrera, string> = {
-  ACTIVA: 'Activa',
-  INACTIVA: 'Inactiva',
 };
 
 const MENSAJES_ERROR_CARRERA: Record<string, string> = {
@@ -94,19 +87,6 @@ const FORM_NUEVO_VACIO: FormNuevo = {
   descripcion: '',
 };
 
-/**
- * Formulario de edición — mismos campos + `estatus`, prellenado con los
- * valores reales de la carrera (`iniciarEdicion`). Los campos se mantienen
- * opcionales a nivel de tipo porque `PATCH /carreras/:id` sigue siendo
- * parcial por diseño — si el admin deja algún campo en blanco (poco
- * probable ya que arranca prellenado), ese campo simplemente no se manda.
- */
-interface FormEdicion extends FormNuevo {
-  estatus: EstatusCarrera | '';
-}
-
-const FORM_EDICION_VACIO: FormEdicion = { ...FORM_NUEVO_VACIO, estatus: '' };
-
 function construirPayloadAlta(form: FormNuevo): CrearCarreraInput | null {
   if (
     !form.nombre.trim() ||
@@ -133,30 +113,10 @@ function construirPayloadAlta(form: FormNuevo): CrearCarreraInput | null {
   };
 }
 
-/** Solo incluye en el `PATCH` los campos que el admin sí llenó — en blanco = sin cambio. */
-function construirPayloadEdicion(form: FormEdicion): ActualizarCarreraInput {
-  const payload: ActualizarCarreraInput = {};
-
-  if (form.nombre.trim()) payload.nombre = form.nombre.trim();
-  if (form.clave.trim()) payload.clave = form.clave.trim();
-  if (form.duracion.trim()) {
-    const duracion = Number.parseInt(form.duracion, 10);
-    if (Number.isInteger(duracion) && duracion >= 1) payload.duracion = duracion;
-  }
-  if (form.nivel) payload.nivel = form.nivel;
-  if (form.modalidad) payload.modalidad = form.modalidad;
-  if (form.rvoe.trim()) payload.rvoe = form.rvoe.trim();
-  if (form.descripcion.trim()) payload.descripcion = form.descripcion.trim();
-  if (form.estatus) payload.estatus = form.estatus;
-
-  return payload;
-}
-
 export default function AdminCarrerasPage() {
   const queryClient = useQueryClient();
   const [formNuevo, setFormNuevo] = useState<FormNuevo>(FORM_NUEVO_VACIO);
-  const [editandoId, setEditandoId] = useState<string | null>(null);
-  const [formEdicion, setFormEdicion] = useState<FormEdicion>(FORM_EDICION_VACIO);
+  const [carreraEditando, setCarreraEditando] = useState<Carrera | null>(null);
 
   const carrerasQuery = useQuery({
     queryKey: ['admin', 'carreras'],
@@ -197,8 +157,7 @@ export default function AdminCarrerasPage() {
       actualizarCarrera(vars.id, vars.input),
     onSuccess: () => {
       toast.success('Carrera actualizada');
-      setEditandoId(null);
-      setFormEdicion(FORM_EDICION_VACIO);
+      setCarreraEditando(null);
       void queryClient.invalidateQueries({ queryKey: ['admin', 'carreras'] });
       void queryClient.invalidateQueries({ queryKey: ['carreras'] });
     },
@@ -220,34 +179,6 @@ export default function AdminCarrerasPage() {
     crearMutation.mutate(payload);
   }
 
-  function handleSubmitEdicion(e: FormEvent) {
-    e.preventDefault();
-    if (!editandoId) return;
-    const payload = construirPayloadEdicion(formEdicion);
-    actualizarMutation.mutate({ id: editandoId, input: payload });
-  }
-
-  function iniciarEdicion(carrera: Carrera) {
-    setEditandoId(carrera.id);
-    // `GET /carreras` ya trae el objeto completo — prellenamos con los
-    // valores reales de la carrera seleccionada, no arranca en blanco.
-    setFormEdicion({
-      nombre: carrera.nombre,
-      clave: carrera.clave,
-      duracion: String(carrera.duracion),
-      nivel: carrera.nivel,
-      modalidad: carrera.modalidad,
-      rvoe: carrera.rvoe,
-      descripcion: carrera.descripcion,
-      estatus: carrera.estatus,
-    });
-  }
-
-  function cancelarEdicion() {
-    setEditandoId(null);
-    setFormEdicion(FORM_EDICION_VACIO);
-  }
-
   return (
     <div className="space-y-6">
       <div className="rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm">
@@ -257,82 +188,27 @@ export default function AdminCarrerasPage() {
         </p>
       </div>
 
-      {editandoId ? (
-        <form
-          onSubmit={handleSubmitEdicion}
-          className="space-y-4 rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm"
+      <form
+        onSubmit={handleSubmitNuevo}
+        className="space-y-4 rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm"
+      >
+        <h2 className="font-display text-lg font-semibold text-slate">Nueva carrera</h2>
+
+        <CamposCarrera
+          form={formNuevo}
+          onChange={(cambios) => setFormNuevo((f) => ({ ...f, ...cambios }))}
+          disabled={crearMutation.isPending}
+          requerido
+        />
+
+        <button
+          type="submit"
+          disabled={crearMutation.isPending}
+          className="rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-navy-deep disabled:opacity-50"
         >
-          <h2 className="font-display text-lg font-semibold text-slate">Editar carrera</h2>
-
-          <CamposCarrera
-            form={formEdicion}
-            onChange={(cambios) => setFormEdicion((f) => ({ ...f, ...cambios }))}
-            disabled={actualizarMutation.isPending}
-            requerido={false}
-          />
-
-          <div>
-            <label htmlFor="estatus" className={LABEL_CLASS}>
-              Estatus
-            </label>
-            <Select
-              id="estatus"
-              disabled={actualizarMutation.isPending}
-              value={formEdicion.estatus}
-              onChange={(value) =>
-                setFormEdicion((f) => ({ ...f, estatus: value as EstatusCarrera | '' }))
-              }
-              options={[
-                { value: '', label: 'Sin cambio' },
-                ...(Object.entries(ESTATUS_LABEL) as [EstatusCarrera, string][]).map(
-                  ([value, label]) => ({ value, label }),
-                ),
-              ]}
-              placeholder="Sin cambio"
-            />
-          </div>
-
-          <div className="flex gap-3">
-            <button
-              type="submit"
-              disabled={actualizarMutation.isPending}
-              className="rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-navy-deep disabled:opacity-50"
-            >
-              {actualizarMutation.isPending ? 'Guardando…' : 'Guardar cambios'}
-            </button>
-            <button
-              type="button"
-              onClick={cancelarEdicion}
-              disabled={actualizarMutation.isPending}
-              className="rounded-lg border border-mist px-4 py-2 text-sm font-medium text-slate hover:bg-mist/30 disabled:opacity-50"
-            >
-              Cancelar
-            </button>
-          </div>
-        </form>
-      ) : (
-        <form
-          onSubmit={handleSubmitNuevo}
-          className="space-y-4 rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm"
-        >
-          <h2 className="font-display text-lg font-semibold text-slate">Nueva carrera</h2>
-
-          <CamposCarrera
-            form={formNuevo}
-            onChange={(cambios) => setFormNuevo((f) => ({ ...f, ...cambios }))}
-            disabled={crearMutation.isPending}
-            requerido
-          />
-
-          <button
-            type="submit"
-            disabled={crearMutation.isPending}
-            className="rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-navy-deep disabled:opacity-50"
-          >
-            {crearMutation.isPending ? 'Guardando…' : 'Crear carrera'}
-          </button>
-        </form>
-      )}
+          {crearMutation.isPending ? 'Guardando…' : 'Crear carrera'}
+        </button>
+      </form>
 
       <div className="overflow-x-auto rounded-lg border-l-4 border-navy bg-white shadow-sm">
         <table className="w-full text-sm">
@@ -384,7 +260,7 @@ export default function AdminCarrerasPage() {
                     Subir malla
                   </button>
                   <button
-                    onClick={() => iniciarEdicion(carrera)}
+                    onClick={() => setCarreraEditando(carrera)}
                     className="text-navy hover:underline"
                   >
                     Editar
@@ -404,6 +280,17 @@ export default function AdminCarrerasPage() {
             toast.success('Malla curricular actualizada');
             void queryClient.invalidateQueries({ queryKey: ['admin', 'carreras'] });
           }}
+        />
+      )}
+
+      {carreraEditando && (
+        <EditarCarreraModal
+          carrera={carreraEditando}
+          guardando={actualizarMutation.isPending}
+          onGuardar={(payload) =>
+            actualizarMutation.mutate({ id: carreraEditando.id, input: payload })
+          }
+          onCancelar={() => setCarreraEditando(null)}
         />
       )}
     </div>

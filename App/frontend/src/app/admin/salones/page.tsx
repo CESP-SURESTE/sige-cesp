@@ -18,6 +18,7 @@ import {
   type SalonInput,
 } from '@/lib/api/salones';
 import { ConfirmarEliminarSalonModal } from './ConfirmarEliminarSalonModal';
+import { EditarSalonModal } from './EditarSalonModal';
 
 /**
  * Gestión de salones — Fase 9, CRUD completo de `Salon` (Task 2, frontend).
@@ -26,8 +27,7 @@ import { ConfirmarEliminarSalonModal } from './ConfirmarEliminarSalonModal';
  * contrato exacto.
  *
  * Patrón visual/estructura calcado de `app/admin/carreras/page.tsx` (card de
- * form arriba + tabla abajo, un solo `useState` de formulario que alterna
- * "nuevo"/"editar" según `editandoId`, mismas clases Tailwind, mismos
+ * form fijo de alta arriba + tabla abajo, mismas clases Tailwind, mismos
  * estados isLoading/isError/vacío). El modal de confirmación de borrado
  * (`ConfirmarEliminarSalonModal`) es copia estructural de
  * `app/plataforma/sedes/ConfirmarEliminarSedeModal.tsx`, código propio, sin
@@ -37,6 +37,12 @@ import { ConfirmarEliminarSalonModal } from './ConfirmarEliminarSalonModal';
  * para `CONFLICT` (ver `mensajes-error.ts`) — el mensaje de
  * `DELETE /salones/:id` bloqueado ya viene armado con la cantidad de grupos
  * asociados, así que no hace falta reformularlo acá.
+ *
+ * ACTUALIZADO (2026-08-25): retrofit de "editar" — swap-inline a modal
+ * (`EditarSalonModal`, regla 13 de `CLAUDE.md` raíz), mismo criterio que
+ * `carreras/page.tsx`. El form fijo de la página ahora es solo "Nuevo
+ * salón"; el botón "Editar" de la tabla abre `EditarSalonModal` con
+ * `salonEditando` prellenado.
  */
 
 const MENSAJES_ERROR_SALON: Record<string, string> = {
@@ -59,24 +65,10 @@ function construirPayloadAlta(form: FormSalon): SalonInput | null {
   return { nombre: form.nombre.trim(), capacidad };
 }
 
-/** Solo incluye en el `PATCH` los campos que el admin sí llenó — en blanco = sin cambio. */
-function construirPayloadEdicion(form: FormSalon): Partial<SalonInput> {
-  const payload: Partial<SalonInput> = {};
-
-  if (form.nombre.trim()) payload.nombre = form.nombre.trim();
-  if (form.capacidad.trim()) {
-    const capacidad = Number.parseInt(form.capacidad, 10);
-    if (Number.isInteger(capacidad) && capacidad >= 1) payload.capacidad = capacidad;
-  }
-
-  return payload;
-}
-
 export default function AdminSalonesPage() {
   const queryClient = useQueryClient();
   const [formNuevo, setFormNuevo] = useState<FormSalon>(FORM_VACIO);
-  const [editandoId, setEditandoId] = useState<string | null>(null);
-  const [formEdicion, setFormEdicion] = useState<FormSalon>(FORM_VACIO);
+  const [salonEditando, setSalonEditando] = useState<Salon | null>(null);
   const [salonAEliminar, setSalonAEliminar] = useState<Salon | null>(null);
 
   const salonesQuery = useQuery({
@@ -111,8 +103,7 @@ export default function AdminSalonesPage() {
       actualizarSalon(vars.id, vars.input),
     onSuccess: () => {
       toast.success('Salón actualizado');
-      setEditandoId(null);
-      setFormEdicion(FORM_VACIO);
+      setSalonEditando(null);
       void queryClient.invalidateQueries({ queryKey: ['admin', 'salones'] });
     },
     onError: (err) => {
@@ -126,10 +117,7 @@ export default function AdminSalonesPage() {
     onSuccess: (_data, id) => {
       toast.success('Salón eliminado');
       setSalonAEliminar(null);
-      if (editandoId === id) {
-        setEditandoId(null);
-        setFormEdicion(FORM_VACIO);
-      }
+      if (salonEditando?.id === id) setSalonEditando(null);
       void queryClient.invalidateQueries({ queryKey: ['admin', 'salones'] });
     },
     onError: (err) => {
@@ -149,23 +137,6 @@ export default function AdminSalonesPage() {
     crearMutation.mutate(payload);
   }
 
-  function handleSubmitEdicion(e: FormEvent) {
-    e.preventDefault();
-    if (!editandoId) return;
-    const payload = construirPayloadEdicion(formEdicion);
-    actualizarMutation.mutate({ id: editandoId, input: payload });
-  }
-
-  function iniciarEdicion(salon: Salon) {
-    setEditandoId(salon.id);
-    setFormEdicion({ nombre: salon.nombre, capacidad: String(salon.capacidad) });
-  }
-
-  function cancelarEdicion() {
-    setEditandoId(null);
-    setFormEdicion(FORM_VACIO);
-  }
-
   return (
     <div className="space-y-6">
       <div className="rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm">
@@ -175,61 +146,27 @@ export default function AdminSalonesPage() {
         </p>
       </div>
 
-      {editandoId ? (
-        <form
-          onSubmit={handleSubmitEdicion}
-          className="space-y-4 rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm"
+      <form
+        onSubmit={handleSubmitNuevo}
+        className="space-y-4 rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm"
+      >
+        <h2 className="font-display text-lg font-semibold text-slate">Nuevo salón</h2>
+
+        <CamposSalon
+          form={formNuevo}
+          onChange={(cambios) => setFormNuevo((f) => ({ ...f, ...cambios }))}
+          disabled={crearMutation.isPending}
+          requerido
+        />
+
+        <button
+          type="submit"
+          disabled={crearMutation.isPending}
+          className="rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-navy-deep disabled:opacity-50"
         >
-          <h2 className="font-display text-lg font-semibold text-slate">Editar salón</h2>
-
-          <CamposSalon
-            form={formEdicion}
-            onChange={(cambios) => setFormEdicion((f) => ({ ...f, ...cambios }))}
-            disabled={actualizarMutation.isPending}
-            requerido={false}
-          />
-
-          <div className="flex gap-3">
-            <button
-              type="submit"
-              disabled={actualizarMutation.isPending}
-              className="rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-navy-deep disabled:opacity-50"
-            >
-              {actualizarMutation.isPending ? 'Guardando…' : 'Guardar cambios'}
-            </button>
-            <button
-              type="button"
-              onClick={cancelarEdicion}
-              disabled={actualizarMutation.isPending}
-              className="rounded-lg border border-mist px-4 py-2 text-sm font-medium text-slate hover:bg-mist/30 disabled:opacity-50"
-            >
-              Cancelar
-            </button>
-          </div>
-        </form>
-      ) : (
-        <form
-          onSubmit={handleSubmitNuevo}
-          className="space-y-4 rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm"
-        >
-          <h2 className="font-display text-lg font-semibold text-slate">Nuevo salón</h2>
-
-          <CamposSalon
-            form={formNuevo}
-            onChange={(cambios) => setFormNuevo((f) => ({ ...f, ...cambios }))}
-            disabled={crearMutation.isPending}
-            requerido
-          />
-
-          <button
-            type="submit"
-            disabled={crearMutation.isPending}
-            className="rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-navy-deep disabled:opacity-50"
-          >
-            {crearMutation.isPending ? 'Guardando…' : 'Crear salón'}
-          </button>
-        </form>
-      )}
+          {crearMutation.isPending ? 'Guardando…' : 'Crear salón'}
+        </button>
+      </form>
 
       <div className="overflow-x-auto rounded-lg border-l-4 border-navy bg-white shadow-sm">
         <table className="w-full text-sm">
@@ -272,7 +209,7 @@ export default function AdminSalonesPage() {
                 <td className="px-4 py-3 text-slate/80">{salon.capacidad}</td>
                 <td className="px-4 py-3 text-right">
                   <button
-                    onClick={() => iniciarEdicion(salon)}
+                    onClick={() => setSalonEditando(salon)}
                     className="text-navy hover:underline"
                   >
                     Editar
@@ -296,6 +233,17 @@ export default function AdminSalonesPage() {
           eliminando={eliminarMutation.isPending}
           onConfirmar={() => eliminarMutation.mutate(salonAEliminar.id)}
           onCancelar={() => setSalonAEliminar(null)}
+        />
+      )}
+
+      {salonEditando && (
+        <EditarSalonModal
+          salon={salonEditando}
+          guardando={actualizarMutation.isPending}
+          onGuardar={(payload) =>
+            actualizarMutation.mutate({ id: salonEditando.id, input: payload })
+          }
+          onCancelar={() => setSalonEditando(null)}
         />
       )}
     </div>
