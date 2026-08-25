@@ -66,7 +66,19 @@ const MENSAJES_ERROR_GRUPO: Record<string, string> = {
   NOT_FOUND: 'La carrera o el salón seleccionado ya no existe en tu sede.',
 };
 
-function construirPayloadAlta(form: FormNuevo): CrearGrupoInput | null {
+/**
+ * `duracionCarreraSeleccionada` (Hallazgo 2 del review final, fix wave
+ * 2026-08-25) — cota superior de `cicloActual` según la carrera elegida en
+ * el form (`carrera.duracion`, `GET /carreras`). Opcional: si la carrera
+ * seleccionada todavía no resolvió (o el catálogo falló, Hallazgo 3), no se
+ * valida acá y el backend sigue siendo la fuente de verdad final
+ * (`GruposService.crear`) — este bound es solo para adelantar el error
+ * común al cliente, no reemplaza la validación real del servidor.
+ */
+function construirPayloadAlta(
+  form: FormNuevo,
+  duracionCarreraSeleccionada?: number,
+): CrearGrupoInput | null {
   if (
     !form.nombre.trim() ||
     !form.carreraId ||
@@ -85,6 +97,9 @@ function construirPayloadAlta(form: FormNuevo): CrearGrupoInput | null {
   if (!Number.isInteger(anioInicio) || anioInicio < 1) return null;
   if (!Number.isInteger(cicloActual) || cicloActual < 1) return null;
   if (!Number.isInteger(capacidad) || capacidad < 1) return null;
+  if (duracionCarreraSeleccionada != null && cicloActual > duracionCarreraSeleccionada) {
+    return null;
+  }
 
   return {
     nombre: form.nombre.trim(),
@@ -193,14 +208,39 @@ export default function AdminGruposPage() {
     },
     onError: (err) => {
       console.error('[AdminGruposPage] Error al crear grupo:', err);
+      // `VALIDATION_ERROR` de este endpoint (`GruposService.crear`) trae
+      // mensajes precisos por campo (ej. "cicloActual debe estar entre 1 y N
+      // para esta carrera") — el genérico de `MENSAJES_ERROR_COMUNES` sería
+      // engañoso acá (los campos SÍ están completos/bien formados), mismo
+      // criterio de passthrough que ya usa `resolverMensajeError` para
+      // `CONFLICT`.
+      if (err instanceof ApiError && err.code === 'VALIDATION_ERROR') {
+        toast.error(err.message);
+        return;
+      }
       toast.error(resolverMensajeError(err, MENSAJES_ERROR_GRUPO) ?? MENSAJE_ERROR_GENERICO);
     },
   });
 
+  const carreraSeleccionada = (carrerasQuery.data ?? []).find(
+    (carrera) => carrera.id === formNuevo.carreraId,
+  );
+
   function handleSubmitNuevo(e: FormEvent) {
     e.preventDefault();
-    const payload = construirPayloadAlta(formNuevo);
+    const payload = construirPayloadAlta(formNuevo, carreraSeleccionada?.duracion);
     if (!payload) {
+      const cicloActualNum = Number.parseInt(formNuevo.cicloActual, 10);
+      if (
+        carreraSeleccionada &&
+        Number.isInteger(cicloActualNum) &&
+        cicloActualNum > carreraSeleccionada.duracion
+      ) {
+        toast.error(
+          `El ciclo actual debe estar entre 1 y ${carreraSeleccionada.duracion} para esta carrera.`,
+        );
+        return;
+      }
       toast.error('Revisa que todos los campos estén completos y con formato correcto.');
       return;
     }
@@ -250,12 +290,24 @@ export default function AdminGruposPage() {
             </label>
             <Select
               id="carreraId"
-              disabled={crearMutation.isPending}
+              disabled={crearMutation.isPending || carrerasQuery.isError}
               value={formNuevo.carreraId}
               onChange={(value) => setFormNuevo((f) => ({ ...f, carreraId: value }))}
               options={opcionesCarreras}
               placeholder="Selecciona una carrera"
             />
+            {carrerasQuery.isError && (
+              <p className="mt-1 text-xs text-crimson">
+                {carrerasQuery.error instanceof ApiError
+                  ? carrerasQuery.error.message
+                  : 'No se pudo cargar el catálogo de carreras. Intenta de nuevo más tarde.'}
+              </p>
+            )}
+            {!carrerasQuery.isLoading && !carrerasQuery.isError && opcionesCarreras.length === 0 && (
+              <p className="mt-1 text-xs text-slate/60">
+                No hay carreras registradas en tu sede.
+              </p>
+            )}
           </div>
           <div>
             <label htmlFor="salonId" className={LABEL_CLASS}>
@@ -263,12 +315,24 @@ export default function AdminGruposPage() {
             </label>
             <Select
               id="salonId"
-              disabled={crearMutation.isPending}
+              disabled={crearMutation.isPending || salonesQuery.isError}
               value={formNuevo.salonId}
               onChange={(value) => setFormNuevo((f) => ({ ...f, salonId: value }))}
               options={opcionesSalones}
               placeholder="Selecciona un salón"
             />
+            {salonesQuery.isError && (
+              <p className="mt-1 text-xs text-crimson">
+                {salonesQuery.error instanceof ApiError
+                  ? salonesQuery.error.message
+                  : 'No se pudo cargar el catálogo de salones. Intenta de nuevo más tarde.'}
+              </p>
+            )}
+            {!salonesQuery.isLoading && !salonesQuery.isError && opcionesSalones.length === 0 && (
+              <p className="mt-1 text-xs text-slate/60">
+                No hay salones registrados en tu sede.
+              </p>
+            )}
           </div>
           <div>
             <label htmlFor="capacidad" className={LABEL_CLASS}>
@@ -310,6 +374,7 @@ export default function AdminGruposPage() {
               id="cicloActual"
               type="number"
               min={1}
+              max={carreraSeleccionada?.duracion}
               step={1}
               required
               disabled={crearMutation.isPending}
@@ -317,6 +382,12 @@ export default function AdminGruposPage() {
               value={formNuevo.cicloActual}
               onChange={(e) => setFormNuevo((f) => ({ ...f, cicloActual: e.target.value }))}
             />
+            {carreraSeleccionada && (
+              <p className="mt-1 text-xs text-slate/60">
+                Esta carrera tiene {carreraSeleccionada.duracion} semestre
+                {carreraSeleccionada.duracion === 1 ? '' : 's'}.
+              </p>
+            )}
           </div>
         </div>
 
@@ -368,7 +439,7 @@ export default function AdminGruposPage() {
               id="filtroCarreraId"
               value={filtroCarreraId}
               onChange={setFiltroCarreraId}
-              options={opcionesCarreras}
+              options={[{ value: '', label: 'Todas las carreras' }, ...opcionesCarreras]}
               placeholder="Todas las carreras"
             />
           </div>
