@@ -18,6 +18,12 @@ interface ErrorBody {
 interface SalonesBody {
   data: Array<{ id: string; nombre: string; capacidad: number }>;
 }
+interface SalonBody {
+  data: { id: string; nombre: string; capacidad: number; sedeId: string };
+}
+interface OkBody {
+  data: { ok: true };
+}
 
 /**
  * `GET /salones` — Fase 9, Día 29 (gap de backend descubierto al planear la
@@ -40,6 +46,7 @@ describe('SalonesController — GET /salones (e2e)', () => {
   let jose: typeof import('jose');
   const kid = 'test-key-1';
   const alg = 'ES256';
+  const nombrePrueba = `Salon E2E ${Date.now()}`;
 
   async function firmarToken(claims: Record<string, unknown>): Promise<string> {
     return new jose.SignJWT(claims)
@@ -99,6 +106,12 @@ describe('SalonesController — GET /salones (e2e)', () => {
   });
 
   afterAll(async () => {
+    await prisma.registroAuditoria.deleteMany({
+      where: { entidad: 'Salon', sedeId: { in: [sedeMeridaId, sedeValladolidId] } },
+    });
+    await prisma.salon.deleteMany({
+      where: { nombre: { startsWith: 'Salon E2E' } },
+    });
     await app.close();
   });
 
@@ -161,5 +174,371 @@ describe('SalonesController — GET /salones (e2e)', () => {
 
     expect(res.status).toBe(403);
     expect((res.body as ErrorBody).code).toBe('ROL_NO_AUTORIZADO');
+  });
+
+  // --- POST /salones ---------------------------------------------------
+
+  it('POST /salones crea un salón en la sede del actor y audita con usuarioId', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+
+    const res = await request(app.getHttpServer())
+      .post('/salones')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ nombre: nombrePrueba, capacidad: 40 });
+
+    expect(res.status).toBe(201);
+    const body = res.body as SalonBody;
+    expect(body.data.nombre).toBe(nombrePrueba);
+    expect(body.data.capacidad).toBe(40);
+    expect(body.data.sedeId).toBe(sedeMeridaId);
+
+    const registro = await prisma.registroAuditoria.findFirst({
+      where: { entidad: 'Salon', entidadId: body.data.id },
+    });
+    expect(registro?.usuarioId).toBe(actorUsuarioId);
+    expect(registro?.accion).toBe('ALTA');
+  });
+
+  it('POST /salones con nombre duplicado en la misma sede -> 409 CONFLICT', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+
+    const res = await request(app.getHttpServer())
+      .post('/salones')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ nombre: nombrePrueba, capacidad: 20 });
+
+    expect(res.status).toBe(409);
+    expect((res.body as ErrorBody).code).toBe('CONFLICT');
+  });
+
+  it('POST /salones con el mismo nombre pero en OTRA sede -> 201 (aislamiento)', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeValladolidId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+
+    const res = await request(app.getHttpServer())
+      .post('/salones')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ nombre: nombrePrueba, capacidad: 20 });
+
+    expect(res.status).toBe(201);
+    const body = res.body as SalonBody;
+    expect(body.data.sedeId).toBe(sedeValladolidId);
+  });
+
+  it('POST /salones con capacidad 0 -> 400 VALIDATION_ERROR', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+
+    const res = await request(app.getHttpServer())
+      .post('/salones')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ nombre: `${nombrePrueba} capacidad-cero`, capacidad: 0 });
+
+    expect(res.status).toBe(400);
+    expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+  });
+
+  it('POST /salones con capacidad negativa -> 400 VALIDATION_ERROR', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+
+    const res = await request(app.getHttpServer())
+      .post('/salones')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ nombre: `${nombrePrueba} capacidad-negativa`, capacidad: -5 });
+
+    expect(res.status).toBe(400);
+    expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+  });
+
+  it('POST /salones con capacidad no entera -> 400 VALIDATION_ERROR', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+
+    const res = await request(app.getHttpServer())
+      .post('/salones')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ nombre: `${nombrePrueba} capacidad-no-entera`, capacidad: 12.5 });
+
+    expect(res.status).toBe(400);
+    expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+  });
+
+  it('POST /salones sin campos requeridos -> 400 VALIDATION_ERROR', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+
+    const res = await request(app.getHttpServer())
+      .post('/salones')
+      .set('Authorization', `Bearer ${token}`)
+      .send({});
+
+    expect(res.status).toBe(400);
+    expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+  });
+
+  it('POST /salones sin Authorization -> 401 UNAUTHORIZED', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/salones')
+      .send({ nombre: `${nombrePrueba} sin-token`, capacidad: 10 });
+
+    expect(res.status).toBe(401);
+    expect((res.body as ErrorBody).code).toBe('UNAUTHORIZED');
+  });
+
+  it('POST /salones rol no ADMINISTRATIVO -> 403 ROL_NO_AUTORIZADO', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ALUMNO,
+    });
+
+    const res = await request(app.getHttpServer())
+      .post('/salones')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ nombre: `${nombrePrueba} rol-invalido`, capacidad: 10 });
+
+    expect(res.status).toBe(403);
+    expect((res.body as ErrorBody).code).toBe('ROL_NO_AUTORIZADO');
+  });
+
+  // --- PATCH /salones/:id ------------------------------------------------
+
+  it('PATCH /salones/:id edición parcial exitosa audita con usuarioId', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+
+    const creado = await request(app.getHttpServer())
+      .post('/salones')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ nombre: `${nombrePrueba} patch-parcial`, capacidad: 15 });
+    const salonId = (creado.body as SalonBody).data.id;
+
+    const res = await request(app.getHttpServer())
+      .patch(`/salones/${salonId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ capacidad: 25 });
+
+    expect(res.status).toBe(200);
+    const body = res.body as SalonBody;
+    expect(body.data.capacidad).toBe(25);
+    expect(body.data.nombre).toBe(`${nombrePrueba} patch-parcial`);
+
+    const registro = await prisma.registroAuditoria.findFirst({
+      where: { entidad: 'Salon', entidadId: salonId, accion: 'EDICION' },
+    });
+    expect(registro?.usuarioId).toBe(actorUsuarioId);
+  });
+
+  it('PATCH /salones/:id con {} vacío es válido y NO crea auditoría nueva', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+
+    const creado = await request(app.getHttpServer())
+      .post('/salones')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ nombre: `${nombrePrueba} patch-vacio`, capacidad: 15 });
+    const salonId = (creado.body as SalonBody).data.id;
+
+    const antes = await prisma.registroAuditoria.count({
+      where: { entidad: 'Salon', entidadId: salonId },
+    });
+
+    const res = await request(app.getHttpServer())
+      .patch(`/salones/${salonId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({});
+
+    expect(res.status).toBe(200);
+
+    const despues = await prisma.registroAuditoria.count({
+      where: { entidad: 'Salon', entidadId: salonId },
+    });
+    expect(despues).toBe(antes);
+  });
+
+  it('PATCH /salones/:id con id de otra sede -> 404 NOT_FOUND', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+
+    const res = await request(app.getHttpServer())
+      .patch(`/salones/${salonValladolidId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ capacidad: 25 });
+
+    expect(res.status).toBe(404);
+    expect((res.body as ErrorBody).code).toBe('NOT_FOUND');
+  });
+
+  it('PATCH /salones/:id rename a nombre duplicado -> 409 CONFLICT', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+
+    const salonA = await request(app.getHttpServer())
+      .post('/salones')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ nombre: `${nombrePrueba} rename-a`, capacidad: 15 });
+    const salonB = await request(app.getHttpServer())
+      .post('/salones')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ nombre: `${nombrePrueba} rename-b`, capacidad: 15 });
+    const salonAId = (salonA.body as SalonBody).data.id;
+    const salonBNombre = (salonB.body as SalonBody).data.nombre;
+
+    const res = await request(app.getHttpServer())
+      .patch(`/salones/${salonAId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ nombre: salonBNombre });
+
+    expect(res.status).toBe(409);
+    expect((res.body as ErrorBody).code).toBe('CONFLICT');
+  });
+
+  it('PATCH /salones/:id rename al mismo nombre (sin cambio real) NO crea auditoría nueva', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+
+    const creado = await request(app.getHttpServer())
+      .post('/salones')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ nombre: `${nombrePrueba} sin-cambio`, capacidad: 15 });
+    const salonId = (creado.body as SalonBody).data.id;
+
+    const antes = await prisma.registroAuditoria.count({
+      where: { entidad: 'Salon', entidadId: salonId },
+    });
+
+    const res = await request(app.getHttpServer())
+      .patch(`/salones/${salonId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ nombre: `${nombrePrueba} sin-cambio` });
+
+    expect(res.status).toBe(200);
+
+    const despues = await prisma.registroAuditoria.count({
+      where: { entidad: 'Salon', entidadId: salonId },
+    });
+    expect(despues).toBe(antes);
+  });
+
+  // --- DELETE /salones/:id ------------------------------------------------
+
+  it('DELETE /salones/:id borra un salón sin grupos asociados', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+
+    const creado = await request(app.getHttpServer())
+      .post('/salones')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ nombre: `${nombrePrueba} para-borrar`, capacidad: 15 });
+    const salonId = (creado.body as SalonBody).data.id;
+
+    const res = await request(app.getHttpServer())
+      .delete(`/salones/${salonId}`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect((res.body as OkBody).data).toEqual({ ok: true });
+
+    const enDb = await prisma.salon.findUnique({ where: { id: salonId } });
+    expect(enDb).toBeNull();
+  });
+
+  it('DELETE /salones/:id con grupos asociados -> 409 CONFLICT', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+
+    const res = await request(app.getHttpServer())
+      .delete(`/salones/${salonMeridaId}`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(409);
+    const body = res.body as ErrorBody;
+    expect(body.code).toBe('CONFLICT');
+    expect(body.error).toMatch(/grupo/i);
+
+    const sigueExistiendo = await prisma.salon.findUnique({
+      where: { id: salonMeridaId },
+    });
+    expect(sigueExistiendo).not.toBeNull();
+  });
+
+  it('DELETE /salones/:id inexistente -> 404 NOT_FOUND', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+
+    const res = await request(app.getHttpServer())
+      .delete('/salones/00000000-0000-0000-0000-000000000000')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(404);
+    expect((res.body as ErrorBody).code).toBe('NOT_FOUND');
+  });
+
+  it('DELETE /salones/:id de otra sede -> 404 NOT_FOUND (aislamiento)', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+
+    const res = await request(app.getHttpServer())
+      .delete(`/salones/${salonValladolidId}`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(404);
+    expect((res.body as ErrorBody).code).toBe('NOT_FOUND');
+
+    const sigueExistiendo = await prisma.salon.findUnique({
+      where: { id: salonValladolidId },
+    });
+    expect(sigueExistiendo).not.toBeNull();
   });
 });
