@@ -328,6 +328,55 @@ describe('SalonesController — GET /salones (e2e)', () => {
     expect((res.body as ErrorBody).code).toBe('ROL_NO_AUTORIZADO');
   });
 
+  it('PATCH /salones/:id sin Authorization -> 401 UNAUTHORIZED', async () => {
+    const res = await request(app.getHttpServer())
+      .patch(`/salones/${salonMeridaId}`)
+      .send({ capacidad: 25 });
+
+    expect(res.status).toBe(401);
+    expect((res.body as ErrorBody).code).toBe('UNAUTHORIZED');
+  });
+
+  it('PATCH /salones/:id rol no ADMINISTRATIVO -> 403 ROL_NO_AUTORIZADO', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ALUMNO,
+    });
+
+    const res = await request(app.getHttpServer())
+      .patch(`/salones/${salonMeridaId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ capacidad: 25 });
+
+    expect(res.status).toBe(403);
+    expect((res.body as ErrorBody).code).toBe('ROL_NO_AUTORIZADO');
+  });
+
+  it('DELETE /salones/:id sin Authorization -> 401 UNAUTHORIZED', async () => {
+    const res = await request(app.getHttpServer()).delete(
+      `/salones/${salonMeridaId}`,
+    );
+
+    expect(res.status).toBe(401);
+    expect((res.body as ErrorBody).code).toBe('UNAUTHORIZED');
+  });
+
+  it('DELETE /salones/:id rol no ADMINISTRATIVO -> 403 ROL_NO_AUTORIZADO', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ALUMNO,
+    });
+
+    const res = await request(app.getHttpServer())
+      .delete(`/salones/${salonMeridaId}`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(403);
+    expect((res.body as ErrorBody).code).toBe('ROL_NO_AUTORIZADO');
+  });
+
   // --- PATCH /salones/:id ------------------------------------------------
 
   it('PATCH /salones/:id edición parcial exitosa audita con usuarioId', async () => {
