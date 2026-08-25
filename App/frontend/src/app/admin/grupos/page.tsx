@@ -126,6 +126,7 @@ export default function AdminGruposPage() {
   const [filtroAnioInicio, setFiltroAnioInicioState] = useState('');
   const [filtroCicloActual, setFiltroCicloActualState] = useState('');
   const [filtroCarreraId, setFiltroCarreraIdState] = useState('');
+  const [filtroSalonId, setFiltroSalonIdState] = useState('');
   const [page, setPage] = useState(1);
 
   function setFiltroAnioInicio(valor: string) {
@@ -138,6 +139,10 @@ export default function AdminGruposPage() {
   }
   function setFiltroCarreraId(valor: string) {
     setFiltroCarreraIdState(valor);
+    setPage(1);
+  }
+  function setFiltroSalonId(valor: string) {
+    setFiltroSalonIdState(valor);
     setPage(1);
   }
 
@@ -180,6 +185,7 @@ export default function AdminGruposPage() {
       anioInicioFiltroNum,
       cicloActualFiltroNum,
       filtroCarreraId,
+      filtroSalonId,
       page,
       LIMIT,
     ],
@@ -189,6 +195,7 @@ export default function AdminGruposPage() {
           anioInicio: anioInicioFiltroNum,
           cicloActual: cicloActualFiltroNum,
           carreraId: filtroCarreraId || undefined,
+          salonId: filtroSalonId || undefined,
           page,
           limit: LIMIT,
         });
@@ -407,7 +414,7 @@ export default function AdminGruposPage() {
 
       <div className="rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm">
         <h2 className="font-display text-lg font-semibold text-slate">Filtros</h2>
-        <div className="mt-4 grid gap-4 sm:grid-cols-3">
+        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div>
             <label htmlFor="filtroAnioInicio" className={LABEL_CLASS}>
               Año de inicio
@@ -447,6 +454,35 @@ export default function AdminGruposPage() {
               options={[{ value: '', label: 'Todas las carreras' }, ...opcionesCarreras]}
               placeholder="Todas las carreras"
             />
+          </div>
+          <div>
+            <label htmlFor="filtroSalonId" className={LABEL_CLASS}>
+              Salón
+            </label>
+            <Select
+              id="filtroSalonId"
+              disabled={salonesQuery.isError}
+              value={filtroSalonId}
+              onChange={setFiltroSalonId}
+              options={[{ value: '', label: 'Todos los salones' }, ...opcionesSalones]}
+              placeholder="Todos los salones"
+            />
+            {salonesQuery.isError && (
+              <p className="mt-1 text-xs text-crimson">
+                {salonesQuery.error instanceof ApiError
+                  ? salonesQuery.error.message
+                  : 'No se pudo cargar el catálogo de salones. Intenta de nuevo más tarde.'}
+              </p>
+            )}
+            {!salonesQuery.isLoading && !salonesQuery.isError && opcionesSalones.length === 0 && (
+              <p className="mt-1 text-xs text-slate/60">
+                No hay salones registrados en tu sede.{' '}
+                <Link href="/admin/salones" className="text-navy hover:underline">
+                  Crea uno aquí
+                </Link>
+                .
+              </p>
+            )}
           </div>
         </div>
       </div>

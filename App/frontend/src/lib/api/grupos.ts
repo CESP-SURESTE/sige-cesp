@@ -68,6 +68,7 @@ export interface ListarGruposFiltros {
   anioInicio?: number;
   cicloActual?: number;
   carreraId?: string;
+  salonId?: string;
   /** Default backend: 1. */
   page?: number;
   /** Default backend: 20, máximo 100. */
