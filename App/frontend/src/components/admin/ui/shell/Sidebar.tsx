@@ -11,6 +11,7 @@ import {
   IconMaestros,
   IconPanel,
   IconPerfil,
+  IconSalones,
 } from './icons';
 
 type NavItem = {
@@ -34,6 +35,7 @@ const NAV_PRINCIPAL: NavItem[] = [
   { href: '/admin/alumnos', label: 'Alumnos', Icon: IconAlumnos, match: 'prefijo' },
   { href: '/admin/maestros', label: 'Maestros', Icon: IconMaestros, match: 'prefijo' },
   { href: '/admin/carreras', label: 'Carreras', Icon: IconCarreras, match: 'prefijo' },
+  { href: '/admin/salones', label: 'Salones', Icon: IconSalones, match: 'prefijo' },
   { href: '/admin/grupos', label: 'Grupos', Icon: IconGrupos, match: 'prefijo' },
   {
     href: '/admin/administrativos/nuevo',

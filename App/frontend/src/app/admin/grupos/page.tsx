@@ -1,6 +1,7 @@
 'use client';
 
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import Link from 'next/link';
 import { useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
 import { INPUT_CLASS, LABEL_CLASS } from '@/components/admin/ui/persona-alta/estilos';
@@ -330,7 +331,11 @@ export default function AdminGruposPage() {
             )}
             {!salonesQuery.isLoading && !salonesQuery.isError && opcionesSalones.length === 0 && (
               <p className="mt-1 text-xs text-slate/60">
-                No hay salones registrados en tu sede.
+                No hay salones registrados en tu sede.{' '}
+                <Link href="/admin/salones" className="text-navy hover:underline">
+                  Crea uno aquí
+                </Link>
+                .
               </p>
             )}
           </div>

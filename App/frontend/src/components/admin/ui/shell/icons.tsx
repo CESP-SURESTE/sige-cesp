@@ -87,6 +87,17 @@ export function IconGrupos({ className }: IconProps) {
   );
 }
 
+/** Puerta de aula — link a "Salones" en el sidebar (Fase 9, CRUD de Salón). Distinto de `IconGrupos` (aula con pupitres) y de `IconLlave` (dropdown de perfil). */
+export function IconSalones({ className }: IconProps) {
+  return (
+    <svg {...BASE} className={className} aria-hidden="true">
+      <rect x="6" y="2.5" width="12" height="19" rx="1" />
+      <path d="M9 2.5v19" />
+      <circle cx="7.3" cy="12" r="0.9" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 export function IconPerfil({ className }: IconProps) {
   return (
     <svg {...BASE} className={className} aria-hidden="true">
