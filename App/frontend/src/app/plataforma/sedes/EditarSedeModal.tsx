@@ -53,8 +53,8 @@ export function EditarSedeModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate/40 p-4">
-      <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-lg">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate/40 p-4">
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-6 shadow-lg">
         <h2 className="font-display text-lg font-semibold text-slate">Editar sede</h2>
 
         <form onSubmit={handleSubmit} className="mt-4 space-y-4">

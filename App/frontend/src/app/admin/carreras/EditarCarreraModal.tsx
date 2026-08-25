@@ -103,18 +103,18 @@ export function EditarCarreraModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate/40 p-4">
-      <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-lg">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate/40 p-4">
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-6 shadow-lg">
         <h2 className="font-display text-lg font-semibold text-slate">Editar carrera</h2>
 
         <form onSubmit={handleSubmit} className="mt-4 space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label htmlFor="nombre" className={LABEL_CLASS}>
+              <label htmlFor="editar-nombre" className={LABEL_CLASS}>
                 Nombre
               </label>
               <input
-                id="nombre"
+                id="editar-nombre"
                 type="text"
                 disabled={guardando}
                 className={INPUT_CLASS}
@@ -123,11 +123,11 @@ export function EditarCarreraModal({
               />
             </div>
             <div>
-              <label htmlFor="clave" className={LABEL_CLASS}>
+              <label htmlFor="editar-clave" className={LABEL_CLASS}>
                 Clave
               </label>
               <input
-                id="clave"
+                id="editar-clave"
                 type="text"
                 disabled={guardando}
                 className={INPUT_CLASS}
@@ -136,11 +136,11 @@ export function EditarCarreraModal({
               />
             </div>
             <div>
-              <label htmlFor="duracion" className={LABEL_CLASS}>
+              <label htmlFor="editar-duracion" className={LABEL_CLASS}>
                 Duración (semestres)
               </label>
               <input
-                id="duracion"
+                id="editar-duracion"
                 type="number"
                 min={1}
                 step={1}
@@ -151,11 +151,11 @@ export function EditarCarreraModal({
               />
             </div>
             <div>
-              <label htmlFor="rvoe" className={LABEL_CLASS}>
+              <label htmlFor="editar-rvoe" className={LABEL_CLASS}>
                 RVOE
               </label>
               <input
-                id="rvoe"
+                id="editar-rvoe"
                 type="text"
                 disabled={guardando}
                 className={INPUT_CLASS}
@@ -164,11 +164,11 @@ export function EditarCarreraModal({
               />
             </div>
             <div>
-              <label htmlFor="nivel" className={LABEL_CLASS}>
+              <label htmlFor="editar-nivel" className={LABEL_CLASS}>
                 Nivel
               </label>
               <Select
-                id="nivel"
+                id="editar-nivel"
                 disabled={guardando}
                 value={form.nivel}
                 onChange={(value) =>
@@ -184,11 +184,11 @@ export function EditarCarreraModal({
               />
             </div>
             <div>
-              <label htmlFor="modalidad" className={LABEL_CLASS}>
+              <label htmlFor="editar-modalidad" className={LABEL_CLASS}>
                 Modalidad
               </label>
               <Select
-                id="modalidad"
+                id="editar-modalidad"
                 disabled={guardando}
                 value={form.modalidad}
                 onChange={(value) =>
@@ -204,11 +204,11 @@ export function EditarCarreraModal({
               />
             </div>
             <div>
-              <label htmlFor="estatus" className={LABEL_CLASS}>
+              <label htmlFor="editar-estatus" className={LABEL_CLASS}>
                 Estatus
               </label>
               <Select
-                id="estatus"
+                id="editar-estatus"
                 disabled={guardando}
                 value={form.estatus}
                 onChange={(value) =>
@@ -224,11 +224,11 @@ export function EditarCarreraModal({
               />
             </div>
             <div className="sm:col-span-2">
-              <label htmlFor="descripcion" className={LABEL_CLASS}>
+              <label htmlFor="editar-descripcion" className={LABEL_CLASS}>
                 Descripción
               </label>
               <textarea
-                id="descripcion"
+                id="editar-descripcion"
                 rows={3}
                 disabled={guardando}
                 className={INPUT_CLASS}

@@ -55,18 +55,18 @@ export function EditarSalonModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate/40 p-4">
-      <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate/40 p-4">
+      <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg bg-white p-6 shadow-lg">
         <h2 className="font-display text-lg font-semibold text-slate">Editar salón</h2>
 
         <form onSubmit={handleSubmit} className="mt-4 space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label htmlFor="nombre" className={LABEL_CLASS}>
+              <label htmlFor="editar-nombre" className={LABEL_CLASS}>
                 Nombre
               </label>
               <input
-                id="nombre"
+                id="editar-nombre"
                 type="text"
                 disabled={guardando}
                 className={INPUT_CLASS}
@@ -75,11 +75,11 @@ export function EditarSalonModal({
               />
             </div>
             <div>
-              <label htmlFor="capacidad" className={LABEL_CLASS}>
+              <label htmlFor="editar-capacidad" className={LABEL_CLASS}>
                 Capacidad
               </label>
               <input
-                id="capacidad"
+                id="editar-capacidad"
                 type="number"
                 min={1}
                 step={1}
