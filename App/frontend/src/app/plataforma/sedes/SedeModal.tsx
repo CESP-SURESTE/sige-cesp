@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
+import { toast } from 'sonner';
 import type { Sede, SedeInput } from '@/lib/api/sedes';
 
 /**
@@ -114,7 +115,10 @@ export function SedeModal({
     e.preventDefault();
     if (esAlta) {
       const payload = construirPayloadAlta(form);
-      if (!payload) return;
+      if (!payload) {
+        toast.error('Revisa que todos los campos estén completos.');
+        return;
+      }
       onCrear(payload);
       return;
     }
