@@ -104,3 +104,7 @@ export function listarGrupos(
   const query = construirQueryString({ ...filtros });
   return apiFetchAuthPaginado<GrupoListItem>(`/grupos${query}`);
 }
+
+export function eliminarGrupo(id: string): Promise<{ ok: true }> {
+  return apiFetchAuth<{ ok: true }>(`/grupos/${id}`, { method: 'DELETE' });
+}

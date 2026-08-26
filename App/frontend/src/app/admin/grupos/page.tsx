@@ -12,11 +12,13 @@ import {
 import { Select } from '@/components/admin/ui/persona-alta/Select';
 import { Paginacion } from '@/components/admin/ui/personas-listado/Paginacion';
 import { NuevoGrupoModal } from './NuevoGrupoModal';
+import { ConfirmarEliminarGrupoModal } from './ConfirmarEliminarGrupoModal';
 import { ApiError } from '@/lib/api/http';
 import { listarCarreras } from '@/lib/api/carreras';
 import { listarSalones } from '@/lib/api/salones';
 import {
   crearGrupo,
+  eliminarGrupo,
   listarGrupos,
   type CrearGrupoInput,
   type GrupoListItem,
@@ -65,6 +67,7 @@ function formatearPeriodo(anioInicio: number, cicloActual: number): string {
 export default function AdminGruposPage() {
   const queryClient = useQueryClient();
   const [modalAbierto, setModalAbierto] = useState(false);
+  const [grupoAEliminar, setGrupoAEliminar] = useState<GrupoListItem | null>(null);
 
   // Filtros del listado — todos opcionales, cambiarlos resetea `page` a 1
   // (mismo criterio que `usePaginacionFiltrada`, Día 19: nunca quedar
@@ -173,6 +176,25 @@ export default function AdminGruposPage() {
         return;
       }
       toast.error(resolverMensajeError(err, MENSAJES_ERROR_GRUPO) ?? MENSAJE_ERROR_GENERICO);
+    },
+  });
+
+  const eliminarMutation = useMutation({
+    mutationFn: (id: string) => eliminarGrupo(id),
+    onSuccess: () => {
+      toast.success('Grupo eliminado');
+      setGrupoAEliminar(null);
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'grupos'] });
+    },
+    onError: (err) => {
+      console.error('[AdminGruposPage] Error al eliminar grupo:', err);
+      // Sin mapa de mensajes específicos acá a propósito: `resolverMensajeError`
+      // ya hace passthrough del mensaje real del backend para CONFLICT (trae
+      // la cantidad de alumnos inscritos) — pasar `MENSAJES_ERROR_GRUPO` acá
+      // sería un bug, ese mapa tiene un CONFLICT distinto (nombre duplicado,
+      // del alta) que pisaría el mensaje real de este error.
+      toast.error(resolverMensajeError(err) ?? MENSAJE_ERROR_GENERICO);
+      setGrupoAEliminar(null);
     },
   });
 
@@ -295,19 +317,20 @@ export default function AdminGruposPage() {
                 <th className="px-4 py-3 font-medium">Salón</th>
                 <th className="px-4 py-3 font-medium">Periodo</th>
                 <th className="px-4 py-3 font-medium">Capacidad</th>
+                <th className="px-4 py-3 font-medium">Acciones</th>
               </tr>
             </thead>
             <tbody>
               {gruposQuery.isLoading && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-6 text-center text-slate/60">
+                  <td colSpan={6} className="px-4 py-6 text-center text-slate/60">
                     Cargando…
                   </td>
                 </tr>
               )}
               {gruposQuery.isError && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-6 text-center text-crimson">
+                  <td colSpan={6} className="px-4 py-6 text-center text-crimson">
                     {gruposQuery.error instanceof ApiError
                       ? gruposQuery.error.message
                       : 'No se pudo cargar el listado de grupos. Intenta de nuevo más tarde.'}
@@ -318,7 +341,7 @@ export default function AdminGruposPage() {
                 !gruposQuery.isError &&
                 gruposQuery.data?.data.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="px-4 py-6 text-center text-slate/60">
+                    <td colSpan={6} className="px-4 py-6 text-center text-slate/60">
                       Todavía no hay grupos registrados con esos criterios.
                     </td>
                   </tr>
@@ -332,6 +355,15 @@ export default function AdminGruposPage() {
                     {formatearPeriodo(grupo.anioInicio, grupo.cicloActual)}
                   </td>
                   <td className="px-4 py-3 text-slate/80">{grupo.capacidad}</td>
+                  <td className="px-4 py-3">
+                    <button
+                      type="button"
+                      onClick={() => setGrupoAEliminar(grupo)}
+                      className="text-crimson hover:underline"
+                    >
+                      Eliminar
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -349,6 +381,15 @@ export default function AdminGruposPage() {
           </div>
         )}
       </div>
+
+      {grupoAEliminar && (
+        <ConfirmarEliminarGrupoModal
+          grupo={grupoAEliminar}
+          eliminando={eliminarMutation.isPending}
+          onConfirmar={() => eliminarMutation.mutate(grupoAEliminar.id)}
+          onCancelar={() => setGrupoAEliminar(null)}
+        />
+      )}
     </div>
   );
 }
