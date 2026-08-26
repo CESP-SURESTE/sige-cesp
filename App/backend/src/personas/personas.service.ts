@@ -1533,34 +1533,56 @@ export class PersonasService {
           });
         }
 
-        if (estatus === EstatusEmpleado.LICENCIA) {
-          if (
-            !opciones.tipoLicencia ||
-            !Object.values(TipoLicencia).includes(
-              opciones.tipoLicencia as TipoLicencia,
-            )
-          ) {
-            throw new BadRequestException({
-              error:
-                'tipoLicencia es requerido y debe ser válido cuando el estatus es LICENCIA',
-              code: 'VALIDATION_ERROR',
-            });
-          }
+        // `tipoLicencia`, si viene en el body, SIEMPRE debe ser un valor
+        // válido de `TipoLicencia` — sin importar `estatus`. Corrección de
+        // review: la primera versión solo validaba el enum cuando
+        // `estatus === LICENCIA`, dejando pasar un valor basura (ej.
+        // `estatus: 'ACTIVO', tipoLicencia: 'GARBAGE'`) sin validar; ese
+        // valor llegaba tal cual (vía el cast `as TipoLicencia` de la
+        // transacción de abajo) al `update` de Prisma, que lo rechazaba en
+        // runtime con un `PrismaClientValidationError` no capturado por el
+        // catch de abajo (`NotFoundException`/`BadRequestException`/
+        // `ForbiddenException`) — surgía como `500 SERVER_ERROR` en vez de
+        // `400 VALIDATION_ERROR`.
+        if (
+          opciones.tipoLicencia !== undefined &&
+          !Object.values(TipoLicencia).includes(
+            opciones.tipoLicencia as TipoLicencia,
+          )
+        ) {
+          throw new BadRequestException({
+            error: 'tipoLicencia inválido',
+            code: 'VALIDATION_ERROR',
+          });
         }
 
-        if (estatus === EstatusEmpleado.BAJA) {
-          if (
-            !opciones.motivoBaja ||
-            !Object.values(MotivoBaja).includes(
-              opciones.motivoBaja as MotivoBaja,
-            )
-          ) {
-            throw new BadRequestException({
-              error:
-                'motivoBaja es requerido y debe ser válido cuando el estatus es BAJA',
-              code: 'VALIDATION_ERROR',
-            });
-          }
+        if (estatus === EstatusEmpleado.LICENCIA && !opciones.tipoLicencia) {
+          throw new BadRequestException({
+            error: 'tipoLicencia es requerido cuando el estatus es LICENCIA',
+            code: 'VALIDATION_ERROR',
+          });
+        }
+
+        // Mismo criterio que `tipoLicencia` arriba — validación
+        // incondicional del enum si el campo viene, independiente de si
+        // `estatus` lo requiere.
+        if (
+          opciones.motivoBaja !== undefined &&
+          !Object.values(MotivoBaja).includes(
+            opciones.motivoBaja as MotivoBaja,
+          )
+        ) {
+          throw new BadRequestException({
+            error: 'motivoBaja inválido',
+            code: 'VALIDATION_ERROR',
+          });
+        }
+
+        if (estatus === EstatusEmpleado.BAJA && !opciones.motivoBaja) {
+          throw new BadRequestException({
+            error: 'motivoBaja es requerido cuando el estatus es BAJA',
+            code: 'VALIDATION_ERROR',
+          });
         }
 
         if (

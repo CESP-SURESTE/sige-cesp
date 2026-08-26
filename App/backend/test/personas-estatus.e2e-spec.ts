@@ -558,6 +558,16 @@ describe('PersonasController — PATCH /personas/:id/estatus (e2e)', () => {
       select: { activo: true },
     });
     expect(usuarioTrasReingreso?.activo).toBe(true);
+
+    // Rastro histórico (decisión de diseño explícita) — `motivoBaja` NO se
+    // limpia al volver a ACTIVO (`?? undefined` en la transacción de
+    // `cambiarEstatus`, nunca `?? null`); sigue siendo `RENUNCIA`, el motivo
+    // de la baja anterior, aunque la cuenta ya esté reactivada.
+    const perfilTrasReingreso = await prisma.perfilAdministrativo.findUnique({
+      where: { usuarioId: objetivoId },
+      select: { motivoBaja: true },
+    });
+    expect(perfilTrasReingreso?.motivoBaja).toBe('RENUNCIA');
   });
 
   it('motivoBaja fuera del enum -> 400 VALIDATION_ERROR', async () => {
@@ -587,6 +597,42 @@ describe('PersonasController — PATCH /personas/:id/estatus (e2e)', () => {
     const res = await request(app.getHttpServer())
       .patch(`/personas/${objetivoId}/estatus`)
       .send({ estatus: 'LICENCIA', tipoLicencia: 'NO_EXISTE' })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(actorAdminId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+
+    expect(res.status).toBe(400);
+    expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+  });
+
+  it('tipoLicencia fuera del enum con estatus: ACTIVO (no lo requiere) -> 400 VALIDATION_ERROR, no 500', async () => {
+    const objetivoId = await crearAdministrativoFixture({
+      sedeId: sedeMeridaId,
+      nivelPermiso: NivelPermiso.AUXILIAR,
+    });
+
+    const res = await request(app.getHttpServer())
+      .patch(`/personas/${objetivoId}/estatus`)
+      .send({ estatus: 'ACTIVO', tipoLicencia: 'GARBAGE' })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(actorAdminId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+
+    expect(res.status).toBe(400);
+    expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+  });
+
+  it('motivoBaja fuera del enum con estatus: ACTIVO (no lo requiere) -> 400 VALIDATION_ERROR, no 500', async () => {
+    const objetivoId = await crearAdministrativoFixture({
+      sedeId: sedeMeridaId,
+      nivelPermiso: NivelPermiso.AUXILIAR,
+    });
+
+    const res = await request(app.getHttpServer())
+      .patch(`/personas/${objetivoId}/estatus`)
+      .send({ estatus: 'ACTIVO', motivoBaja: 'GARBAGE' })
       .set(
         'Authorization',
         `Bearer ${await firmarToken(actorAdminId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
