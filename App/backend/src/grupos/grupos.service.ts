@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import { AccionAuditoria, Prisma, type Grupo } from '@prisma/client';
@@ -188,5 +189,64 @@ export class GruposService {
       console.error('[GruposService.listar] error inesperado:', err);
       throw err;
     }
+  }
+
+  /**
+   * `DELETE /grupos/:id` — calco del patrón de `SalonesService.eliminar`.
+   * `id` debe existir Y pertenecer a la sede del actor -> 404 NOT_FOUND.
+   * Bloquea con `409 CONFLICT` si el grupo tiene alumnos inscritos
+   * (`GrupoAlumno`) — mensaje incluye la cantidad. `RegistroAuditoria` de
+   * `ELIMINACION` se crea ANTES del `tx.grupo.delete` dentro de la misma
+   * transacción, con `detalle: { nombre }` como snapshot.
+   */
+  async eliminar(
+    id: string,
+    sedeId: string,
+    actorUsuarioId: string,
+  ): Promise<{ ok: true }> {
+    const grupo = await this.prisma.grupo.findFirst({ where: { id, sedeId } });
+    if (!grupo) {
+      throw new NotFoundException({
+        error: 'Grupo no encontrado en tu sede',
+        code: 'NOT_FOUND',
+      });
+    }
+
+    const alumnosInscritos = await this.prisma.grupoAlumno.count({
+      where: { grupoId: id },
+    });
+    if (alumnosInscritos > 0) {
+      throw new ConflictException({
+        error: `No se puede eliminar: el grupo tiene ${alumnosInscritos} alumno(s) inscrito(s)`,
+        code: 'CONFLICT',
+      });
+    }
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.registroAuditoria.create({
+          data: {
+            usuarioId: actorUsuarioId,
+            sedeId,
+            accion: AccionAuditoria.ELIMINACION,
+            entidad: 'Grupo',
+            entidadId: grupo.id,
+            detalle: { nombre: grupo.nombre },
+          },
+        });
+        await tx.grupo.delete({ where: { id } });
+      });
+    } catch (err) {
+      console.error(
+        '[GruposService.eliminar] Error inesperado eliminando grupo:',
+        err,
+      );
+      throw new InternalServerErrorException({
+        error: 'Error inesperado al eliminar el grupo',
+        code: 'SERVER_ERROR',
+      });
+    }
+
+    return { ok: true };
   }
 }

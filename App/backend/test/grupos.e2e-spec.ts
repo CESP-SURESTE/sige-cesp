@@ -123,6 +123,9 @@ describe('GruposController — POST /grupos (e2e)', () => {
     await prisma.registroAuditoria.deleteMany({
       where: { entidad: 'Grupo', sedeId: sedeMeridaId },
     });
+    await prisma.grupoAlumno.deleteMany({
+      where: { grupo: { nombre: { startsWith: 'Grupo E2E' } } },
+    });
     await prisma.grupo.deleteMany({
       where: { nombre: { startsWith: 'Grupo E2E' } },
     });
@@ -365,9 +368,7 @@ describe('GruposController — POST /grupos (e2e)', () => {
 
     expect(res.status).toBe(200);
     const body = res.body as { data: Array<{ carrera: { id: string } }> };
-    expect(body.data.every((g) => g.carrera.id === carreraMeridaId)).toBe(
-      true,
-    );
+    expect(body.data.every((g) => g.carrera.id === carreraMeridaId)).toBe(true);
   });
 
   it('GET /grupos?salonId=... filtra por salón', async () => {
@@ -630,5 +631,151 @@ describe('GruposController — POST /grupos (e2e)', () => {
 
     expect(res.status).toBe(400);
     expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+  });
+
+  describe('DELETE /grupos/:id', () => {
+    it('elimina un grupo sin alumnos inscritos -> 200 { data: { ok: true } }, ya no aparece en GET /grupos', async () => {
+      const token = await firmarToken({
+        role: 'authenticated',
+        sede_id: sedeMeridaId,
+        rol: RolUsuario.ADMINISTRATIVO,
+      });
+
+      const nombreGrupo = `${nombrePrueba} delete-ok`;
+      const creado = await request(app.getHttpServer())
+        .post('/grupos')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ...bodyValido(), nombre: nombreGrupo, cicloActual: 3 });
+      expect(creado.status).toBe(201);
+      const grupoId = (creado.body as GrupoBody).data.id;
+
+      const res = await request(app.getHttpServer())
+        .delete(`/grupos/${grupoId}`)
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(res.status).toBe(200);
+      expect((res.body as { data: { ok: true } }).data).toEqual({ ok: true });
+
+      const listado = await request(app.getHttpServer())
+        .get('/grupos')
+        .query({ limit: 100 })
+        .set('Authorization', `Bearer ${token}`);
+      expect(
+        (listado.body as { data: Array<{ nombre: string }> }).data.some(
+          (g) => g.nombre === nombreGrupo,
+        ),
+      ).toBe(false);
+    });
+
+    it('con alumnos inscritos -> 409 CONFLICT con la cantidad en el mensaje, el grupo sigue existiendo', async () => {
+      const token = await firmarToken({
+        role: 'authenticated',
+        sede_id: sedeMeridaId,
+        rol: RolUsuario.ADMINISTRATIVO,
+      });
+
+      const nombreGrupo = `${nombrePrueba} delete-con-alumno`;
+      const creado = await request(app.getHttpServer())
+        .post('/grupos')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ...bodyValido(), nombre: nombreGrupo, cicloActual: 4 });
+      expect(creado.status).toBe(201);
+      const grupoId = (creado.body as GrupoBody).data.id;
+
+      const alumnoFixture = await prisma.perfilAlumno.findFirstOrThrow({
+        where: { usuario: { sedeId: sedeMeridaId } },
+      });
+      await prisma.grupoAlumno.create({
+        data: { grupoId, alumnoId: alumnoFixture.id },
+      });
+
+      const res = await request(app.getHttpServer())
+        .delete(`/grupos/${grupoId}`)
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(res.status).toBe(409);
+      const body = res.body as ErrorBody;
+      expect(body.code).toBe('CONFLICT');
+      expect(body.error).toContain('1');
+
+      const sigueExistiendo = await prisma.grupo.findUnique({
+        where: { id: grupoId },
+      });
+      expect(sigueExistiendo).not.toBeNull();
+    });
+
+    it('id de un grupo de otra sede (Valladolid) -> 404 NOT_FOUND', async () => {
+      const tokenValladolid = await firmarToken({
+        role: 'authenticated',
+        sede_id: sedeValladolidId,
+        rol: RolUsuario.ADMINISTRATIVO,
+      });
+      const creado = await request(app.getHttpServer())
+        .post('/grupos')
+        .set('Authorization', `Bearer ${tokenValladolid}`)
+        .send({
+          carreraId: carreraValladolidId,
+          salonId: salonValladolidId,
+          nombre: `Grupo E2E Valladolid delete ${Date.now()}`,
+          anioInicio: 2027,
+          cicloActual: 1,
+          capacidad: 30,
+        });
+      expect(creado.status).toBe(201);
+      const grupoValladolidId = (creado.body as GrupoBody).data.id;
+
+      const tokenMerida = await firmarToken({
+        role: 'authenticated',
+        sede_id: sedeMeridaId,
+        rol: RolUsuario.ADMINISTRATIVO,
+      });
+      const res = await request(app.getHttpServer())
+        .delete(`/grupos/${grupoValladolidId}`)
+        .set('Authorization', `Bearer ${tokenMerida}`);
+
+      expect(res.status).toBe(404);
+      expect((res.body as ErrorBody).code).toBe('NOT_FOUND');
+      // Limpieza: el afterAll ya borra por prefijo 'Grupo E2E' (grupo.deleteMany
+      // sin filtrar por sede), este grupo de Valladolid cae ahí también.
+    });
+
+    it('id inexistente -> 404 NOT_FOUND', async () => {
+      const token = await firmarToken({
+        role: 'authenticated',
+        sede_id: sedeMeridaId,
+        rol: RolUsuario.ADMINISTRATIVO,
+      });
+
+      const res = await request(app.getHttpServer())
+        .delete('/grupos/00000000-0000-0000-0000-000000000000')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(res.status).toBe(404);
+      expect((res.body as ErrorBody).code).toBe('NOT_FOUND');
+    });
+
+    it('rol no ADMINISTRATIVO -> 403 ROL_NO_AUTORIZADO', async () => {
+      const token = await firmarToken({
+        role: 'authenticated',
+        sede_id: sedeMeridaId,
+        rol: RolUsuario.ALUMNO,
+      });
+
+      const res = await request(app.getHttpServer())
+        .delete('/grupos/00000000-0000-0000-0000-000000000000')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(res.status).toBe(403);
+      expect((res.body as ErrorBody).code).toBe('ROL_NO_AUTORIZADO');
+    });
+
+    it('sin Authorization -> 401 UNAUTHORIZED', async () => {
+      const res = await request(app.getHttpServer()).delete(
+        '/grupos/00000000-0000-0000-0000-000000000000',
+      );
+
+      expect(res.status).toBe(401);
+      expect((res.body as ErrorBody).code).toBe('UNAUTHORIZED');
+    });
   });
 });

@@ -1,4 +1,14 @@
-import { Body, Controller, Get, HttpCode, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { RolUsuario } from '@prisma/client';
 import { ActorUsuarioId } from '../common/decorators/actor-usuario-id.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -39,6 +49,17 @@ export class GruposController {
     @ActorUsuarioId() actorUsuarioId: string,
   ) {
     const data = await this.gruposService.crear(body, sedeId, actorUsuarioId);
+    return { data };
+  }
+
+  @Delete(':id')
+  @Roles(RolUsuario.ADMINISTRATIVO)
+  async eliminar(
+    @Param('id') id: string,
+    @SedeActual() sedeId: string,
+    @ActorUsuarioId() actorUsuarioId: string,
+  ) {
+    const data = await this.gruposService.eliminar(id, sedeId, actorUsuarioId);
     return { data };
   }
 }
