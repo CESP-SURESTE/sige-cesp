@@ -255,6 +255,25 @@ export interface PersonaListItemMaestro {
   activo: boolean;
 }
 
+/**
+ * `GET /personas?rol=ADMINISTRATIVO&...` (Fase 10, unificación CRUD admin) —
+ * espejo de `PersonaListItemAdministrativo`
+ * (`App/backend/src/personas/personas.service.ts`). Mismo shape resumen que
+ * `PersonaListItemMaestro`, sin un identificador externo equivalente a
+ * `cedulaProfesional`/`matricula` (`PerfilAdministrativo` no tiene uno en el
+ * schema, no se inventa acá).
+ */
+export interface PersonaListItemAdministrativo {
+  usuarioId: string;
+  nombres: string;
+  apellidoPaterno: string;
+  apellidoMaterno: string | null;
+  puesto: PuestoAdministrativo;
+  nivelPermiso: NivelPermiso;
+  estatus: EstatusEmpleado;
+  activo: boolean;
+}
+
 function construirQueryString(
   params: Record<string, string | number | undefined>,
 ): string {
@@ -280,4 +299,37 @@ export function listarMaestros(
 ): Promise<ApiListaPaginada<PersonaListItemMaestro>> {
   const query = construirQueryString({ rol: 'MAESTRO', ...params });
   return apiFetchAuthPaginado<PersonaListItemMaestro>(`/personas${query}`);
+}
+
+/**
+ * `listarAdministrativos` — Fase 10 (unificación CRUD admin). Mismo patrón
+ * que `listarMaestros`: fija `rol: 'ADMINISTRATIVO'`, no se expone como
+ * parámetro editable.
+ */
+export function listarAdministrativos(
+  params: ListarPersonasParams,
+): Promise<ApiListaPaginada<PersonaListItemAdministrativo>> {
+  const query = construirQueryString({ rol: 'ADMINISTRATIVO', ...params });
+  return apiFetchAuthPaginado<PersonaListItemAdministrativo>(
+    `/personas${query}`,
+  );
+}
+
+/**
+ * `PATCH /personas/:id/estatus` (Fase 10, unificación CRUD admin) — cambio
+ * de estatus genérico (regla 3 de `CLAUDE.md` raíz, baja lógica). `id` es el
+ * `Usuario` objetivo — `sedeId`/`actorUsuarioId` los resuelve el backend del
+ * JWT, nunca acá. `estatus` viaja tal cual como `string` (el valor real del
+ * enum correspondiente al rol del objetivo — `EstatusEmpleado` para el único
+ * consumidor de hoy, `app/admin/administrativos/page.tsx`); el backend
+ * valida contra el enum correcto según el `rol` del `Usuario` objetivo.
+ */
+export function cambiarEstatusPersona(
+  usuarioId: string,
+  estatus: string,
+): Promise<{ ok: true }> {
+  return apiFetchAuth<{ ok: true }>(`/personas/${usuarioId}/estatus`, {
+    method: 'PATCH',
+    body: JSON.stringify({ estatus }),
+  });
 }
