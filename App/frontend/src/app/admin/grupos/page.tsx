@@ -2,7 +2,7 @@
 
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
-import { useState, type FormEvent } from 'react';
+import { useState } from 'react';
 import { toast } from 'sonner';
 import { INPUT_CLASS, LABEL_CLASS } from '@/components/admin/ui/persona-alta/estilos';
 import {
@@ -11,6 +11,7 @@ import {
 } from '@/components/admin/ui/persona-alta/mensajes-error';
 import { Select } from '@/components/admin/ui/persona-alta/Select';
 import { Paginacion } from '@/components/admin/ui/personas-listado/Paginacion';
+import { NuevoGrupoModal } from './NuevoGrupoModal';
 import { ApiError } from '@/lib/api/http';
 import { listarCarreras } from '@/lib/api/carreras';
 import { listarSalones } from '@/lib/api/salones';
@@ -40,77 +41,22 @@ import {
  * catálogos chicos de la sede, sin paginar (mismo criterio que el resto del
  * árbol admin). `limit` fijo en 10 para el listado de grupos, mismo valor
  * que `usePaginacionFiltrada` (Día 19) usa para alumnos/maestros.
+ *
+ * ACTUALIZADO (2026-08-25): alta vía botón + modal (`NuevoGrupoModal`, Task 3
+ * de la unificación de CRUD admin — regla 13 ampliada de `CLAUDE.md` raíz).
+ * El form fijo de "Nuevo grupo" desapareció — un botón "+ Nuevo grupo" abre
+ * el modal, `crearMutation.onSuccess` lo cierra. SOLO alta: a diferencia de
+ * Carreras/Salones (Tasks 1-2), no existe `PATCH /grupos/:id` (Día 28), así
+ * que no hay modo edición. Los filtros y la tabla paginada de abajo no se
+ * tocaron.
  */
 
 const LIMIT = 10;
-
-interface FormNuevo {
-  nombre: string;
-  carreraId: string;
-  salonId: string;
-  anioInicio: string;
-  cicloActual: string;
-  capacidad: string;
-}
-
-const FORM_NUEVO_VACIO: FormNuevo = {
-  nombre: '',
-  carreraId: '',
-  salonId: '',
-  anioInicio: '',
-  cicloActual: '',
-  capacidad: '',
-};
 
 const MENSAJES_ERROR_GRUPO: Record<string, string> = {
   CONFLICT: 'Ya existe un grupo con ese nombre en ese periodo.',
   NOT_FOUND: 'La carrera o el salón seleccionado ya no existe en tu sede.',
 };
-
-/**
- * `duracionCarreraSeleccionada` (Hallazgo 2 del review final, fix wave
- * 2026-08-25) — cota superior de `cicloActual` según la carrera elegida en
- * el form (`carrera.duracion`, `GET /carreras`). Opcional: si la carrera
- * seleccionada todavía no resolvió (o el catálogo falló, Hallazgo 3), no se
- * valida acá y el backend sigue siendo la fuente de verdad final
- * (`GruposService.crear`) — este bound es solo para adelantar el error
- * común al cliente, no reemplaza la validación real del servidor.
- */
-function construirPayloadAlta(
-  form: FormNuevo,
-  duracionCarreraSeleccionada?: number,
-): CrearGrupoInput | null {
-  if (
-    !form.nombre.trim() ||
-    !form.carreraId ||
-    !form.salonId ||
-    !form.anioInicio.trim() ||
-    !form.cicloActual.trim() ||
-    !form.capacidad.trim()
-  ) {
-    return null;
-  }
-
-  const anioInicio = Number.parseInt(form.anioInicio, 10);
-  const cicloActual = Number.parseInt(form.cicloActual, 10);
-  const capacidad = Number.parseInt(form.capacidad, 10);
-
-  if (!Number.isInteger(anioInicio) || anioInicio < 1) return null;
-  if (!Number.isInteger(cicloActual) || cicloActual < 1) return null;
-  if (!Number.isInteger(capacidad) || capacidad < 1) return null;
-  if (duracionCarreraSeleccionada != null && cicloActual > duracionCarreraSeleccionada) {
-    return null;
-  }
-
-  return {
-    nombre: form.nombre.trim(),
-    carreraId: form.carreraId,
-    salonId: form.salonId,
-    anioInicio,
-    cicloActual,
-    capacidad,
-  };
-}
 
 function formatearPeriodo(anioInicio: number, cicloActual: number): string {
   return `${anioInicio} · Semestre ${cicloActual}`;
@@ -118,7 +64,7 @@ function formatearPeriodo(anioInicio: number, cicloActual: number): string {
 
 export default function AdminGruposPage() {
   const queryClient = useQueryClient();
-  const [formNuevo, setFormNuevo] = useState<FormNuevo>(FORM_NUEVO_VACIO);
+  const [modalAbierto, setModalAbierto] = useState(false);
 
   // Filtros del listado — todos opcionales, cambiarlos resetea `page` a 1
   // (mismo criterio que `usePaginacionFiltrada`, Día 19: nunca quedar
@@ -211,7 +157,7 @@ export default function AdminGruposPage() {
     mutationFn: (input: CrearGrupoInput) => crearGrupo(input),
     onSuccess: () => {
       toast.success('Grupo creado');
-      setFormNuevo(FORM_NUEVO_VACIO);
+      setModalAbierto(false);
       void queryClient.invalidateQueries({ queryKey: ['admin', 'grupos'] });
     },
     onError: (err) => {
@@ -230,31 +176,6 @@ export default function AdminGruposPage() {
     },
   });
 
-  const carreraSeleccionada = (carrerasQuery.data ?? []).find(
-    (carrera) => carrera.id === formNuevo.carreraId,
-  );
-
-  function handleSubmitNuevo(e: FormEvent) {
-    e.preventDefault();
-    const payload = construirPayloadAlta(formNuevo, carreraSeleccionada?.duracion);
-    if (!payload) {
-      const cicloActualNum = Number.parseInt(formNuevo.cicloActual, 10);
-      if (
-        carreraSeleccionada &&
-        Number.isInteger(cicloActualNum) &&
-        cicloActualNum > carreraSeleccionada.duracion
-      ) {
-        toast.error(
-          `El ciclo actual debe estar entre 1 y ${carreraSeleccionada.duracion} para esta carrera.`,
-        );
-        return;
-      }
-      toast.error('Revisa que todos los campos estén completos y con formato correcto.');
-      return;
-    }
-    crearMutation.mutate(payload);
-  }
-
   const opcionesCarreras = (carrerasQuery.data ?? []).map((carrera) => ({
     value: carrera.id,
     label: carrera.nombre,
@@ -266,151 +187,28 @@ export default function AdminGruposPage() {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm">
-        <h1 className="font-display text-2xl font-semibold text-navy">Grupos</h1>
-        <p className="mt-1 text-sm text-slate/60">Alta y consulta de los grupos de tu sede.</p>
+      <div className="flex items-center justify-between rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm">
+        <div>
+          <h1 className="font-display text-2xl font-semibold text-navy">Grupos</h1>
+          <p className="mt-1 text-sm text-slate/60">Alta y consulta de los grupos de tu sede.</p>
+        </div>
+        <button
+          onClick={() => setModalAbierto(true)}
+          className="rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-navy-deep"
+        >
+          + Nuevo grupo
+        </button>
       </div>
 
-      <form
-        onSubmit={handleSubmitNuevo}
-        className="space-y-4 rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm"
-      >
-        <h2 className="font-display text-lg font-semibold text-slate">Nuevo grupo</h2>
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label htmlFor="nombre" className={LABEL_CLASS}>
-              Nombre
-            </label>
-            <input
-              id="nombre"
-              type="text"
-              required
-              disabled={crearMutation.isPending}
-              className={INPUT_CLASS}
-              value={formNuevo.nombre}
-              onChange={(e) => setFormNuevo((f) => ({ ...f, nombre: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label htmlFor="carreraId" className={LABEL_CLASS}>
-              Carrera
-            </label>
-            <Select
-              id="carreraId"
-              disabled={crearMutation.isPending || carrerasQuery.isError}
-              value={formNuevo.carreraId}
-              onChange={(value) => setFormNuevo((f) => ({ ...f, carreraId: value }))}
-              options={opcionesCarreras}
-              placeholder="Selecciona una carrera"
-            />
-            {carrerasQuery.isError && (
-              <p className="mt-1 text-xs text-crimson">
-                {carrerasQuery.error instanceof ApiError
-                  ? carrerasQuery.error.message
-                  : 'No se pudo cargar el catálogo de carreras. Intenta de nuevo más tarde.'}
-              </p>
-            )}
-            {!carrerasQuery.isLoading && !carrerasQuery.isError && opcionesCarreras.length === 0 && (
-              <p className="mt-1 text-xs text-slate/60">
-                No hay carreras registradas en tu sede.
-              </p>
-            )}
-          </div>
-          <div>
-            <label htmlFor="salonId" className={LABEL_CLASS}>
-              Salón
-            </label>
-            <Select
-              id="salonId"
-              disabled={crearMutation.isPending || salonesQuery.isError}
-              value={formNuevo.salonId}
-              onChange={(value) => setFormNuevo((f) => ({ ...f, salonId: value }))}
-              options={opcionesSalones}
-              placeholder="Selecciona un salón"
-            />
-            {salonesQuery.isError && (
-              <p className="mt-1 text-xs text-crimson">
-                {salonesQuery.error instanceof ApiError
-                  ? salonesQuery.error.message
-                  : 'No se pudo cargar el catálogo de salones. Intenta de nuevo más tarde.'}
-              </p>
-            )}
-            {!salonesQuery.isLoading && !salonesQuery.isError && opcionesSalones.length === 0 && (
-              <p className="mt-1 text-xs text-slate/60">
-                No hay salones registrados en tu sede.{' '}
-                <Link href="/admin/salones" className="text-navy hover:underline">
-                  Crea uno aquí
-                </Link>
-                .
-              </p>
-            )}
-          </div>
-          <div>
-            <label htmlFor="capacidad" className={LABEL_CLASS}>
-              Capacidad
-            </label>
-            <input
-              id="capacidad"
-              type="number"
-              min={1}
-              step={1}
-              required
-              disabled={crearMutation.isPending}
-              className={INPUT_CLASS}
-              value={formNuevo.capacidad}
-              onChange={(e) => setFormNuevo((f) => ({ ...f, capacidad: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label htmlFor="anioInicio" className={LABEL_CLASS}>
-              Año de inicio
-            </label>
-            <input
-              id="anioInicio"
-              type="number"
-              min={1}
-              step={1}
-              required
-              disabled={crearMutation.isPending}
-              className={INPUT_CLASS}
-              value={formNuevo.anioInicio}
-              onChange={(e) => setFormNuevo((f) => ({ ...f, anioInicio: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label htmlFor="cicloActual" className={LABEL_CLASS}>
-              Ciclo actual (semestre)
-            </label>
-            <input
-              id="cicloActual"
-              type="number"
-              min={1}
-              max={carreraSeleccionada?.duracion}
-              step={1}
-              required
-              disabled={crearMutation.isPending}
-              className={INPUT_CLASS}
-              value={formNuevo.cicloActual}
-              onChange={(e) => setFormNuevo((f) => ({ ...f, cicloActual: e.target.value }))}
-            />
-            {carreraSeleccionada && (
-              <p className="mt-1 text-xs text-slate/60">
-                Esta carrera tiene {carreraSeleccionada.duracion} semestre
-                {carreraSeleccionada.duracion === 1 ? '' : 's'}.
-              </p>
-            )}
-          </div>
-        </div>
-
-        <button
-          type="submit"
-          disabled={crearMutation.isPending}
-          className="rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-navy-deep disabled:opacity-50"
-        >
-          {crearMutation.isPending ? 'Guardando…' : 'Crear grupo'}
-        </button>
-      </form>
+      {modalAbierto && (
+        <NuevoGrupoModal
+          carrerasQuery={carrerasQuery}
+          salonesQuery={salonesQuery}
+          guardando={crearMutation.isPending}
+          onCrear={(payload) => crearMutation.mutate(payload)}
+          onCancelar={() => setModalAbierto(false)}
+        />
+      )}
 
       <div className="rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm">
         <h2 className="font-display text-lg font-semibold text-slate">Filtros</h2>
