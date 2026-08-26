@@ -12,9 +12,11 @@ import {
   AccionAuditoria,
   EstatusAcademico,
   EstatusEmpleado,
+  MotivoBaja,
   NivelPermiso,
   Prisma,
   RolUsuario,
+  TipoLicencia,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
@@ -1420,6 +1422,28 @@ export class PersonasService {
   }
 
   /**
+   * Cálculo de `Usuario.activo` a partir del `estatus` nuevo (estatus
+   * avanzado, 2026-08-26) — SOLO se llama para `MAESTRO`/`ADMINISTRATIVO`
+   * (ver `cambiarEstatus`), nunca para `ALUMNO`. `ACTIVO` y `LICENCIA`
+   * siempre reactivan el acceso (una licencia no revoca la cuenta, solo
+   * documenta una ausencia temporal). `BAJA` revoca el acceso SOLO si
+   * `motivoBaja` es `RENUNCIA`/`DESPIDO` (salida definitiva) — una
+   * `BAJA_TEMPORAL_SALUD`/`OTRO` no revoca, la persona sigue de baja
+   * "cosmética" con acceso intacto (mismo criterio que la baja de alumno,
+   * pero acá sí puede activarse la revocación real cuando el motivo lo
+   * amerita).
+   */
+  private calcularActivoPorEstatus(
+    estatus: string,
+    motivoBaja: string | undefined,
+  ): boolean {
+    if (estatus !== EstatusEmpleado.BAJA) return true; // ACTIVO y LICENCIA siempre reactivan
+    return !(
+      motivoBaja === MotivoBaja.RENUNCIA || motivoBaja === MotivoBaja.DESPIDO
+    );
+  }
+
+  /**
    * `PATCH /personas/:id/estatus` (Fase 10, unificación CRUD admin) — primer
    * código real del patrón "baja lógica" (regla 3 de CLAUDE.md raíz) que
    * hasta hoy ningún rol tenía implementado. Genérico para los 3 roles
@@ -1443,12 +1467,23 @@ export class PersonasService {
    * porque el enum NO tiene un valor dedicado a "cambio de contraseña"), acá
    * sí existe un valor semánticamente exacto en el enum (`prisma/schema.prisma`,
    * `AccionAuditoria`) — se usa ese, no `EDICION`.
+   *
+   * Estatus avanzado (2026-08-26) — extensión para `MAESTRO`/`ADMINISTRATIVO`:
+   * `estatus: LICENCIA` requiere `opciones.tipoLicencia` (válido, del enum
+   * `TipoLicencia`); `estatus: BAJA` requiere `opciones.motivoBaja` (válido,
+   * del enum `MotivoBaja`). `Usuario.activo` se recalcula al vuelo
+   * (`calcularActivoPorEstatus`, regla 1 de CLAUDE.md raíz no aplica acá
+   * porque SÍ se persiste — es la bandera real de acceso, no un derivado
+   * puramente de lectura) SOLO para `MAESTRO`/`ADMINISTRATIVO`, nunca para
+   * `ALUMNO` (la baja lógica de alumno sigue siendo cosmética, sin revocar
+   * acceso).
    */
   async cambiarEstatus(
     id: string,
     estatus: string,
     sedeId: string,
     actorUsuarioId: string,
+    opciones: { tipoLicencia?: string; motivoBaja?: string } = {},
   ): Promise<{ ok: true }> {
     try {
       const usuario = await this.prisma.usuario.findFirst({
@@ -1498,6 +1533,36 @@ export class PersonasService {
           });
         }
 
+        if (estatus === EstatusEmpleado.LICENCIA) {
+          if (
+            !opciones.tipoLicencia ||
+            !Object.values(TipoLicencia).includes(
+              opciones.tipoLicencia as TipoLicencia,
+            )
+          ) {
+            throw new BadRequestException({
+              error:
+                'tipoLicencia es requerido y debe ser válido cuando el estatus es LICENCIA',
+              code: 'VALIDATION_ERROR',
+            });
+          }
+        }
+
+        if (estatus === EstatusEmpleado.BAJA) {
+          if (
+            !opciones.motivoBaja ||
+            !Object.values(MotivoBaja).includes(
+              opciones.motivoBaja as MotivoBaja,
+            )
+          ) {
+            throw new BadRequestException({
+              error:
+                'motivoBaja es requerido y debe ser válido cuando el estatus es BAJA',
+              code: 'VALIDATION_ERROR',
+            });
+          }
+        }
+
         if (
           usuario.rol === RolUsuario.ADMINISTRATIVO &&
           usuario.perfilAdministrativo
@@ -1544,12 +1609,38 @@ export class PersonasService {
         } else if (usuario.rol === RolUsuario.MAESTRO) {
           await tx.perfilMaestro.update({
             where: { usuarioId: id },
-            data: { estatus: estatus as EstatusEmpleado },
+            data: {
+              estatus: estatus as EstatusEmpleado,
+              tipoLicencia: (opciones.tipoLicencia as TipoLicencia) ?? undefined,
+              motivoBaja: (opciones.motivoBaja as MotivoBaja) ?? undefined,
+            },
           });
         } else {
           await tx.perfilAdministrativo.update({
             where: { usuarioId: id },
-            data: { estatus: estatus as EstatusEmpleado },
+            data: {
+              estatus: estatus as EstatusEmpleado,
+              tipoLicencia: (opciones.tipoLicencia as TipoLicencia) ?? undefined,
+              motivoBaja: (opciones.motivoBaja as MotivoBaja) ?? undefined,
+            },
+          });
+        }
+
+        // `Usuario.activo` (estatus avanzado, 2026-08-26) — solo se toca
+        // para MAESTRO/ADMINISTRATIVO, NUNCA para ALUMNO (regla 3, baja
+        // lógica de alumno sigue cosmética, sin revocar acceso).
+        let activoNuevo: boolean | undefined;
+        if (
+          usuario.rol === RolUsuario.MAESTRO ||
+          usuario.rol === RolUsuario.ADMINISTRATIVO
+        ) {
+          activoNuevo = this.calcularActivoPorEstatus(
+            estatus,
+            opciones.motivoBaja,
+          );
+          await tx.usuario.update({
+            where: { id },
+            data: { activo: activoNuevo },
           });
         }
 
@@ -1562,7 +1653,13 @@ export class PersonasService {
             accion: AccionAuditoria.CAMBIO_ESTATUS,
             entidad: 'Usuario',
             entidadId: id,
-            detalle: { rol: usuario.rol, estatusNuevo: estatus },
+            detalle: {
+              rol: usuario.rol,
+              estatusNuevo: estatus,
+              tipoLicencia: opciones.tipoLicencia,
+              motivoBaja: opciones.motivoBaja,
+              cuentaRevocada: activoNuevo === false,
+            },
           },
         });
       });

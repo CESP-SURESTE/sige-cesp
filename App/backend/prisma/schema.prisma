@@ -36,6 +36,25 @@ enum EstatusEmpleado {
   LICENCIA
 }
 
+enum TipoLicencia {
+  VACACIONES
+  INCAPACIDAD_ENFERMEDAD_GENERAL
+  INCAPACIDAD_RIESGO_TRABAJO
+  MATERNIDAD
+  PATERNIDAD
+  ADOPCION
+  PERMISO_CON_GOCE_SUELDO
+  PERMISO_SIN_GOCE_SUELDO
+  OTRO
+}
+
+enum MotivoBaja {
+  RENUNCIA
+  DESPIDO
+  BAJA_TEMPORAL_SALUD
+  OTRO
+}
+
 enum PuestoAdministrativo {
   DIRECTOR
   COORDINADOR_ACADEMICO
@@ -360,6 +379,8 @@ model PerfilMaestro {
   telefono          String
   fechaContratacion DateTime        @map("fecha_contratacion")
   estatus           EstatusEmpleado
+  tipoLicencia      TipoLicencia?   @map("tipo_licencia")
+  motivoBaja        MotivoBaja?     @map("motivo_baja")
   createdAt         DateTime        @default(now()) @map("created_at")
   updatedAt         DateTime        @updatedAt @map("updated_at")
 
@@ -411,6 +432,8 @@ model PerfilAdministrativo {
   telefono          String
   fechaContratacion DateTime             @map("fecha_contratacion")
   estatus           EstatusEmpleado
+  tipoLicencia      TipoLicencia?        @map("tipo_licencia")
+  motivoBaja        MotivoBaja?          @map("motivo_baja")
   puesto            PuestoAdministrativo
   nivelPermiso      NivelPermiso         @map("nivel_permiso")
   createdAt         DateTime             @default(now()) @map("created_at")

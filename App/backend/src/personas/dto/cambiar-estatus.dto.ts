@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 /**
  * Body de `PATCH /personas/:id/estatus` — Fase 10 (unificación CRUD admin).
@@ -14,9 +14,23 @@ import { IsNotEmpty, IsString } from 'class-validator';
  * limpio con un decorador declarativo contra un enum dinámico que depende de
  * datos en DB (no de un sibling field del propio body). Se valida en
  * `PersonasService.cambiarEstatus`.
+ *
+ * `tipoLicencia`/`motivoBaja` (2026-08-26, estatus avanzado) — mismo
+ * criterio: se dejan como `string` opcional acá, su validación real contra
+ * `TipoLicencia`/`MotivoBaja` vive en `PersonasService.cambiarEstatus`
+ * (condicionada al valor de `estatus`, otro sibling field, no algo que
+ * `class-validator` resuelva limpio con un decorador declarativo).
  */
 export class CambiarEstatusDto {
   @IsString()
   @IsNotEmpty({ message: 'estatus es requerido' })
   estatus!: string;
+
+  @IsOptional()
+  @IsString()
+  tipoLicencia?: string;
+
+  @IsOptional()
+  @IsString()
+  motivoBaja?: string;
 }

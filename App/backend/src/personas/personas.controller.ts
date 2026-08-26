@@ -116,6 +116,7 @@ export class PersonasController {
       body.estatus,
       sedeId,
       actorUsuarioId,
+      { tipoLicencia: body.tipoLicencia, motivoBaja: body.motivoBaja },
     );
     return { data };
   }

@@ -220,7 +220,7 @@ describe('PersonasController — PATCH /personas/:id/estatus (e2e)', () => {
 
     const res = await request(app.getHttpServer())
       .patch(`/personas/${objetivoId}/estatus`)
-      .send({ estatus: 'BAJA' })
+      .send({ estatus: 'BAJA', motivoBaja: 'RENUNCIA' })
       .set(
         'Authorization',
         `Bearer ${await firmarToken(actorAdminId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
@@ -236,6 +236,12 @@ describe('PersonasController — PATCH /personas/:id/estatus (e2e)', () => {
       select: { estatus: true },
     });
     expect(perfilActualizado?.estatus).toBe('BAJA');
+
+    const usuarioActualizado = await prisma.usuario.findUnique({
+      where: { id: objetivoId },
+      select: { activo: true },
+    });
+    expect(usuarioActualizado?.activo).toBe(false);
 
     const registro = await prisma.registroAuditoria.findFirst({
       where: { entidadId: objetivoId, accion: AccionAuditoria.CAMBIO_ESTATUS },
@@ -255,7 +261,12 @@ describe('PersonasController — PATCH /personas/:id/estatus (e2e)', () => {
 
     const res = await request(app.getHttpServer())
       .patch(`/personas/${objetivoId}/estatus`)
-      .send({ estatus: 'BAJA' })
+      // `motivoBaja` requerido válido — este test cubre la jerarquía de
+      // nivelPermiso, no la validación de motivoBaja (ver test dedicado
+      // "estatus: BAJA sin motivoBaja"); sin un valor válido acá, la
+      // validación de motivoBaja dispara primero (400) y nunca se llega a
+      // probar el 403 real que este test verifica.
+      .send({ estatus: 'BAJA', motivoBaja: 'RENUNCIA' })
       .set(
         'Authorization',
         `Bearer ${await firmarToken(actorAuxiliarId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
@@ -273,7 +284,9 @@ describe('PersonasController — PATCH /personas/:id/estatus (e2e)', () => {
 
     const res = await request(app.getHttpServer())
       .patch(`/personas/${objetivoId}/estatus`)
-      .send({ estatus: 'BAJA' })
+      // Mismo motivo que el test anterior — `motivoBaja` válido para que la
+      // validación de estatus avanzado no dispare antes que la jerarquía.
+      .send({ estatus: 'BAJA', motivoBaja: 'RENUNCIA' })
       .set(
         'Authorization',
         `Bearer ${await firmarToken(actorAdminId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
@@ -291,7 +304,7 @@ describe('PersonasController — PATCH /personas/:id/estatus (e2e)', () => {
 
     const res = await request(app.getHttpServer())
       .patch(`/personas/${objetivoId}/estatus`)
-      .send({ estatus: 'LICENCIA' })
+      .send({ estatus: 'LICENCIA', tipoLicencia: 'VACACIONES' })
       .set(
         'Authorization',
         `Bearer ${await firmarToken(actorSuperAdminId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
@@ -405,5 +418,181 @@ describe('PersonasController — PATCH /personas/:id/estatus (e2e)', () => {
       select: { estatusAcademico: true },
     });
     expect(perfilActualizado?.estatusAcademico).toBe('BAJA_TEMPORAL');
+  });
+
+  // --- Estatus avanzado (2026-08-26) — tipoLicencia/motivoBaja + revocación
+  // condicional de Usuario.activo (calcularActivoPorEstatus).
+
+  it('estatus: LICENCIA sin tipoLicencia -> 400 VALIDATION_ERROR', async () => {
+    const objetivoId = await crearAdministrativoFixture({
+      sedeId: sedeMeridaId,
+      nivelPermiso: NivelPermiso.AUXILIAR,
+    });
+
+    const res = await request(app.getHttpServer())
+      .patch(`/personas/${objetivoId}/estatus`)
+      .send({ estatus: 'LICENCIA' })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(actorAdminId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+
+    expect(res.status).toBe(400);
+    expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+  });
+
+  it('estatus: BAJA sin motivoBaja -> 400 VALIDATION_ERROR', async () => {
+    const objetivoId = await crearAdministrativoFixture({
+      sedeId: sedeMeridaId,
+      nivelPermiso: NivelPermiso.AUXILIAR,
+    });
+
+    const res = await request(app.getHttpServer())
+      .patch(`/personas/${objetivoId}/estatus`)
+      .send({ estatus: 'BAJA' })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(actorAdminId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+
+    expect(res.status).toBe(400);
+    expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+  });
+
+  it('estatus: BAJA, motivoBaja: DESPIDO -> 200, revoca Usuario.activo y RegistroAuditoria.detalle marca cuentaRevocada: true', async () => {
+    const objetivoId = await crearAdministrativoFixture({
+      sedeId: sedeMeridaId,
+      nivelPermiso: NivelPermiso.AUXILIAR,
+    });
+
+    const res = await request(app.getHttpServer())
+      .patch(`/personas/${objetivoId}/estatus`)
+      .send({ estatus: 'BAJA', motivoBaja: 'DESPIDO' })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(actorAdminId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+
+    expect(res.status).toBe(200);
+
+    const usuarioActualizado = await prisma.usuario.findUnique({
+      where: { id: objetivoId },
+      select: { activo: true },
+    });
+    expect(usuarioActualizado?.activo).toBe(false);
+
+    const registro = await prisma.registroAuditoria.findFirst({
+      where: { entidadId: objetivoId, accion: AccionAuditoria.CAMBIO_ESTATUS },
+      orderBy: { fecha: 'desc' },
+    });
+    expect(
+      (registro?.detalle as Record<string, unknown> | null)?.cuentaRevocada,
+    ).toBe(true);
+  });
+
+  it('estatus: BAJA, motivoBaja: BAJA_TEMPORAL_SALUD -> 200, NO revoca Usuario.activo y RegistroAuditoria.detalle marca cuentaRevocada: false', async () => {
+    const objetivoId = await crearAdministrativoFixture({
+      sedeId: sedeMeridaId,
+      nivelPermiso: NivelPermiso.AUXILIAR,
+    });
+
+    const res = await request(app.getHttpServer())
+      .patch(`/personas/${objetivoId}/estatus`)
+      .send({ estatus: 'BAJA', motivoBaja: 'BAJA_TEMPORAL_SALUD' })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(actorAdminId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+
+    expect(res.status).toBe(200);
+
+    const usuarioActualizado = await prisma.usuario.findUnique({
+      where: { id: objetivoId },
+      select: { activo: true },
+    });
+    // El fixture nace `activo: true` por default de Supabase Auth/schema —
+    // BAJA_TEMPORAL_SALUD no revoca, así que no hay cambio.
+    expect(usuarioActualizado?.activo).toBe(true);
+
+    const registro = await prisma.registroAuditoria.findFirst({
+      where: { entidadId: objetivoId, accion: AccionAuditoria.CAMBIO_ESTATUS },
+      orderBy: { fecha: 'desc' },
+    });
+    expect(
+      (registro?.detalle as Record<string, unknown> | null)?.cuentaRevocada,
+    ).toBe(false);
+  });
+
+  it('reingreso: BAJA/RENUNCIA revoca Usuario.activo, un PATCH posterior a ACTIVO lo reactiva', async () => {
+    const objetivoId = await crearAdministrativoFixture({
+      sedeId: sedeMeridaId,
+      nivelPermiso: NivelPermiso.AUXILIAR,
+    });
+
+    const resBaja = await request(app.getHttpServer())
+      .patch(`/personas/${objetivoId}/estatus`)
+      .send({ estatus: 'BAJA', motivoBaja: 'RENUNCIA' })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(actorAdminId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+    expect(resBaja.status).toBe(200);
+
+    const usuarioTrasBaja = await prisma.usuario.findUnique({
+      where: { id: objetivoId },
+      select: { activo: true },
+    });
+    expect(usuarioTrasBaja?.activo).toBe(false);
+
+    const resReingreso = await request(app.getHttpServer())
+      .patch(`/personas/${objetivoId}/estatus`)
+      .send({ estatus: 'ACTIVO' })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(actorAdminId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+    expect(resReingreso.status).toBe(200);
+
+    const usuarioTrasReingreso = await prisma.usuario.findUnique({
+      where: { id: objetivoId },
+      select: { activo: true },
+    });
+    expect(usuarioTrasReingreso?.activo).toBe(true);
+  });
+
+  it('motivoBaja fuera del enum -> 400 VALIDATION_ERROR', async () => {
+    const objetivoId = await crearAdministrativoFixture({
+      sedeId: sedeMeridaId,
+      nivelPermiso: NivelPermiso.AUXILIAR,
+    });
+
+    const res = await request(app.getHttpServer())
+      .patch(`/personas/${objetivoId}/estatus`)
+      .send({ estatus: 'BAJA', motivoBaja: 'NO_EXISTE' })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(actorAdminId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+
+    expect(res.status).toBe(400);
+    expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+  });
+
+  it('tipoLicencia fuera del enum -> 400 VALIDATION_ERROR', async () => {
+    const objetivoId = await crearAdministrativoFixture({
+      sedeId: sedeMeridaId,
+      nivelPermiso: NivelPermiso.AUXILIAR,
+    });
+
+    const res = await request(app.getHttpServer())
+      .patch(`/personas/${objetivoId}/estatus`)
+      .send({ estatus: 'LICENCIA', tipoLicencia: 'NO_EXISTE' })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(actorAdminId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+
+    expect(res.status).toBe(400);
+    expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
   });
 });
