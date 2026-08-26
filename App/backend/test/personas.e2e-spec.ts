@@ -68,6 +68,14 @@ describe('PersonasController — POST /personas (e2e)', () => {
   const kid = 'test-key-1';
   const alg = 'ES256';
 
+  // Cleanup real (corrección 2026-08-25 — este spec acumulaba usuarios de
+  // prueba reales sin límite en la DB de dev, ver `documentacion_de_agentes/
+  // ESTADO.md`). Cada `usuarioId` real creado en este archivo (tanto los 3
+  // fixtures de `beforeAll` como cada alta exitosa vía `POST /personas`) se
+  // agrega aquí; `afterAll` los borra al final. Acotado a los ids que ESTE
+  // archivo crea — nunca un `deleteMany` amplio por patrón de email/nombre.
+  const usuarioIdsCreados: string[] = [];
+
   async function firmarToken(
     claims: Record<string, unknown>,
     sub: string,
@@ -299,9 +307,9 @@ describe('PersonasController — POST /personas (e2e)', () => {
     // Fixtures nuevos (observación A de QA — Día 11): actores reales con
     // `nivelPermiso` AUXILIAR y SUPER_ADMIN — el seed no trae ninguno de los
     // dos. `usuarioId` con email aleatorio (`randomUUID()`), no chocan entre
-    // corridas repetidas del suite; no se limpian en `afterAll` porque el
-    // resto de este archivo tampoco limpia lo que crea (ej. los alumnos de
-    // "alta exitosa"), mismo criterio ya establecido en este spec.
+    // corridas repetidas del suite; se limpian en `afterAll` junto con el
+    // resto de lo que este archivo crea (ver `usuarioIdsCreados` arriba —
+    // corrección 2026-08-25, antes no se limpiaban).
     const auxiliar = await prisma.usuario.create({
       data: {
         id: randomUUID(),
@@ -325,6 +333,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
       },
     });
     actorAuxiliarId = auxiliar.id;
+    usuarioIdsCreados.push(actorAuxiliarId);
 
     const superAdmin = await prisma.usuario.create({
       data: {
@@ -349,6 +358,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
       },
     });
     actorSuperAdminId = superAdmin.id;
+    usuarioIdsCreados.push(actorSuperAdminId);
 
     // Fixture nuevo (pendiente de QA — Día 11, re-auditoría de correcciones:
     // "el branch actor ADMINISTRATIVO SIN fila en PerfilAdministrativo no
@@ -367,6 +377,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
       },
     });
     actorSinPerfilId = sinPerfil.id;
+    usuarioIdsCreados.push(actorSinPerfilId);
   });
 
   afterEach(() => {
@@ -375,6 +386,14 @@ describe('PersonasController — POST /personas (e2e)', () => {
   });
 
   afterAll(async () => {
+    if (usuarioIdsCreados.length > 0) {
+      await prisma.registroAuditoria.deleteMany({
+        where: { usuarioId: { in: usuarioIdsCreados } },
+      });
+      await prisma.usuario.deleteMany({
+        where: { id: { in: usuarioIdsCreados } },
+      });
+    }
     await app.close();
   });
 
@@ -403,6 +422,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
     const body = res.body as AltaPersonaBody;
     expect(body.data.usuario.rol).toBe(RolUsuario.ALUMNO);
     expect(body.data.usuario.sedeId).toBe(sedeMeridaId);
+    usuarioIdsCreados.push(body.data.usuario.id);
     expect(typeof body.data.temporaryPassword).toBe('string');
     expect(body.data.temporaryPassword.length).toBeGreaterThanOrEqual(16);
 
@@ -498,6 +518,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
 
     const body1 = res1.body as AltaPersonaBody;
     const body2 = res2.body as AltaPersonaBody;
+    usuarioIdsCreados.push(body1.data.usuario.id, body2.data.usuario.id);
 
     expect(body1.data.matricula).toMatch(/^A\d{9}$/);
     expect(body2.data.matricula).toMatch(/^A\d{9}$/);
@@ -740,6 +761,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
     expect(res.status).toBe(201);
     const body = res.body as AltaPersonaBody;
     expect(body.data.usuario.rol).toBe(RolUsuario.ADMINISTRATIVO);
+    usuarioIdsCreados.push(body.data.usuario.id);
     expect(createUser).toHaveBeenCalledTimes(1);
   });
 
@@ -772,6 +794,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
 
       expect(res.status).toBe(201);
       const body = res.body as AltaPersonaBody;
+      usuarioIdsCreados.push(body.data.usuario.id);
       // Contador SIEMPRE presente desde el primer registro (nunca
       // `${base}@...` sin número).
       expect(body.data.email).toBe(`${baseEsperada}1@acceso.cesp.edu.mx`);
@@ -798,6 +821,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
         });
       expect(res1.status).toBe(201);
       const body1 = res1.body as AltaPersonaBody;
+      usuarioIdsCreados.push(body1.data.usuario.id);
       expect(body1.data.email).toBe(`${baseEsperada}1@acceso.cesp.edu.mx`);
 
       // Segunda alta, MISMO nombre+apellidoPaterno exacto (mismo caso que
@@ -816,6 +840,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
         });
       expect(res2.status).toBe(201);
       const body2 = res2.body as AltaPersonaBody;
+      usuarioIdsCreados.push(body2.data.usuario.id);
       expect(body2.data.email).toBe(`${baseEsperada}2@acceso.cesp.edu.mx`);
       expect(body2.data.email).not.toBe(body1.data.email);
     });
@@ -837,6 +862,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
 
       expect(res.status).toBe(201);
       const body = res.body as AltaPersonaBody;
+      usuarioIdsCreados.push(body.data.usuario.id);
       expect(body.data.email).toMatch(/^[a-z]+\d+@acceso\.cesp\.edu\.mx$/);
       // "José..." -> "jose..." (sin tilde), primera letra de
       // "Bustamante..." -> "b".
@@ -869,6 +895,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
 
       expect(res.status).toBe(201);
       const body = res.body as AltaPersonaBody;
+      usuarioIdsCreados.push(body.data.usuario.id);
 
       const perfilAlumno = await prisma.perfilAlumno.findUniqueOrThrow({
         where: { usuarioId: body.data.usuario.id },
@@ -902,6 +929,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
 
       expect(res.status).toBe(201);
       const body = res.body as AltaPersonaBody;
+      usuarioIdsCreados.push(body.data.usuario.id);
 
       const perfilAlumno = await prisma.perfilAlumno.findUniqueOrThrow({
         where: { usuarioId: body.data.usuario.id },
@@ -990,6 +1018,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
 
       expect(res.status).toBe(201);
       const body = res.body as AltaPersonaBody;
+      usuarioIdsCreados.push(body.data.usuario.id);
 
       const perfilAlumno = await prisma.perfilAlumno.findUniqueOrThrow({
         where: { usuarioId: body.data.usuario.id },
@@ -1024,6 +1053,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
 
       expect(res.status).toBe(201);
       const body = res.body as AltaPersonaBody;
+      usuarioIdsCreados.push(body.data.usuario.id);
 
       const perfilMaestro = await prisma.perfilMaestro.findUniqueOrThrow({
         where: { usuarioId: body.data.usuario.id },
@@ -1054,6 +1084,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
 
       expect(res.status).toBe(201);
       const body = res.body as AltaPersonaBody;
+      usuarioIdsCreados.push(body.data.usuario.id);
 
       const perfilAdministrativo =
         await prisma.perfilAdministrativo.findUniqueOrThrow({

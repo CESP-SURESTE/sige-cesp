@@ -78,9 +78,10 @@ interface ListadoBody<T> {
  * Cada fixture usa un `marker` único (`randomUUID().slice(0, 8)`) embebido
  * en `nombres`/`cedulaProfesional` para que las aserciones de `buscar` y
  * `total` sean exactas sin importar cuántas otras filas ya existan en la
- * sede por corridas previas de este u otros specs (este proyecto no limpia
- * fixtures en `afterAll`, mismo criterio ya establecido en
- * `test/personas.e2e-spec.ts`).
+ * sede por corridas previas de OTROS specs (este archivo SÍ limpia sus
+ * propios fixtures en `afterAll` desde 2026-08-25 — corrección real, antes
+ * no lo hacía, ver `usuarioIdsCreados` abajo y `documentacion_de_agentes/
+ * ESTADO.md`; `test/personas.e2e-spec.ts` tiene el mismo mecanismo).
  */
 describe('PersonasController — GET /personas (e2e)', () => {
   let app: INestApplication<App>;
@@ -101,6 +102,16 @@ describe('PersonasController — GET /personas (e2e)', () => {
   let jose: typeof import('jose');
   const kid = 'test-key-1';
   const alg = 'ES256';
+
+  // Cleanup real (corrección 2026-08-25 — este spec acumulaba usuarios de
+  // prueba reales sin límite en la DB de dev, ver `documentacion_de_agentes/
+  // ESTADO.md`). Cada `usuarioId` real creado directo por `prisma.usuario
+  // .create()` en este archivo (fixtures MAESTRO/ADMINISTRATIVO, tanto los
+  // del `beforeAll` como los del describe de `GET /personas/resumen`) se
+  // agrega aquí; `afterAll` los borra al final. NUNCA incluye a los actores
+  // REALES del seed (`ana.canul`, `jorge.ek`, `luis.chan`,
+  // `mariajose.pech`) — esos no los crea este archivo, solo los consulta.
+  const usuarioIdsCreados: string[] = [];
 
   async function firmarToken(
     sub: string,
@@ -211,6 +222,7 @@ describe('PersonasController — GET /personas (e2e)', () => {
           estatus: params.estatus,
         },
       });
+      usuarioIdsCreados.push(usuario.id);
       return usuario.id;
     }
 
@@ -289,6 +301,7 @@ describe('PersonasController — GET /personas (e2e)', () => {
           nivelPermiso: params.nivelPermiso ?? NivelPermiso.AUXILIAR,
         },
       });
+      usuarioIdsCreados.push(usuario.id);
       return usuario.id;
     }
 
@@ -330,13 +343,23 @@ describe('PersonasController — GET /personas (e2e)', () => {
   }, 30000);
 
   afterAll(async () => {
+    if (usuarioIdsCreados.length > 0) {
+      await prisma.registroAuditoria.deleteMany({
+        where: { usuarioId: { in: usuarioIdsCreados } },
+      });
+      await prisma.usuario.deleteMany({
+        where: { id: { in: usuarioIdsCreados } },
+      });
+    }
     await app.close();
   });
 
   it('rol=ALUMNO -> 200, solo alumnos (seed real, luis.chan) con el shape esperado', async () => {
     // `buscar` por matrícula exacta — aísla el resultado de cualquier otro
-    // alumno acumulado en la sede por corridas previas de este u otros
-    // specs (este proyecto no limpia fixtures en `afterAll`).
+    // alumno acumulado en la sede por corridas previas de este u otros specs
+    // (fixtures de este archivo sí se limpian en `afterAll`, pero fixtures
+    // de OTROS specs que también siembren alumnos en Mérida podrían seguir
+    // presentes).
     const res = await request(app.getHttpServer())
       .get('/personas')
       .query({ rol: 'ALUMNO', buscar: 'MID-2026-0001' })
@@ -822,9 +845,10 @@ describe('PersonasController — GET /personas (e2e)', () => {
    * en Mérida (`luis.chan`/`ana.canul`, usados arriba); los conteos de este
    * describe se comparan contra lo que el propio endpoint reporta al inicio
    * de esta suite en vez de contra números fijos, para no quedar frágiles
-   * ante fixtures de otras corridas (mismo criterio de "no limpiar en
-   * afterAll" ya documentado arriba en este archivo) — solo se valida que
-   * agregar un maestro nuevo en Mérida SUMA exactamente 1 al conteo previo.
+   * ante fixtures de OTROS specs que no limpian los suyos — solo se valida
+   * que agregar un maestro nuevo en Mérida SUMA exactamente 1 al conteo
+   * previo. Los fixtures que este describe crea (`nuevoUsuario`/`maestro`
+   * abajo) sí se limpian en el `afterAll` de este archivo (2026-08-25).
    */
   describe('GET /personas/resumen', () => {
     interface ResumenBody {
@@ -866,6 +890,7 @@ describe('PersonasController — GET /personas (e2e)', () => {
           sedeId: sedeMeridaId,
         },
       });
+      usuarioIdsCreados.push(nuevoUsuario.id);
       const marcaNueva = `QARESUMEN${randomUUID().slice(0, 8)}`;
       await prisma.perfilMaestro.create({
         data: {
@@ -998,10 +1023,10 @@ describe('PersonasController — GET /personas (e2e)', () => {
       // Confirma que las 2 sedes tienen datos reales (no ambas en 0, lo que
       // haría la comparación de arriba trivial/sin valor). No se compara
       // que los totales sean DISTINTOS entre sedes a propósito — en una DB
-      // recién sembrada (antes de que otros specs de este dominio acumulen
-      // fixtures, ver nota de "no limpiar en afterAll" arriba) ambas sedes
-      // parten con el mismo número de alumnos reales de `seed.ts` (8 y 8),
-      // así que esa igualdad sería un falso negativo, no un bug.
+      // recién sembrada (antes de que otros specs de este dominio agreguen
+      // fixtures propios que tampoco tocan este archivo) ambas sedes parten
+      // con el mismo número de alumnos reales de `seed.ts` (8 y 8), así que
+      // esa igualdad sería un falso negativo, no un bug.
       expect(alumnosMeridaDirecto).toBeGreaterThan(0);
       expect(alumnosValladolidDirecto).toBeGreaterThan(0);
     });
@@ -1015,6 +1040,7 @@ describe('PersonasController — GET /personas (e2e)', () => {
           sedeId: sedeMeridaId,
         },
       });
+      usuarioIdsCreados.push(maestro.id);
 
       const res = await request(app.getHttpServer())
         .get('/personas/resumen')

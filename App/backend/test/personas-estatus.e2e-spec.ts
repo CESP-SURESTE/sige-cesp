@@ -41,8 +41,9 @@ interface ErrorBody {
  * Fixtures propios (actores con distinto `nivelPermiso` + objetivos)
  * dedicados a este archivo — NO se reutilizan/mutan usuarios reales del seed
  * (`prisma/seed.ts`) para no afectar las aserciones de otros specs que sí
- * dependen de su estado original (este proyecto no limpia fixtures en
- * `afterAll`, mismo criterio ya establecido en el resto del dominio).
+ * dependen de su estado original. Sí se limpian en `afterAll` desde
+ * 2026-08-25 (corrección real, antes no lo hacía — ver `usuarioIdsCreados`
+ * abajo y `documentacion_de_agentes/ESTADO.md`).
  */
 describe('PersonasController — PATCH /personas/:id/estatus (e2e)', () => {
   let app: INestApplication<App>;
@@ -58,6 +59,14 @@ describe('PersonasController — PATCH /personas/:id/estatus (e2e)', () => {
   let jose: typeof import('jose');
   const kid = 'test-key-1';
   const alg = 'ES256';
+
+  // Cleanup real (corrección 2026-08-25 — este spec acumulaba usuarios de
+  // prueba reales sin límite en la DB de dev, ver `documentacion_de_agentes/
+  // ESTADO.md`). Cada `usuarioId` real creado en este archivo (los 3 actores
+  // de `beforeAll`, el alumno fixture de `beforeAll`, y cada `objetivoId`
+  // creado dentro de cada `it()`) se agrega aquí vía el helper
+  // `crearAdministrativoFixture`; `afterAll` los borra al final.
+  const usuarioIdsCreados: string[] = [];
 
   async function firmarToken(
     sub: string,
@@ -103,6 +112,7 @@ describe('PersonasController — PATCH /personas/:id/estatus (e2e)', () => {
         nivelPermiso: params.nivelPermiso,
       },
     });
+    usuarioIdsCreados.push(usuario.id);
     return usuario.id;
   }
 
@@ -187,9 +197,18 @@ describe('PersonasController — PATCH /personas/:id/estatus (e2e)', () => {
       },
     });
     alumnoMeridaId = usuarioAlumno.id;
+    usuarioIdsCreados.push(alumnoMeridaId);
   }, 30000);
 
   afterAll(async () => {
+    if (usuarioIdsCreados.length > 0) {
+      await prisma.registroAuditoria.deleteMany({
+        where: { usuarioId: { in: usuarioIdsCreados } },
+      });
+      await prisma.usuario.deleteMany({
+        where: { id: { in: usuarioIdsCreados } },
+      });
+    }
     await app.close();
   });
 

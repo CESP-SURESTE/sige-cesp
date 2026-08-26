@@ -67,6 +67,13 @@ describe('PersonasController — POST /personas + correo de bienvenida (e2e)', (
   const alg = 'ES256';
   const flagOriginal = process.env.MAILGUN_ENVIOS_HABILITADO;
 
+  // Cleanup real (corrección 2026-08-25 — este spec acumulaba usuarios de
+  // prueba reales sin límite en la DB de dev, ver `documentacion_de_agentes/
+  // ESTADO.md`). Cada `usuarioId` real creado por las 3 altas exitosas de
+  // este archivo se agrega aquí; `afterAll` los borra al final. Acotado a
+  // los ids que ESTE archivo crea.
+  const usuarioIdsCreados: string[] = [];
+
   async function tokenAdmin(): Promise<string> {
     return new jose.SignJWT({
       role: 'authenticated',
@@ -207,6 +214,14 @@ describe('PersonasController — POST /personas + correo de bienvenida (e2e)', (
 
   afterAll(async () => {
     process.env.MAILGUN_ENVIOS_HABILITADO = flagOriginal;
+    if (usuarioIdsCreados.length > 0) {
+      await prisma.registroAuditoria.deleteMany({
+        where: { usuarioId: { in: usuarioIdsCreados } },
+      });
+      await prisma.usuario.deleteMany({
+        where: { id: { in: usuarioIdsCreados } },
+      });
+    }
     await app.close();
   });
 
@@ -222,6 +237,7 @@ describe('PersonasController — POST /personas + correo de bienvenida (e2e)', (
 
     expect(res.status).toBe(201);
     const body = res.body as AltaPersonaBody;
+    usuarioIdsCreados.push(body.data.usuario.id);
 
     expect(mailFetch).toHaveBeenCalledTimes(1);
     const [url, init] = mailFetch.mock.calls[0] as [string, RequestInit];
@@ -255,6 +271,7 @@ describe('PersonasController — POST /personas + correo de bienvenida (e2e)', (
 
       expect(res.status).toBe(201);
       const body = res.body as AltaPersonaBody;
+      usuarioIdsCreados.push(body.data.usuario.id);
       expect(body.data.usuario.email).toBe(body.data.email);
       expect(typeof body.data.temporaryPassword).toBe('string');
       expect(body.data.temporaryPassword.length).toBeGreaterThanOrEqual(16);
@@ -294,6 +311,7 @@ describe('PersonasController — POST /personas + correo de bienvenida (e2e)', (
 
       expect(res.status).toBe(201);
       const body = res.body as AltaPersonaBody;
+      usuarioIdsCreados.push(body.data.usuario.id);
       expect(typeof body.data.temporaryPassword).toBe('string');
     } finally {
       consoleErrorSpy.mockRestore();
