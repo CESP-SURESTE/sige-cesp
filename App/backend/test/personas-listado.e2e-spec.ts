@@ -3,7 +3,12 @@ import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import type { App } from 'supertest/types';
-import { EstatusEmpleado, RolUsuario } from '@prisma/client';
+import {
+  EstatusEmpleado,
+  NivelPermiso,
+  PuestoAdministrativo,
+  RolUsuario,
+} from '@prisma/client';
 import { AppModule } from '../src/app.module';
 import { SEDE_GUARD_ENV_OVERRIDE } from '../src/common/guards/sede.guard';
 import { loadEnv } from '../src/load-env';
@@ -35,6 +40,17 @@ interface MaestroListItem {
   apellidoPaterno: string;
   apellidoMaterno: string | null;
   cedulaProfesional: string | null;
+  estatus: string;
+  activo: boolean;
+}
+
+interface AdministrativoListItem {
+  usuarioId: string;
+  nombres: string;
+  apellidoPaterno: string;
+  apellidoMaterno: string | null;
+  puesto: string;
+  nivelPermiso: string;
   estatus: string;
   activo: boolean;
 }
@@ -79,6 +95,8 @@ describe('PersonasController — GET /personas (e2e)', () => {
   let alumnoValladolidMatricula: string;
   let markerMerida: string;
   let markerValladolid: string;
+  let markerAdminMerida: string;
+  let markerAdminValladolid: string;
   let privateKey: CryptoKey;
   let jose: typeof import('jose');
   const kid = 'test-key-1';
@@ -234,10 +252,81 @@ describe('PersonasController — GET /personas (e2e)', () => {
       nombres: `Fixture ${markerValladolid}`,
       estatus: EstatusEmpleado.ACTIVO,
     });
+
+    // --- Fixtures ADMINISTRATIVO en Mérida (búsqueda/estatus/paginación) ---
+    // Fase 10 (unificación CRUD admin) — mismo patrón de fixtures que
+    // MAESTRO arriba, sin un campo tipo `cedulaProfesional`
+    // (`PerfilAdministrativo` no tiene un identificador externo
+    // equivalente, `buscar` solo cubre nombres/apellidos acá).
+    markerAdminMerida = `QA28MID${randomUUID().slice(0, 8)}`;
+
+    async function crearAdministrativoFixture(params: {
+      sedeId: string;
+      apellidoPaterno: string;
+      nombres: string;
+      estatus: EstatusEmpleado;
+      nivelPermiso?: NivelPermiso;
+    }) {
+      const usuario = await prisma.usuario.create({
+        data: {
+          id: randomUUID(),
+          email: `fixture.listado.admin.${randomUUID()}@example.com`,
+          rol: RolUsuario.ADMINISTRATIVO,
+          sedeId: params.sedeId,
+        },
+      });
+      await prisma.perfilAdministrativo.create({
+        data: {
+          usuarioId: usuario.id,
+          nombres: params.nombres,
+          apellidoPaterno: params.apellidoPaterno,
+          curp: `FX${randomUUID().slice(0, 16).toUpperCase()}`,
+          correoPersonal: `fixture.listado.admin.personal.${randomUUID()}@example.com`,
+          telefono: '9990009999',
+          fechaContratacion: new Date('2024-01-01'),
+          estatus: params.estatus,
+          puesto: PuestoAdministrativo.AUXILIAR,
+          nivelPermiso: params.nivelPermiso ?? NivelPermiso.AUXILIAR,
+        },
+      });
+      return usuario.id;
+    }
+
+    // 3 administrativos con el mismo marker en `nombres`, apellidoPaterno
+    // distinto (orden esperado ascendente: Aaron, Beltran, Castro) y estatus
+    // variado.
+    await crearAdministrativoFixture({
+      sedeId: sedeMeridaId,
+      apellidoPaterno: 'Aaron',
+      nombres: `Fixture ${markerAdminMerida}`,
+      estatus: EstatusEmpleado.ACTIVO,
+    });
+    await crearAdministrativoFixture({
+      sedeId: sedeMeridaId,
+      apellidoPaterno: 'Beltran',
+      nombres: `Fixture ${markerAdminMerida}`,
+      estatus: EstatusEmpleado.BAJA,
+    });
+    await crearAdministrativoFixture({
+      sedeId: sedeMeridaId,
+      apellidoPaterno: 'Castro',
+      nombres: `Fixture ${markerAdminMerida}`,
+      estatus: EstatusEmpleado.LICENCIA,
+    });
+
+    // --- Fixture ADMINISTRATIVO en Valladolid (aislamiento por sede) ---
+    markerAdminValladolid = `QA28VLD${randomUUID().slice(0, 8)}`;
+    await crearAdministrativoFixture({
+      sedeId: sedeValladolidId,
+      apellidoPaterno: 'Uno',
+      nombres: `Fixture ${markerAdminValladolid}`,
+      estatus: EstatusEmpleado.ACTIVO,
+    });
     // Timeout explícito (default de Jest, 5000 ms, no alcanza) — este
     // `beforeAll` hace más round-trips de DB que el resto de los specs de
-    // este dominio (5 lookups + 5 fixtures de MAESTRO, cada una con su
-    // propio `Usuario` + `PerfilMaestro`), sobre la DB real de Supabase.
+    // este dominio (5 lookups + 9 fixtures entre MAESTRO/ADMINISTRATIVO,
+    // cada una con su propio `Usuario` + perfil), sobre la DB real de
+    // Supabase.
   }, 30000);
 
   afterAll(async () => {
@@ -461,10 +550,67 @@ describe('PersonasController — GET /personas (e2e)', () => {
     expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
   });
 
-  it('rol=ADMINISTRATIVO (no válido para este endpoint, Día 19 excluye administrativos) -> 400 VALIDATION_ERROR', async () => {
+  it('rol=ADMINISTRATIVO -> 200, solo trae los administrativos del marker (búsqueda + orden alfabético apellidoPaterno asc)', async () => {
     const res = await request(app.getHttpServer())
       .get('/personas')
-      .query({ rol: 'ADMINISTRATIVO' })
+      .query({ rol: 'ADMINISTRATIVO', buscar: markerAdminMerida, limit: 100 })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(adminMeridaId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+
+    expect(res.status).toBe(200);
+    const body = res.body as ListadoBody<AdministrativoListItem>;
+    expect(body.total).toBe(3);
+    expect(body.data.map((a) => a.apellidoPaterno)).toEqual([
+      'Aaron',
+      'Beltran',
+      'Castro',
+    ]);
+    expect(body.data.map((a) => a.estatus)).toEqual([
+      'ACTIVO',
+      'BAJA',
+      'LICENCIA',
+    ]);
+    for (const administrativo of body.data) {
+      expect(Object.keys(administrativo).sort()).toEqual(
+        [
+          'usuarioId',
+          'nombres',
+          'apellidoPaterno',
+          'apellidoMaterno',
+          'puesto',
+          'nivelPermiso',
+          'estatus',
+          'activo',
+        ].sort(),
+      );
+    }
+  });
+
+  it('filtro estatus válido (rol=ADMINISTRATIVO) -> 200, solo el administrativo con ese estatus', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/personas')
+      .query({
+        rol: 'ADMINISTRATIVO',
+        buscar: markerAdminMerida,
+        estatus: 'BAJA',
+      })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(adminMeridaId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+
+    expect(res.status).toBe(200);
+    const body = res.body as ListadoBody<AdministrativoListItem>;
+    expect(body.total).toBe(1);
+    expect(body.data[0].apellidoPaterno).toBe('Beltran');
+  });
+
+  it('estatus inválido para rol=ADMINISTRATIVO (valor de EstatusAcademico, no de EstatusEmpleado) -> 400 VALIDATION_ERROR', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/personas')
+      .query({ rol: 'ADMINISTRATIVO', estatus: 'INSCRITO' })
       .set(
         'Authorization',
         `Bearer ${await firmarToken(adminMeridaId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
@@ -472,6 +618,93 @@ describe('PersonasController — GET /personas (e2e)', () => {
 
     expect(res.status).toBe(400);
     expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+  });
+
+  it('paginación (rol=ADMINISTRATIVO, limit=2) -> page 1 y page 2 correctas, mismo total', async () => {
+    const resPagina1 = await request(app.getHttpServer())
+      .get('/personas')
+      .query({
+        rol: 'ADMINISTRATIVO',
+        buscar: markerAdminMerida,
+        page: 1,
+        limit: 2,
+      })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(adminMeridaId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+
+    expect(resPagina1.status).toBe(200);
+    const body1 = resPagina1.body as ListadoBody<AdministrativoListItem>;
+    expect(body1.page).toBe(1);
+    expect(body1.limit).toBe(2);
+    expect(body1.total).toBe(3);
+    expect(body1.data.map((a) => a.apellidoPaterno)).toEqual([
+      'Aaron',
+      'Beltran',
+    ]);
+
+    const resPagina2 = await request(app.getHttpServer())
+      .get('/personas')
+      .query({
+        rol: 'ADMINISTRATIVO',
+        buscar: markerAdminMerida,
+        page: 2,
+        limit: 2,
+      })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(adminMeridaId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+
+    expect(resPagina2.status).toBe(200);
+    const body2 = resPagina2.body as ListadoBody<AdministrativoListItem>;
+    expect(body2.page).toBe(2);
+    expect(body2.total).toBe(3);
+    expect(body2.data.map((a) => a.apellidoPaterno)).toEqual(['Castro']);
+  });
+
+  it('aislamiento por sede (rol=ADMINISTRATIVO) -> admin de Valladolid no ve los fixtures sembrados en Mérida', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/personas')
+      .query({ rol: 'ADMINISTRATIVO', buscar: markerAdminMerida })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(adminValladolidId, RolUsuario.ADMINISTRATIVO, sedeValladolidId)}`,
+      );
+
+    expect(res.status).toBe(200);
+    const body = res.body as ListadoBody<AdministrativoListItem>;
+    expect(body.total).toBe(0);
+  });
+
+  it('aislamiento por sede (rol=ADMINISTRATIVO) -> admin de Mérida no ve el fixture sembrado en Valladolid', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/personas')
+      .query({ rol: 'ADMINISTRATIVO', buscar: markerAdminValladolid })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(adminMeridaId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+
+    expect(res.status).toBe(200);
+    const body = res.body as ListadoBody<AdministrativoListItem>;
+    expect(body.total).toBe(0);
+  });
+
+  it('aislamiento por sede (rol=ADMINISTRATIVO) -> admin de Valladolid SÍ ve su propio fixture (confirma el filtro, no solo la ausencia)', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/personas')
+      .query({ rol: 'ADMINISTRATIVO', buscar: markerAdminValladolid })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(adminValladolidId, RolUsuario.ADMINISTRATIVO, sedeValladolidId)}`,
+      );
+
+    expect(res.status).toBe(200);
+    const body = res.body as ListadoBody<AdministrativoListItem>;
+    expect(body.total).toBe(1);
+    expect(body.data[0].apellidoPaterno).toBe('Uno');
   });
 
   it('aislamiento por sede -> admin de Valladolid no ve los fixtures sembrados en Mérida', async () => {
@@ -534,9 +767,9 @@ describe('PersonasController — GET /personas (e2e)', () => {
 
     expect(res.status).toBe(200);
     const body = res.body as ListadoBody<AlumnoListItem>;
-    expect(
-      body.data.some((a) => a.usuarioId === alumnoValladolidId),
-    ).toBe(false);
+    expect(body.data.some((a) => a.usuarioId === alumnoValladolidId)).toBe(
+      false,
+    );
     expect(
       body.data.some((a) => a.matricula === alumnoValladolidMatricula),
     ).toBe(false);
@@ -754,9 +987,7 @@ describe('PersonasController — GET /personas (e2e)', () => {
       expect(bodyMerida.totalAdministrativosActivos).toBe(
         administrativosMeridaDirecto,
       );
-      expect(bodyValladolid.totalAlumnosActivos).toBe(
-        alumnosValladolidDirecto,
-      );
+      expect(bodyValladolid.totalAlumnosActivos).toBe(alumnosValladolidDirecto);
       expect(bodyValladolid.totalMaestrosActivos).toBe(
         maestrosValladolidDirecto,
       );

@@ -44,8 +44,28 @@ export interface PersonaListItemMaestro {
   activo: boolean;
 }
 
+/**
+ * `GET /personas?rol=ADMINISTRATIVO` (Fase 10, unificación CRUD admin) —
+ * mismo shape resumen que `PersonaListItemMaestro`, sin un identificador
+ * externo equivalente a `cedulaProfesional`/`matricula` (`PerfilAdministrativo`
+ * no tiene uno en el schema, no se inventa acá).
+ */
+export interface PersonaListItemAdministrativo {
+  usuarioId: string;
+  nombres: string;
+  apellidoPaterno: string;
+  apellidoMaterno: string | null;
+  puesto: string;
+  nivelPermiso: NivelPermiso;
+  estatus: EstatusEmpleado;
+  activo: boolean;
+}
+
 export interface ListarPersonasResult {
-  data: PersonaListItemAlumno[] | PersonaListItemMaestro[];
+  data:
+    | PersonaListItemAlumno[]
+    | PersonaListItemMaestro[]
+    | PersonaListItemAdministrativo[];
   page: number;
   limit: number;
   total: number;
@@ -977,11 +997,13 @@ export class PersonasService {
   }
 
   /**
-   * `GET /personas?rol=ALUMNO|MAESTRO&...` — Fase 5, Día 19.
+   * `GET /personas?rol=ALUMNO|MAESTRO|ADMINISTRATIVO&...` — Fase 5, Día 19,
+   * extendido a ADMINISTRATIVO (Fase 10, unificación CRUD admin).
    *
    * "Listados PARA administrativos" = listados que un ADMINISTRATIVO
-   * consulta, de ALUMNO y MAESTRO — NO un listado de ADMINISTRATIVO mismos
-   * (fuera de alcance, ver encargo del día).
+   * consulta, de ALUMNO, MAESTRO y (desde hoy) ADMINISTRATIVO mismos — el
+   * alcance que Día 19 dejaba fuera explícitamente se cierra en esta
+   * extensión.
    *
    * `sedeId` SIEMPRE viene de `@SedeActual()` (JWT, regla 2 de CLAUDE.md
    * raíz) — el controller nunca lo toma de query. El filtro de sede se
@@ -1090,9 +1112,13 @@ export class PersonasService {
       };
     }
 
+    if (query.rol === RolUsuario.ADMINISTRATIVO) {
+      return this.listarAdministrativos(sedeId, query, page, limit, skip);
+    }
+
     // query.rol === RolUsuario.MAESTRO — el DTO (`@IsIn`) ya descarta
-    // cualquier otro valor (incluido ADMINISTRATIVO) con 400 VALIDATION_ERROR
-    // antes de llegar acá.
+    // cualquier otro valor con 400 VALIDATION_ERROR antes de llegar acá
+    // (ALUMNO se resuelve arriba, ADMINISTRATIVO justo arriba).
     if (
       query.estatus &&
       !Object.values(EstatusEmpleado).includes(query.estatus as EstatusEmpleado)
@@ -1165,6 +1191,101 @@ export class PersonasService {
         cedulaProfesional: maestro.cedulaProfesional,
         estatus: maestro.estatus,
         activo: maestro.usuario.activo,
+      })),
+      page,
+      limit,
+      total,
+    };
+  }
+
+  /**
+   * Rama `rol=ADMINISTRATIVO` de `GET /personas` (Fase 10, unificación CRUD
+   * admin) — extraída a método privado (a diferencia de las ramas
+   * ALUMNO/MAESTRO, que quedan inline en `listarPorSedeYRol`) porque
+   * `listarPorSedeYRol` ya es un método largo y esta rama se agrega después,
+   * sin querer reordenar las 2 ramas existentes. MISMO patrón exacto que la
+   * rama MAESTRO: valida `estatus` contra `EstatusEmpleado` (mismo enum que
+   * maestro — `PerfilAdministrativo.estatus` es el mismo tipo), `buscar`
+   * hace `contains` case-insensitive contra `nombres`/`apellidoPaterno`/
+   * `apellidoMaterno` — SIN un campo tipo `cedulaProfesional`/`matricula`
+   * (`PerfilAdministrativo` no tiene un identificador externo equivalente,
+   * no se inventa uno).
+   */
+  private async listarAdministrativos(
+    sedeId: string,
+    query: ListarPersonasQueryDto,
+    page: number,
+    limit: number,
+    skip: number,
+  ): Promise<ListarPersonasResult> {
+    if (
+      query.estatus &&
+      !Object.values(EstatusEmpleado).includes(query.estatus as EstatusEmpleado)
+    ) {
+      throw new BadRequestException({
+        error: 'estatus inválido para rol ADMINISTRATIVO',
+        code: 'VALIDATION_ERROR',
+      });
+    }
+
+    const where: Prisma.PerfilAdministrativoWhereInput = {
+      usuario: { sedeId },
+      ...(query.estatus ? { estatus: query.estatus as EstatusEmpleado } : {}),
+      ...(query.buscar
+        ? {
+            OR: [
+              { nombres: { contains: query.buscar, mode: 'insensitive' } },
+              {
+                apellidoPaterno: {
+                  contains: query.buscar,
+                  mode: 'insensitive',
+                },
+              },
+              {
+                apellidoMaterno: {
+                  contains: query.buscar,
+                  mode: 'insensitive',
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+
+    const [total, administrativos] = await this.prisma.$transaction([
+      this.prisma.perfilAdministrativo.count({ where }),
+      this.prisma.perfilAdministrativo.findMany({
+        where,
+        select: {
+          usuarioId: true,
+          nombres: true,
+          apellidoPaterno: true,
+          apellidoMaterno: true,
+          puesto: true,
+          nivelPermiso: true,
+          estatus: true,
+          usuario: { select: { activo: true } },
+        },
+        orderBy: [
+          { apellidoPaterno: 'asc' },
+          { apellidoMaterno: 'asc' },
+          { nombres: 'asc' },
+        ],
+        skip,
+        take: limit,
+      }),
+    ]);
+
+    return {
+      data: administrativos.map((administrativo) => ({
+        usuarioId: administrativo.usuarioId,
+        nombres: administrativo.nombres,
+        apellidoPaterno: administrativo.apellidoPaterno,
+        apellidoMaterno: administrativo.apellidoMaterno,
+        puesto: administrativo.puesto,
+        nivelPermiso: administrativo.nivelPermiso,
+        estatus: administrativo.estatus,
+        activo: administrativo.usuario.activo,
       })),
       page,
       limit,
@@ -1296,5 +1417,176 @@ export class PersonasService {
       alumnosPorCarrera,
       altasRecientes,
     };
+  }
+
+  /**
+   * `PATCH /personas/:id/estatus` (Fase 10, unificación CRUD admin) — primer
+   * código real del patrón "baja lógica" (regla 3 de CLAUDE.md raíz) que
+   * hasta hoy ningún rol tenía implementado. Genérico para los 3 roles
+   * (ALUMNO/MAESTRO/ADMINISTRATIVO) aunque el frontend de hoy solo lo use
+   * para ADMINISTRATIVO — la validación por rol es gratis acá, no le cierra
+   * la puerta a los otros 2 a futuro.
+   *
+   * `sedeId` (scoping, regla 2) y `actorUsuarioId` (regla 5, auditoría)
+   * SIEMPRE vienen del JWT vía `@SedeActual()`/`@ActorUsuarioId()` en el
+   * controller — nunca del body/param, más allá del `id` objetivo.
+   *
+   * Jerarquía de `NivelPermiso` (regla 7, MISMA tabla/lógica que
+   * `verificarJerarquiaNivelPermiso` de `altaPersona`) — SOLO aplica si el
+   * `Usuario` objetivo es `ADMINISTRATIVO`: un actor `AUXILIAR` no puede
+   * cambiar el estatus de NINGÚN administrativo, y un actor no puede tocar a
+   * un administrativo con `nivelPermiso` mayor al suyo propio. No aplica a
+   * ALUMNO/MAESTRO — `nivelPermiso` es exclusivo de `PerfilAdministrativo`.
+   *
+   * `RegistroAuditoria.accion` usa `AccionAuditoria.CAMBIO_ESTATUS` — a
+   * diferencia de `AuthService.cambiarPassword` (que reutiliza `EDICION`
+   * porque el enum NO tiene un valor dedicado a "cambio de contraseña"), acá
+   * sí existe un valor semánticamente exacto en el enum (`prisma/schema.prisma`,
+   * `AccionAuditoria`) — se usa ese, no `EDICION`.
+   */
+  async cambiarEstatus(
+    id: string,
+    estatus: string,
+    sedeId: string,
+    actorUsuarioId: string,
+  ): Promise<{ ok: true }> {
+    try {
+      const usuario = await this.prisma.usuario.findFirst({
+        where: { id, sedeId },
+        select: {
+          id: true,
+          rol: true,
+          perfilAlumno: { select: { estatusAcademico: true } },
+          perfilMaestro: { select: { estatus: true } },
+          perfilAdministrativo: {
+            select: { estatus: true, nivelPermiso: true },
+          },
+        },
+      });
+
+      if (!usuario) {
+        throw new NotFoundException({
+          error: 'Persona no encontrada en tu sede',
+          code: 'NOT_FOUND',
+        });
+      }
+
+      if (usuario.rol === RolUsuario.ALUMNO) {
+        if (
+          !usuario.perfilAlumno ||
+          !Object.values(EstatusAcademico).includes(estatus as EstatusAcademico)
+        ) {
+          throw new BadRequestException({
+            error: 'estatus inválido para rol ALUMNO',
+            code: 'VALIDATION_ERROR',
+          });
+        }
+      } else {
+        // MAESTRO/ADMINISTRATIVO comparten el mismo enum (`EstatusEmpleado`).
+        const perfilEmpleado =
+          usuario.rol === RolUsuario.MAESTRO
+            ? usuario.perfilMaestro
+            : usuario.perfilAdministrativo;
+
+        if (
+          !perfilEmpleado ||
+          !Object.values(EstatusEmpleado).includes(estatus as EstatusEmpleado)
+        ) {
+          throw new BadRequestException({
+            error: `estatus inválido para rol ${usuario.rol}`,
+            code: 'VALIDATION_ERROR',
+          });
+        }
+
+        if (
+          usuario.rol === RolUsuario.ADMINISTRATIVO &&
+          usuario.perfilAdministrativo
+        ) {
+          const perfilActor = await this.prisma.perfilAdministrativo.findUnique(
+            {
+              where: { usuarioId: actorUsuarioId },
+              select: { nivelPermiso: true },
+            },
+          );
+          const nivelActor = perfilActor?.nivelPermiso ?? NivelPermiso.AUXILIAR;
+
+          if (nivelActor === NivelPermiso.AUXILIAR) {
+            throw new ForbiddenException({
+              error:
+                'Un usuario con nivel AUXILIAR no puede cambiar el estatus de personal administrativo',
+              code: 'NIVEL_PERMISO_INSUFICIENTE',
+            });
+          }
+
+          const rangoActor =
+            PersonasService.JERARQUIA_NIVEL_PERMISO[nivelActor];
+          const rangoObjetivo =
+            PersonasService.JERARQUIA_NIVEL_PERMISO[
+              usuario.perfilAdministrativo.nivelPermiso
+            ];
+
+          if (rangoActor < rangoObjetivo) {
+            throw new ForbiddenException({
+              error:
+                'No tienes nivel de permiso suficiente para cambiar el estatus de este administrativo',
+              code: 'NIVEL_PERMISO_INSUFICIENTE',
+            });
+          }
+        }
+      }
+
+      await this.prisma.$transaction(async (tx) => {
+        if (usuario.rol === RolUsuario.ALUMNO) {
+          await tx.perfilAlumno.update({
+            where: { usuarioId: id },
+            data: { estatusAcademico: estatus as EstatusAcademico },
+          });
+        } else if (usuario.rol === RolUsuario.MAESTRO) {
+          await tx.perfilMaestro.update({
+            where: { usuarioId: id },
+            data: { estatus: estatus as EstatusEmpleado },
+          });
+        } else {
+          await tx.perfilAdministrativo.update({
+            where: { usuarioId: id },
+            data: { estatus: estatus as EstatusEmpleado },
+          });
+        }
+
+        // Regla 5 de CLAUDE.md raíz — RegistroAuditoria solo se crea acá,
+        // automáticamente, dentro de la misma transacción del cambio.
+        await tx.registroAuditoria.create({
+          data: {
+            usuarioId: actorUsuarioId,
+            sedeId,
+            accion: AccionAuditoria.CAMBIO_ESTATUS,
+            entidad: 'Usuario',
+            entidadId: id,
+            detalle: { rol: usuario.rol, estatusNuevo: estatus },
+          },
+        });
+      });
+
+      return { ok: true };
+    } catch (err) {
+      if (
+        err instanceof NotFoundException ||
+        err instanceof BadRequestException ||
+        err instanceof ForbiddenException
+      ) {
+        throw err;
+      }
+
+      // Regla 12 de CLAUDE.md raíz — loguear el error completo server-side
+      // antes de responder, aunque el cliente no reciba el detalle.
+      console.error(
+        '[PersonasService.cambiarEstatus] Error inesperado cambiando estatus:',
+        err,
+      );
+      throw new InternalServerErrorException({
+        error: 'Error inesperado al cambiar el estatus',
+        code: 'SERVER_ERROR',
+      });
+    }
   }
 }

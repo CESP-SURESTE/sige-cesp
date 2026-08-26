@@ -3,6 +3,8 @@ import {
   Controller,
   Get,
   HttpCode,
+  Param,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -13,6 +15,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { SedeActual } from '../common/decorators/sede-actual.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { SedeGuard } from '../common/guards/sede.guard';
+import { CambiarEstatusDto } from './dto/cambiar-estatus.dto';
 import { CrearPersonaDto } from './dto/crear-persona.dto';
 import { ListarPersonasQueryDto } from './dto/listar-personas.query.dto';
 import { PersonasService } from './personas.service';
@@ -55,6 +58,13 @@ import { PersonasService } from './personas.service';
  * agrega esa ruta — no hay conflicto hoy porque no existe `:id` en este
  * controller, pero `resumen` como segmento fijo debe ganarle a cualquier
  * `:id` futuro.
+ *
+ * `PATCH /personas/:id/estatus` — Fase 10 (unificación CRUD admin), primer
+ * código real del patrón "baja lógica" (regla 3 de CLAUDE.md raíz). Mismos
+ * guards que el resto de este controller. `id` es el `Usuario` objetivo (no
+ * el actor); `sedeId`/`actorUsuarioId` siempre del JWT. La jerarquía de
+ * `NivelPermiso` (regla 7) solo aplica cuando el objetivo es
+ * `ADMINISTRATIVO` — ver `PersonasService.cambiarEstatus`.
  */
 @Controller('personas')
 @UseGuards(SedeGuard, RolesGuard)
@@ -90,6 +100,23 @@ export class PersonasController {
   @Roles(RolUsuario.ADMINISTRATIVO)
   async resumen(@SedeActual() sedeId: string) {
     const data = await this.personasService.resumenPorSede(sedeId);
+    return { data };
+  }
+
+  @Patch(':id/estatus')
+  @Roles(RolUsuario.ADMINISTRATIVO)
+  async cambiarEstatus(
+    @Param('id') id: string,
+    @Body() body: CambiarEstatusDto,
+    @SedeActual() sedeId: string,
+    @ActorUsuarioId() actorUsuarioId: string,
+  ) {
+    const data = await this.personasService.cambiarEstatus(
+      id,
+      body.estatus,
+      sedeId,
+      actorUsuarioId,
+    );
     return { data };
   }
 }
