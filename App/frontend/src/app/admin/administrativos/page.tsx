@@ -45,7 +45,24 @@ import { CambiarEstatusModal } from './CambiarEstatusModal';
  * `queryKey: ['admin', 'perfil']` que `app/admin/perfil/page.tsx`, así que
  * React Query reutiliza el caché entre ambas páginas sin duplicar el
  * request) contra `administrativo.usuarioId`.
+ *
+ * TAMBIÉN se oculta si el actor no tiene jerarquía suficiente sobre el
+ * `nivelPermiso` del target (hallazgo Important del review final del plan
+ * de unificación CRUD, 2026-08-25 — el backend YA bloquea esto con `403
+ * NIVEL_PERMISO_INSUFICIENTE`, pero antes de este fix el botón se mostraba
+ * en TODAS las filas de todas formas, así que un `AUXILIAR` lo veía en
+ * cada fila y un `ADMIN` en las de `SUPER_ADMIN`, sabiendo de antemano que
+ * siempre iba a fallar). Mismo criterio de jerarquía que
+ * `PersonasService.JERARQUIA_NIVEL_PERMISO` en el backend — replicado acá
+ * SOLO para UX (ocultar de antemano lo que va a fallar), el backend sigue
+ * siendo la fuente de verdad real, este chequeo del cliente nunca
+ * reemplaza al `403` del servidor.
  */
+const JERARQUIA_NIVEL_PERMISO: Record<NivelPermiso, number> = {
+  AUXILIAR: 0,
+  ADMIN: 1,
+  SUPER_ADMIN: 2,
+};
 export default function AdminAdministrativosPage() {
   const queryClient = useQueryClient();
   const { inputValue, setInputValue, buscar } = useBuscarDebounced();
@@ -174,6 +191,9 @@ export default function AdminAdministrativosPage() {
             <TablaAdministrativos
               administrativos={resultado.data}
               usuarioIdActor={perfilActorQuery.data?.id}
+              nivelPermisoActor={
+                perfilActorQuery.data?.administrativo?.nivelPermiso
+              }
               onCambiarEstatus={setAdministrativoAEditar}
             />
             <div className="mt-4">
@@ -208,6 +228,7 @@ export default function AdminAdministrativosPage() {
 function TablaAdministrativos({
   administrativos,
   usuarioIdActor,
+  nivelPermisoActor,
   onCambiarEstatus,
 }: {
   administrativos: PersonaListItemAdministrativo[];
@@ -216,6 +237,9 @@ function TablaAdministrativos({
    * forma de saber todavía si hay que ocultarlo) y se oculta en cuanto
    * resuelve, si corresponde. */
   usuarioIdActor: string | undefined;
+  /** `nivelPermiso` del actor (`GET /perfil`, sub-objeto `administrativo`)
+   * — mismo `undefined`-mientras-carga que `usuarioIdActor` de arriba. */
+  nivelPermisoActor: NivelPermiso | undefined;
   onCambiarEstatus: (administrativo: PersonaListItemAdministrativo) => void;
 }) {
   return (
@@ -250,15 +274,18 @@ function TablaAdministrativos({
                 <EstadoActivoBadge activo={administrativo.activo} />
               </Td>
               <Td>
-                {administrativo.usuarioId !== usuarioIdActor && (
-                  <button
-                    type="button"
-                    onClick={() => onCambiarEstatus(administrativo)}
-                    className="text-navy hover:underline"
-                  >
-                    Cambiar estatus
-                  </button>
-                )}
+                {administrativo.usuarioId !== usuarioIdActor &&
+                  (nivelPermisoActor === undefined ||
+                    JERARQUIA_NIVEL_PERMISO[nivelPermisoActor] >=
+                      JERARQUIA_NIVEL_PERMISO[administrativo.nivelPermiso]) && (
+                    <button
+                      type="button"
+                      onClick={() => onCambiarEstatus(administrativo)}
+                      className="text-navy hover:underline"
+                    >
+                      Cambiar estatus
+                    </button>
+                  )}
               </Td>
             </tr>
           ))}
