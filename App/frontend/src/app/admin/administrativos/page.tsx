@@ -10,13 +10,16 @@ import {
   cambiarEstatusPersona,
   listarAdministrativos,
   type EstatusEmpleado,
+  type MotivoBaja,
   type NivelPermiso,
   type PersonaListItemAdministrativo,
   type PuestoAdministrativo,
+  type TipoLicencia,
 } from '@/lib/api/personas';
 import { BuscadorFiltro } from '@/components/admin/ui/personas-listado/BuscadorFiltro';
 import { Paginacion } from '@/components/admin/ui/personas-listado/Paginacion';
 import { EstadoActivoBadge } from '@/components/admin/ui/personas-listado/EstadoActivoBadge';
+import { EstatusEmpleadoBadge } from '@/components/admin/ui/personas-listado/EstatusEmpleadoBadge';
 import { useBuscarDebounced } from '@/components/admin/ui/personas-listado/useBuscarDebounced';
 import { usePaginacionFiltrada } from '@/components/admin/ui/personas-listado/usePaginacionFiltrada';
 import { CambiarEstatusModal } from './CambiarEstatusModal';
@@ -123,8 +126,16 @@ export default function AdminAdministrativosPage() {
   });
 
   const cambiarEstatusMutation = useMutation({
-    mutationFn: (vars: { usuarioId: string; estatus: EstatusEmpleado }) =>
-      cambiarEstatusPersona(vars.usuarioId, vars.estatus),
+    mutationFn: (vars: {
+      usuarioId: string;
+      estatus: EstatusEmpleado;
+      tipoLicencia?: TipoLicencia;
+      motivoBaja?: MotivoBaja;
+    }) =>
+      cambiarEstatusPersona(vars.usuarioId, vars.estatus, {
+        tipoLicencia: vars.tipoLicencia,
+        motivoBaja: vars.motivoBaja,
+      }),
     onSuccess: () => {
       toast.success('Estatus actualizado');
       setAdministrativoAEditar(null);
@@ -212,10 +223,11 @@ export default function AdminAdministrativosPage() {
         <CambiarEstatusModal
           administrativo={administrativoAEditar}
           guardando={cambiarEstatusMutation.isPending}
-          onGuardar={(estatusNuevo) =>
+          onGuardar={(estatusNuevo, extra) =>
             cambiarEstatusMutation.mutate({
               usuarioId: administrativoAEditar.usuarioId,
               estatus: estatusNuevo,
+              ...extra,
             })
           }
           onCancelar={() => setAdministrativoAEditar(null)}
@@ -269,7 +281,9 @@ function TablaAdministrativos({
               </Td>
               <Td>{PUESTO_LABEL[administrativo.puesto]}</Td>
               <Td>{NIVEL_PERMISO_LABEL[administrativo.nivelPermiso]}</Td>
-              <Td>{ESTATUS_EMPLEADO_LABEL[administrativo.estatus]}</Td>
+              <Td>
+                <EstatusEmpleadoBadge estatus={administrativo.estatus} />
+              </Td>
               <Td>
                 <EstadoActivoBadge activo={administrativo.activo} />
               </Td>

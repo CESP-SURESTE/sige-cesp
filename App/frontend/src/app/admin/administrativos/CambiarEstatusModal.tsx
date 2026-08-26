@@ -3,7 +3,12 @@
 import { useState } from 'react';
 import { LABEL_CLASS } from '@/components/admin/ui/persona-alta/estilos';
 import { Select } from '@/components/admin/ui/persona-alta/Select';
-import type { EstatusEmpleado, PersonaListItemAdministrativo } from '@/lib/api/personas';
+import type {
+  EstatusEmpleado,
+  MotivoBaja,
+  PersonaListItemAdministrativo,
+  TipoLicencia,
+} from '@/lib/api/personas';
 
 /**
  * `CambiarEstatusModal` — Fase 10 (unificación CRUD admin, Task 5).
@@ -29,10 +34,38 @@ const ESTATUS_EMPLEADO_OPTIONS = (
   Object.entries(ESTATUS_EMPLEADO_LABEL) as Array<[EstatusEmpleado, string]>
 ).map(([value, label]) => ({ value, label }));
 
+const TIPO_LICENCIA_LABEL: Record<TipoLicencia, string> = {
+  VACACIONES: 'Vacaciones',
+  INCAPACIDAD_ENFERMEDAD_GENERAL: 'Incapacidad por enfermedad general',
+  INCAPACIDAD_RIESGO_TRABAJO: 'Incapacidad por riesgo de trabajo',
+  MATERNIDAD: 'Maternidad',
+  PATERNIDAD: 'Paternidad',
+  ADOPCION: 'Adopción',
+  PERMISO_CON_GOCE_SUELDO: 'Permiso con goce de sueldo',
+  PERMISO_SIN_GOCE_SUELDO: 'Permiso sin goce de sueldo',
+  OTRO: 'Otro',
+};
+const TIPO_LICENCIA_OPTIONS = (
+  Object.entries(TIPO_LICENCIA_LABEL) as Array<[TipoLicencia, string]>
+).map(([value, label]) => ({ value, label }));
+
+const MOTIVO_BAJA_LABEL: Record<MotivoBaja, string> = {
+  RENUNCIA: 'Renuncia',
+  DESPIDO: 'Despido',
+  BAJA_TEMPORAL_SALUD: 'Baja temporal por salud',
+  OTRO: 'Otro',
+};
+const MOTIVO_BAJA_OPTIONS = (
+  Object.entries(MOTIVO_BAJA_LABEL) as Array<[MotivoBaja, string]>
+).map(([value, label]) => ({ value, label }));
+
 export interface CambiarEstatusModalProps {
   administrativo: PersonaListItemAdministrativo;
   guardando: boolean;
-  onGuardar: (estatus: EstatusEmpleado) => void;
+  onGuardar: (
+    estatus: EstatusEmpleado,
+    extra: { tipoLicencia?: TipoLicencia; motivoBaja?: MotivoBaja },
+  ) => void;
   onCancelar: () => void;
 }
 
@@ -43,6 +76,12 @@ export function CambiarEstatusModal({
   onCancelar,
 }: CambiarEstatusModalProps) {
   const [estatus, setEstatus] = useState<EstatusEmpleado>(administrativo.estatus);
+  const [tipoLicencia, setTipoLicencia] = useState<TipoLicencia | ''>('');
+  const [motivoBaja, setMotivoBaja] = useState<MotivoBaja | ''>('');
+
+  const faltaCondicional =
+    (estatus === 'LICENCIA' && !tipoLicencia) ||
+    (estatus === 'BAJA' && !motivoBaja);
 
   const nombreCompleto = [
     administrativo.nombres,
@@ -76,6 +115,43 @@ export function CambiarEstatusModal({
           />
         </div>
 
+        {estatus === 'LICENCIA' && (
+          <div className="mt-4">
+            <label htmlFor="tipo-licencia-select" className={LABEL_CLASS}>
+              Tipo de licencia
+            </label>
+            <Select
+              id="tipo-licencia-select"
+              value={tipoLicencia}
+              onChange={(valor) => setTipoLicencia(valor as TipoLicencia)}
+              options={TIPO_LICENCIA_OPTIONS}
+              placeholder="Selecciona un tipo de licencia"
+              disabled={guardando}
+            />
+          </div>
+        )}
+
+        {estatus === 'BAJA' && (
+          <div className="mt-4">
+            <label htmlFor="motivo-baja-select" className={LABEL_CLASS}>
+              Motivo de baja
+            </label>
+            <Select
+              id="motivo-baja-select"
+              value={motivoBaja}
+              onChange={(valor) => setMotivoBaja(valor as MotivoBaja)}
+              options={MOTIVO_BAJA_OPTIONS}
+              placeholder="Selecciona un motivo"
+              disabled={guardando}
+            />
+            {(motivoBaja === 'RENUNCIA' || motivoBaja === 'DESPIDO') && (
+              <p className="mt-2 rounded-lg border border-warning-border bg-warning-bg px-3 py-2 text-xs text-warning">
+                Esto revocará el acceso a la cuenta de este administrativo.
+              </p>
+            )}
+          </div>
+        )}
+
         <div className="mt-6 flex justify-end gap-3">
           <button
             type="button"
@@ -87,8 +163,13 @@ export function CambiarEstatusModal({
           </button>
           <button
             type="button"
-            onClick={() => onGuardar(estatus)}
-            disabled={guardando}
+            onClick={() =>
+              onGuardar(estatus, {
+                tipoLicencia: tipoLicencia || undefined,
+                motivoBaja: motivoBaja || undefined,
+              })
+            }
+            disabled={guardando || faltaCondicional}
             className="rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-navy-deep disabled:opacity-50"
           >
             {guardando ? 'Guardando…' : 'Guardar'}

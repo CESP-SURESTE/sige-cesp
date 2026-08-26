@@ -315,21 +315,44 @@ export function listarAdministrativos(
   );
 }
 
+/** Espejo de `TipoLicencia` (`schema.prisma`) — solo aplica cuando
+ * `estatus: 'LICENCIA'` en `PATCH /personas/:id/estatus`. */
+export type TipoLicencia =
+  | 'VACACIONES'
+  | 'INCAPACIDAD_ENFERMEDAD_GENERAL'
+  | 'INCAPACIDAD_RIESGO_TRABAJO'
+  | 'MATERNIDAD'
+  | 'PATERNIDAD'
+  | 'ADOPCION'
+  | 'PERMISO_CON_GOCE_SUELDO'
+  | 'PERMISO_SIN_GOCE_SUELDO'
+  | 'OTRO';
+
+/** Espejo de `MotivoBaja` (`schema.prisma`) — solo aplica cuando
+ * `estatus: 'BAJA'` en `PATCH /personas/:id/estatus`. */
+export type MotivoBaja = 'RENUNCIA' | 'DESPIDO' | 'BAJA_TEMPORAL_SALUD' | 'OTRO';
+
 /**
- * `PATCH /personas/:id/estatus` (Fase 10, unificación CRUD admin) — cambio
+ * `PATCH /personas/:id/estatus` (Fase 10, unificación CRUD admin; extendido
+ * en el plan "estatus avanzado y borrado de grupos", 2026-08-26) — cambio
  * de estatus genérico (regla 3 de `CLAUDE.md` raíz, baja lógica). `id` es el
  * `Usuario` objetivo — `sedeId`/`actorUsuarioId` los resuelve el backend del
  * JWT, nunca acá. `estatus` viaja tal cual como `string` (el valor real del
  * enum correspondiente al rol del objetivo — `EstatusEmpleado` para el único
  * consumidor de hoy, `app/admin/administrativos/page.tsx`); el backend
  * valida contra el enum correcto según el `rol` del `Usuario` objetivo.
+ * `extra.tipoLicencia`/`extra.motivoBaja` son opcionales — el backend los
+ * valida contra `TipoLicencia`/`MotivoBaja` siempre que vengan presentes, y
+ * revoca `Usuario.activo` automáticamente solo cuando `estatus: 'BAJA'` y
+ * `motivoBaja` es `'RENUNCIA'` o `'DESPIDO'`.
  */
 export function cambiarEstatusPersona(
   usuarioId: string,
   estatus: string,
+  extra?: { tipoLicencia?: string; motivoBaja?: string },
 ): Promise<{ ok: true }> {
   return apiFetchAuth<{ ok: true }>(`/personas/${usuarioId}/estatus`, {
     method: 'PATCH',
-    body: JSON.stringify({ estatus }),
+    body: JSON.stringify({ estatus, ...extra }),
   });
 }
