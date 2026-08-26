@@ -165,8 +165,10 @@ export function CambiarEstatusModal({
             type="button"
             onClick={() =>
               onGuardar(estatus, {
-                tipoLicencia: tipoLicencia || undefined,
-                motivoBaja: motivoBaja || undefined,
+                tipoLicencia:
+                  estatus === 'LICENCIA' ? tipoLicencia || undefined : undefined,
+                motivoBaja:
+                  estatus === 'BAJA' ? motivoBaja || undefined : undefined,
               })
             }
             disabled={guardando || faltaCondicional}
