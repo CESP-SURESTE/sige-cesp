@@ -603,6 +603,14 @@ describe('PersonasController — PATCH /personas/:id/estatus (e2e)', () => {
       select: { activo: true },
     });
     expect(usuarioActualizado?.activo).toBe(false);
+
+    const registro = await prisma.registroAuditoria.findFirst({
+      where: { entidadId: objetivoId, accion: AccionAuditoria.CAMBIO_ESTATUS },
+      orderBy: { fecha: 'desc' },
+    });
+    expect(
+      (registro?.detalle as Record<string, unknown> | null)?.cuentaRevocada,
+    ).toBe(true);
   });
 
   it('reingreso: BAJA/RENUNCIA revoca Usuario.activo, un PATCH posterior a ACTIVO lo reactiva', async () => {
@@ -875,6 +883,14 @@ describe('PersonasController — PATCH /personas/:id/estatus (e2e)', () => {
       select: { activo: true },
     });
     expect(usuario?.activo).toBe(false);
+
+    const registro = await prisma.registroAuditoria.findFirst({
+      where: { entidadId: objetivoId, accion: AccionAuditoria.CAMBIO_ESTATUS },
+      orderBy: { fecha: 'desc' },
+    });
+    expect(
+      (registro?.detalle as Record<string, unknown> | null)?.cuentaRevocada,
+    ).toBe(true);
   });
 
   it('MAESTRO: reingreso vía ACTIVO tras BAJA por RENUNCIA -> 200, reactiva Usuario.activo y NO limpia motivoBaja (rastro histórico)', async () => {
