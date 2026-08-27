@@ -282,7 +282,10 @@ function TablaAdministrativos({
               <Td>{PUESTO_LABEL[administrativo.puesto]}</Td>
               <Td>{NIVEL_PERMISO_LABEL[administrativo.nivelPermiso]}</Td>
               <Td>
-                <EstatusEmpleadoBadge estatus={administrativo.estatus} />
+                <EstatusEmpleadoBadge
+                  estatus={administrativo.estatus}
+                  tipoLicencia={administrativo.tipoLicencia}
+                />
               </Td>
               <Td>
                 <EstadoActivoBadge activo={administrativo.activo} />

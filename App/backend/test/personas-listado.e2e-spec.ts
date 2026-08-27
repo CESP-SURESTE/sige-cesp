@@ -605,6 +605,7 @@ describe('PersonasController — GET /personas (e2e)', () => {
           'puesto',
           'nivelPermiso',
           'estatus',
+          'tipoLicencia',
           'activo',
         ].sort(),
       );

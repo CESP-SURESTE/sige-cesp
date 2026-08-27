@@ -60,6 +60,13 @@ export interface PersonaListItemAdministrativo {
   puesto: string;
   nivelPermiso: NivelPermiso;
   estatus: EstatusEmpleado;
+  /** Solo tiene valor si `estatus === 'LICENCIA'` (feature estética,
+   * 2026-08-26 — tooltip del badge de estatus en el listado). `null` en
+   * cualquier otro estatus, incluyendo el rastro histórico de una licencia
+   * pasada (no se limpia al reactivar, ver Contrato de API de
+   * `PATCH /personas/:id/estatus`) — el frontend solo lo muestra cuando el
+   * estatus actual es LICENCIA. */
+  tipoLicencia: TipoLicencia | null;
   activo: boolean;
 }
 
@@ -1266,6 +1273,7 @@ export class PersonasService {
           puesto: true,
           nivelPermiso: true,
           estatus: true,
+          tipoLicencia: true,
           usuario: { select: { activo: true } },
         },
         orderBy: [
@@ -1287,6 +1295,7 @@ export class PersonasService {
         puesto: administrativo.puesto,
         nivelPermiso: administrativo.nivelPermiso,
         estatus: administrativo.estatus,
+        tipoLicencia: administrativo.tipoLicencia,
         activo: administrativo.usuario.activo,
       })),
       page,

@@ -271,6 +271,10 @@ export interface PersonaListItemAdministrativo {
   puesto: PuestoAdministrativo;
   nivelPermiso: NivelPermiso;
   estatus: EstatusEmpleado;
+  /** Solo tiene valor si `estatus === 'LICENCIA'` (tooltip del badge de
+   * estatus, feature estética 2026-08-26) — `null` en cualquier otro
+   * estatus. */
+  tipoLicencia: TipoLicencia | null;
   activo: boolean;
 }
 
