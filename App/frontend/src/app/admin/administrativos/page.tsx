@@ -20,9 +20,9 @@ import { BuscadorFiltro } from '@/components/admin/ui/personas-listado/BuscadorF
 import { Paginacion } from '@/components/admin/ui/personas-listado/Paginacion';
 import { EstadoActivoBadge } from '@/components/admin/ui/personas-listado/EstadoActivoBadge';
 import { EstatusEmpleadoBadge } from '@/components/admin/ui/personas-listado/EstatusEmpleadoBadge';
+import { CambiarEstatusModal } from '@/components/admin/ui/personas-listado/CambiarEstatusModal';
 import { useBuscarDebounced } from '@/components/admin/ui/personas-listado/useBuscarDebounced';
 import { usePaginacionFiltrada } from '@/components/admin/ui/personas-listado/usePaginacionFiltrada';
-import { CambiarEstatusModal } from './CambiarEstatusModal';
 
 /**
  * Listado de administrativos — Fase 10 (unificación CRUD admin, Task 5).
@@ -221,7 +221,7 @@ export default function AdminAdministrativosPage() {
 
       {administrativoAEditar && (
         <CambiarEstatusModal
-          administrativo={administrativoAEditar}
+          persona={administrativoAEditar}
           guardando={cambiarEstatusMutation.isPending}
           onGuardar={(estatusNuevo, extra) =>
             cambiarEstatusMutation.mutate({

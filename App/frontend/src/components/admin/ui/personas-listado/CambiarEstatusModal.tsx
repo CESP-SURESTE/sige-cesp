@@ -6,20 +6,19 @@ import { Select } from '@/components/admin/ui/persona-alta/Select';
 import type {
   EstatusEmpleado,
   MotivoBaja,
-  PersonaListItemAdministrativo,
   TipoLicencia,
 } from '@/lib/api/personas';
 
 /**
- * `CambiarEstatusModal` — Fase 10 (unificación CRUD admin, Task 5).
+ * `CambiarEstatusModal` — Fase 10 (unificación CRUD admin) / paridad maestros (2026-08-27).
  *
- * Modal chico de cambio de estatus para un administrativo, mismo patrón
- * visual que `app/admin/salones/ConfirmarEliminarSalonModal.tsx` (overlay
- * `fixed inset-0 z-50 ...`, panel `rounded-lg bg-white p-6 shadow-lg
+ * Modal chico de cambio de estatus para una persona (maestro o administrativo),
+ * mismo patrón visual que `app/admin/salones/ConfirmarEliminarSalonModal.tsx`
+ * (overlay `fixed inset-0 z-50 ...`, panel `rounded-lg bg-white p-6 shadow-lg
  * max-w-md`) — no es un modal de confirmación de borrado, así que el botón
  * principal usa el azul (`bg-navy`) de "guardar", no el rojo de "eliminar".
  *
- * Prellenado con el estatus actual del administrativo (`administrativo.estatus`)
+ * Prellenado con el estatus actual de la persona (`persona.estatus`)
  * — el admin puede volver a guardar el mismo valor sin que eso sea un error,
  * el backend simplemente vuelve a escribirlo (idempotente).
  */
@@ -60,7 +59,12 @@ const MOTIVO_BAJA_OPTIONS = (
 ).map(([value, label]) => ({ value, label }));
 
 export interface CambiarEstatusModalProps {
-  administrativo: PersonaListItemAdministrativo;
+  persona: {
+    estatus: EstatusEmpleado;
+    nombres: string;
+    apellidoPaterno: string;
+    apellidoMaterno: string | null;
+  };
   guardando: boolean;
   onGuardar: (
     estatus: EstatusEmpleado,
@@ -70,12 +74,12 @@ export interface CambiarEstatusModalProps {
 }
 
 export function CambiarEstatusModal({
-  administrativo,
+  persona,
   guardando,
   onGuardar,
   onCancelar,
 }: CambiarEstatusModalProps) {
-  const [estatus, setEstatus] = useState<EstatusEmpleado>(administrativo.estatus);
+  const [estatus, setEstatus] = useState<EstatusEmpleado>(persona.estatus);
   const [tipoLicencia, setTipoLicencia] = useState<TipoLicencia | ''>('');
   const [motivoBaja, setMotivoBaja] = useState<MotivoBaja | ''>('');
 
@@ -84,9 +88,9 @@ export function CambiarEstatusModal({
     (estatus === 'BAJA' && !motivoBaja);
 
   const nombreCompleto = [
-    administrativo.nombres,
-    administrativo.apellidoPaterno,
-    administrativo.apellidoMaterno,
+    persona.nombres,
+    persona.apellidoPaterno,
+    persona.apellidoMaterno,
   ]
     .filter(Boolean)
     .join(' ');
@@ -146,7 +150,7 @@ export function CambiarEstatusModal({
             />
             {(motivoBaja === 'RENUNCIA' || motivoBaja === 'DESPIDO') && (
               <p className="mt-2 rounded-lg border border-warning-border bg-warning-bg px-3 py-2 text-xs text-warning">
-                Esto revocará el acceso a la cuenta de este administrativo.
+                Esto revocará el acceso a la cuenta de esta persona.
               </p>
             )}
           </div>
