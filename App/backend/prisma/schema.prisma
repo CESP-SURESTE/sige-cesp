@@ -52,6 +52,8 @@ enum MotivoBaja {
   RENUNCIA
   DESPIDO
   BAJA_TEMPORAL_SALUD
+  FALLECIMIENTO                      // art. 53 fr. II LFT — muerte del trabajador
+  TERMINACION_INCAPACIDAD_PERMANENTE // art. 53 fr. IV LFT — incapacidad/inhabilidad permanente
   OTRO
 }
 

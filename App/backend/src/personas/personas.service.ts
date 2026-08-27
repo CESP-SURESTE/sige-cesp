@@ -215,6 +215,25 @@ export class PersonasService {
   };
 
   /**
+   * Motivos de `BAJA` que extinguen la relación laboral (arts. 47 y 53 LFT) y
+   * por tanto revocan el acceso (`Usuario.activo = false`):
+   * - RENUNCIA / DESPIDO — terminación por voluntad del trabajador / rescisión (art. 47)
+   * - FALLECIMIENTO — art. 53 fr. II
+   * - TERMINACION_INCAPACIDAD_PERMANENTE — art. 53 fr. IV
+   *
+   * `BAJA_TEMPORAL_SALUD` (suspensión, art. 42) y `OTRO` (sin clasificar) NO
+   * revocan: la baja es cosmética hasta que se elija un motivo de terminación
+   * explícito. Fail-safe: cortar acceso es una acción deliberada del admin.
+   */
+  private static readonly MOTIVOS_BAJA_QUE_REVOCAN: ReadonlySet<string> =
+    new Set([
+      MotivoBaja.RENUNCIA,
+      MotivoBaja.DESPIDO,
+      MotivoBaja.FALLECIMIENTO,
+      MotivoBaja.TERMINACION_INCAPACIDAD_PERMANENTE,
+    ]);
+
+  /**
    * Dominio placeholder del login sintético (feature 2026-08-18) — UN SOLO
    * dominio fijo para los 3 roles (pedido explícito: "no hace falta uno
    * distinto por rol ni por sede"). No es un buzón real — nadie recibe
@@ -1445,7 +1464,9 @@ export class PersonasService {
    * (ver `cambiarEstatus`), nunca para `ALUMNO`. `ACTIVO` y `LICENCIA`
    * siempre reactivan el acceso (una licencia no revoca la cuenta, solo
    * documenta una ausencia temporal). `BAJA` revoca el acceso SOLO si
-   * `motivoBaja` es `RENUNCIA`/`DESPIDO` (salida definitiva) — una
+   * `motivoBaja` es uno de los motivos de terminación de la relación laboral
+   * (`MOTIVOS_BAJA_QUE_REVOCAN`: `RENUNCIA`, `DESPIDO`, `FALLECIMIENTO`,
+   * `TERMINACION_INCAPACIDAD_PERMANENTE` — arts. 47 y 53 LFT) — una
    * `BAJA_TEMPORAL_SALUD`/`OTRO` no revoca, la persona sigue de baja
    * "cosmética" con acceso intacto (mismo criterio que la baja de alumno,
    * pero acá sí puede activarse la revocación real cuando el motivo lo
@@ -1456,9 +1477,7 @@ export class PersonasService {
     motivoBaja: string | undefined,
   ): boolean {
     if (estatus !== EstatusEmpleado.BAJA) return true; // ACTIVO y LICENCIA siempre reactivan
-    return !(
-      motivoBaja === MotivoBaja.RENUNCIA || motivoBaja === MotivoBaja.DESPIDO
-    );
+    return !PersonasService.MOTIVOS_BAJA_QUE_REVOCAN.has(motivoBaja ?? '');
   }
 
   /**
