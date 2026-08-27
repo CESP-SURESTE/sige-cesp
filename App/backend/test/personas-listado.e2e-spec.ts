@@ -433,6 +433,7 @@ describe('PersonasController — GET /personas (e2e)', () => {
           'apellidoMaterno',
           'cedulaProfesional',
           'estatus',
+          'tipoLicencia',
           'activo',
         ].sort(),
       );

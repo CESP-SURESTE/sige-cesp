@@ -43,6 +43,13 @@ export interface PersonaListItemMaestro {
   apellidoMaterno: string | null;
   cedulaProfesional: string | null;
   estatus: EstatusEmpleado;
+  /** Solo tiene valor si `estatus === 'LICENCIA'` (feature estética,
+   * 2026-08-27 — tooltip del badge de estatus en el listado de maestros,
+   * paridad con `PersonaListItemAdministrativo`). `null` en cualquier otro
+   * estatus, incluyendo el rastro histórico de una licencia pasada (no se
+   * limpia al reactivar, ver Contrato de API de `PATCH /personas/:id/estatus`)
+   * — el frontend solo lo muestra cuando el estatus actual es LICENCIA. */
+  tipoLicencia: TipoLicencia | null;
   activo: boolean;
 }
 
@@ -1179,6 +1186,7 @@ export class PersonasService {
           apellidoMaterno: true,
           cedulaProfesional: true,
           estatus: true,
+          tipoLicencia: true,
           usuario: { select: { activo: true } },
         },
         orderBy: [
@@ -1199,6 +1207,7 @@ export class PersonasService {
         apellidoMaterno: maestro.apellidoMaterno,
         cedulaProfesional: maestro.cedulaProfesional,
         estatus: maestro.estatus,
+        tipoLicencia: maestro.tipoLicencia,
         activo: maestro.usuario.activo,
       })),
       page,

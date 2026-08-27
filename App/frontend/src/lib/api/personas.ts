@@ -252,6 +252,10 @@ export interface PersonaListItemMaestro {
   apellidoMaterno: string | null;
   cedulaProfesional: string | null;
   estatus: EstatusEmpleado;
+  /** Solo tiene valor si `estatus === 'LICENCIA'` (tooltip del badge de
+   * estatus, feature estética 2026-08-27) — `null` en cualquier otro
+   * estatus. */
+  tipoLicencia: TipoLicencia | null;
   activo: boolean;
 }
 
