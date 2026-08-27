@@ -338,7 +338,13 @@ export type TipoLicencia =
 
 /** Espejo de `MotivoBaja` (`schema.prisma`) — solo aplica cuando
  * `estatus: 'BAJA'` en `PATCH /personas/:id/estatus`. */
-export type MotivoBaja = 'RENUNCIA' | 'DESPIDO' | 'BAJA_TEMPORAL_SALUD' | 'OTRO';
+export type MotivoBaja =
+  | 'RENUNCIA'
+  | 'DESPIDO'
+  | 'BAJA_TEMPORAL_SALUD'
+  | 'FALLECIMIENTO'
+  | 'TERMINACION_INCAPACIDAD_PERMANENTE'
+  | 'OTRO';
 
 /**
  * `PATCH /personas/:id/estatus` (Fase 10, unificación CRUD admin; extendido
