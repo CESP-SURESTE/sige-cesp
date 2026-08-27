@@ -116,6 +116,34 @@ describe('PersonasController — PATCH /personas/:id/estatus (e2e)', () => {
     return usuario.id;
   }
 
+  async function crearMaestroFixture(params: {
+    sedeId: string;
+    estatus?: EstatusEmpleado;
+  }): Promise<string> {
+    const usuario = await prisma.usuario.create({
+      data: {
+        id: randomUUID(),
+        email: `fixture.estatus.maestro.${randomUUID()}@example.com`,
+        rol: RolUsuario.MAESTRO,
+        sedeId: params.sedeId,
+      },
+    });
+    await prisma.perfilMaestro.create({
+      data: {
+        usuarioId: usuario.id,
+        nombres: 'Fixture',
+        apellidoPaterno: 'EstatusMaestro',
+        curp: `FX${randomUUID().slice(0, 16).toUpperCase()}`,
+        correoPersonal: `fixture.estatus.maestro.personal.${randomUUID()}@example.com`,
+        telefono: '9990009999',
+        fechaContratacion: new Date('2024-01-01'),
+        estatus: params.estatus ?? EstatusEmpleado.ACTIVO,
+      },
+    });
+    usuarioIdsCreados.push(usuario.id);
+    return usuario.id;
+  }
+
   beforeAll(async () => {
     jose = await import('jose');
     const keyPair = await jose.generateKeyPair(alg, { extractable: true });
@@ -640,5 +668,140 @@ describe('PersonasController — PATCH /personas/:id/estatus (e2e)', () => {
 
     expect(res.status).toBe(400);
     expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+  });
+
+  // --- Estatus avanzado — target MAESTRO (2026-08-27, paridad con
+  // ADMINISTRATIVO). El backend ya era simétrico (mismos campos en
+  // PerfilMaestro, calcularActivoPorEstatus no distingue rol salvo excluir
+  // ALUMNO) pero no estaba cubierto por e2e — todos los casos de arriba usan
+  // target ADMINISTRATIVO. No hay jerarquía de nivelPermiso para target
+  // MAESTRO, así que el actor ADMIN basta para todos.
+
+  it('MAESTRO: LICENCIA sin tipoLicencia -> 400 VALIDATION_ERROR', async () => {
+    const objetivoId = await crearMaestroFixture({ sedeId: sedeMeridaId });
+
+    const res = await request(app.getHttpServer())
+      .patch(`/personas/${objetivoId}/estatus`)
+      .send({ estatus: 'LICENCIA' })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(actorAdminId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+
+    expect(res.status).toBe(400);
+    expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+  });
+
+  it('MAESTRO: LICENCIA con tipoLicencia -> 200, NO revoca Usuario.activo y persiste tipoLicencia en PerfilMaestro', async () => {
+    const objetivoId = await crearMaestroFixture({ sedeId: sedeMeridaId });
+
+    const res = await request(app.getHttpServer())
+      .patch(`/personas/${objetivoId}/estatus`)
+      .send({ estatus: 'LICENCIA', tipoLicencia: 'MATERNIDAD' })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(actorAdminId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+
+    expect(res.status).toBe(200);
+
+    const perfil = await prisma.perfilMaestro.findUnique({
+      where: { usuarioId: objetivoId },
+      select: { estatus: true, tipoLicencia: true },
+    });
+    expect(perfil?.estatus).toBe('LICENCIA');
+    expect(perfil?.tipoLicencia).toBe('MATERNIDAD');
+
+    const usuario = await prisma.usuario.findUnique({
+      where: { id: objetivoId },
+      select: { activo: true },
+    });
+    expect(usuario?.activo).toBe(true);
+
+    const registro = await prisma.registroAuditoria.findFirst({
+      where: { entidadId: objetivoId, accion: AccionAuditoria.CAMBIO_ESTATUS },
+      orderBy: { fecha: 'desc' },
+    });
+    expect(
+      (registro?.detalle as Record<string, unknown> | null)?.cuentaRevocada,
+    ).toBe(false);
+  });
+
+  it('MAESTRO: BAJA, motivoBaja: RENUNCIA -> 200, revoca Usuario.activo y RegistroAuditoria.detalle marca cuentaRevocada: true', async () => {
+    const objetivoId = await crearMaestroFixture({ sedeId: sedeMeridaId });
+
+    const res = await request(app.getHttpServer())
+      .patch(`/personas/${objetivoId}/estatus`)
+      .send({ estatus: 'BAJA', motivoBaja: 'RENUNCIA' })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(actorAdminId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+
+    expect(res.status).toBe(200);
+
+    const usuario = await prisma.usuario.findUnique({
+      where: { id: objetivoId },
+      select: { activo: true },
+    });
+    expect(usuario?.activo).toBe(false);
+
+    const registro = await prisma.registroAuditoria.findFirst({
+      where: { entidadId: objetivoId, accion: AccionAuditoria.CAMBIO_ESTATUS },
+      orderBy: { fecha: 'desc' },
+    });
+    expect(
+      (registro?.detalle as Record<string, unknown> | null)?.cuentaRevocada,
+    ).toBe(true);
+  });
+
+  it('MAESTRO: BAJA, motivoBaja: BAJA_TEMPORAL_SALUD -> 200, NO revoca Usuario.activo', async () => {
+    const objetivoId = await crearMaestroFixture({ sedeId: sedeMeridaId });
+
+    const res = await request(app.getHttpServer())
+      .patch(`/personas/${objetivoId}/estatus`)
+      .send({ estatus: 'BAJA', motivoBaja: 'BAJA_TEMPORAL_SALUD' })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(actorAdminId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+
+    expect(res.status).toBe(200);
+
+    const usuario = await prisma.usuario.findUnique({
+      where: { id: objetivoId },
+      select: { activo: true },
+    });
+    expect(usuario?.activo).toBe(true);
+  });
+
+  it('MAESTRO: reingreso vía ACTIVO tras BAJA por RENUNCIA -> 200, reactiva Usuario.activo y NO limpia motivoBaja (rastro histórico)', async () => {
+    const objetivoId = await crearMaestroFixture({ sedeId: sedeMeridaId });
+    const auth = `Bearer ${await firmarToken(actorAdminId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`;
+
+    await request(app.getHttpServer())
+      .patch(`/personas/${objetivoId}/estatus`)
+      .send({ estatus: 'BAJA', motivoBaja: 'RENUNCIA' })
+      .set('Authorization', auth);
+
+    const res = await request(app.getHttpServer())
+      .patch(`/personas/${objetivoId}/estatus`)
+      .send({ estatus: 'ACTIVO' })
+      .set('Authorization', auth);
+
+    expect(res.status).toBe(200);
+
+    const usuario = await prisma.usuario.findUnique({
+      where: { id: objetivoId },
+      select: { activo: true },
+    });
+    expect(usuario?.activo).toBe(true);
+
+    const perfil = await prisma.perfilMaestro.findUnique({
+      where: { usuarioId: objetivoId },
+      select: { estatus: true, motivoBaja: true },
+    });
+    expect(perfil?.estatus).toBe('ACTIVO');
+    expect(perfil?.motivoBaja).toBe('RENUNCIA');
   });
 });
