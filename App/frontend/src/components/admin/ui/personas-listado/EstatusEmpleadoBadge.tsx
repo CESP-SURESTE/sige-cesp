@@ -1,4 +1,5 @@
 import type { EstatusEmpleado, TipoLicencia } from '@/lib/api/personas';
+import { Tooltip } from '@/components/admin/ui/Tooltip';
 
 const ESTATUS_EMPLEADO_LABEL: Record<EstatusEmpleado, string> = {
   ACTIVO: 'Activo',
@@ -50,17 +51,21 @@ export function EstatusEmpleadoBadge({
   estatus: EstatusEmpleado;
   tipoLicencia?: TipoLicencia | null;
 }) {
-  const titulo =
-    estatus === 'LICENCIA' && tipoLicencia
-      ? `Motivo: ${TIPO_LICENCIA_LABEL[tipoLicencia]}`
-      : undefined;
-
-  return (
+  const badge = (
     <span
-      title={titulo}
       className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${ESTATUS_EMPLEADO_ESTILO[estatus]}`}
     >
       {ESTATUS_EMPLEADO_LABEL[estatus]}
     </span>
   );
+
+  if (estatus === 'LICENCIA' && tipoLicencia) {
+    return (
+      <Tooltip label={`Motivo: ${TIPO_LICENCIA_LABEL[tipoLicencia]}`}>
+        {badge}
+      </Tooltip>
+    );
+  }
+
+  return badge;
 }
