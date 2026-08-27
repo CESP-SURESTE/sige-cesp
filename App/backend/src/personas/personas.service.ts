@@ -215,8 +215,8 @@ export class PersonasService {
   };
 
   /**
-   * Motivos de `BAJA` que extinguen la relación laboral (arts. 47 y 53 LFT) y
-   * por tanto revocan el acceso (`Usuario.activo = false`):
+   * `MOTIVO_BAJA_REVOCA` — motivos de `BAJA` que extinguen la relación laboral
+   * (arts. 47 y 53 LFT) y por tanto revocan el acceso (`Usuario.activo = false`):
    * - RENUNCIA / DESPIDO — terminación por voluntad del trabajador / rescisión (art. 47)
    * - FALLECIMIENTO — art. 53 fr. II
    * - TERMINACION_INCAPACIDAD_PERMANENTE — art. 53 fr. IV
@@ -224,14 +224,20 @@ export class PersonasService {
    * `BAJA_TEMPORAL_SALUD` (suspensión, art. 42) y `OTRO` (sin clasificar) NO
    * revocan: la baja es cosmética hasta que se elija un motivo de terminación
    * explícito. Fail-safe: cortar acceso es una acción deliberada del admin.
+   *
+   * Es un `Record<MotivoBaja, boolean>` (no un `Set`) a propósito: TS obliga a
+   * clasificar explícitamente cualquier valor nuevo del enum antes de compilar.
    */
-  private static readonly MOTIVOS_BAJA_QUE_REVOCAN: ReadonlySet<string> =
-    new Set([
-      MotivoBaja.RENUNCIA,
-      MotivoBaja.DESPIDO,
-      MotivoBaja.FALLECIMIENTO,
-      MotivoBaja.TERMINACION_INCAPACIDAD_PERMANENTE,
-    ]);
+  private static readonly MOTIVO_BAJA_REVOCA: Record<MotivoBaja, boolean> = {
+    // Terminación de la relación laboral (arts. 47 y 53 LFT) — revocan acceso:
+    [MotivoBaja.RENUNCIA]: true, // terminación por voluntad del trabajador
+    [MotivoBaja.DESPIDO]: true, // rescisión sin responsabilidad para el patrón (art. 47)
+    [MotivoBaja.FALLECIMIENTO]: true, // art. 53 fr. II
+    [MotivoBaja.TERMINACION_INCAPACIDAD_PERMANENTE]: true, // art. 53 fr. IV
+    // Suspensión (art. 42) / sin clasificar — NO revocan (fail-safe):
+    [MotivoBaja.BAJA_TEMPORAL_SALUD]: false,
+    [MotivoBaja.OTRO]: false,
+  };
 
   /**
    * Dominio placeholder del login sintético (feature 2026-08-18) — UN SOLO
@@ -1465,7 +1471,7 @@ export class PersonasService {
    * siempre reactivan el acceso (una licencia no revoca la cuenta, solo
    * documenta una ausencia temporal). `BAJA` revoca el acceso SOLO si
    * `motivoBaja` es uno de los motivos de terminación de la relación laboral
-   * (`MOTIVOS_BAJA_QUE_REVOCAN`: `RENUNCIA`, `DESPIDO`, `FALLECIMIENTO`,
+   * (`MOTIVO_BAJA_REVOCA`: `RENUNCIA`, `DESPIDO`, `FALLECIMIENTO`,
    * `TERMINACION_INCAPACIDAD_PERMANENTE` — arts. 47 y 53 LFT) — una
    * `BAJA_TEMPORAL_SALUD`/`OTRO` no revoca, la persona sigue de baja
    * "cosmética" con acceso intacto (mismo criterio que la baja de alumno,
@@ -1477,7 +1483,9 @@ export class PersonasService {
     motivoBaja: string | undefined,
   ): boolean {
     if (estatus !== EstatusEmpleado.BAJA) return true; // ACTIVO y LICENCIA siempre reactivan
-    return !PersonasService.MOTIVOS_BAJA_QUE_REVOCAN.has(motivoBaja ?? '');
+    const revoca =
+      PersonasService.MOTIVO_BAJA_REVOCA[motivoBaja as MotivoBaja] ?? false;
+    return !revoca;
   }
 
   /**
