@@ -40,9 +40,12 @@ const TIPO_LICENCIA_LABEL: Record<TipoLicencia, string> = {
  * `tipoLicencia` (feature estética, 2026-08-26) es opcional — hoy solo lo
  * pasa `app/admin/administrativos/page.tsx` (único consumidor de este
  * componente que trae el dato en su `PersonaListItem`). Cuando viene y el
- * estatus es `LICENCIA`, se muestra como `title` nativo (mismo mecanismo de
- * tooltip que ya usa `Sidebar.tsx`, sin dependencia nueva) — sin `title`
- * cuando no aplica, para no mostrar un tooltip vacío/redundante.
+ * estatus es `LICENCIA`, el badge se envuelve en `<Tooltip>`
+ * (`components/admin/ui/Tooltip.tsx`, chip propio con tokens de marca) para
+ * el tooltip visual, y además se emite el mismo texto como contenido
+ * `sr-only` dentro del badge para lectores de pantalla. Sin envolver ni
+ * texto extra cuando no aplica. `Sidebar.tsx` sigue con `title` nativo
+ * (fuera de alcance).
  */
 export function EstatusEmpleadoBadge({
   estatus,
@@ -56,6 +59,9 @@ export function EstatusEmpleadoBadge({
       className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${ESTATUS_EMPLEADO_ESTILO[estatus]}`}
     >
       {ESTATUS_EMPLEADO_LABEL[estatus]}
+      {estatus === 'LICENCIA' && tipoLicencia && (
+        <span className="sr-only"> — Motivo: {TIPO_LICENCIA_LABEL[tipoLicencia]}</span>
+      )}
     </span>
   );
 

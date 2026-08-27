@@ -22,15 +22,22 @@ import { createPortal } from 'react-dom';
  * no lo afecta.
  *
  * Solo flip vertical: si no cabe arriba del trigger, se pinta abajo. Vive lo
- * que dura un hover/focus; no escucha `scroll`/`resize` — si el usuario hace
- * scroll con él abierto, el `mouseleave` lo cierra.
+ * que dura un hover/focus; no escucha `scroll`/`resize`. Si el usuario hace
+ * scroll con el tooltip abierto y el badge sigue bajo el cursor, el chip
+ * (`position: fixed`) queda en las coords de apertura hasta el `mouseleave`.
+ * Trade-off aceptado para un tooltip de celda de tabla.
+ *
+ * El disparo por foco de teclado (`onFocus`/`onBlur`) solo funciona si el
+ * `children` es realmente focuseable (button/link/`tabIndex`); un `<span>` no
+ * lo es. El caller actual (`EstatusEmpleadoBadge`) cubre lectores de pantalla
+ * con texto `sr-only` en el badge, no con este path.
  *
  * Árbol admin (regla 11 de CLAUDE.md) — no compartir con el árbol alumno.
  */
 
 interface TooltipProps {
   label: string;
-  /** Trigger — un único elemento React (recibe ref via cloneElement no, ver nota). */
+  /** Trigger — un único elemento React. Se mide el wrapper, no el hijo, así que no hace falta ref forwarding. */
   children: ReactElement;
 }
 
@@ -56,6 +63,7 @@ export function Tooltip({ label, children }: TooltipProps) {
     const el = wrapperRef.current;
     if (!el) return null;
     const rect = el.getBoundingClientRect();
+    // 48 ≈ alto del chip de una línea (~28px) + gap (8px) + margen; asume label de una línea. Sin check del borde inferior — ok para este caller (celda de tabla, label corto).
     const below = rect.top < 48;
     return {
       left: rect.left + rect.width / 2,
@@ -68,6 +76,7 @@ export function Tooltip({ label, children }: TooltipProps) {
     if (openTimer.current) clearTimeout(openTimer.current);
     openTimer.current = setTimeout(() => {
       setCoords(computeCoords());
+      openTimer.current = null;
     }, OPEN_DELAY_MS);
   }, [computeCoords]);
 

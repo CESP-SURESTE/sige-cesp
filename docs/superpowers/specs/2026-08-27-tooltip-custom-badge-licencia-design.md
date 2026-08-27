@@ -54,16 +54,20 @@ export function Tooltip({ label, children }: TooltipProps): React.ReactElement;
 - **Flip vertical:** si `rect.top < 48` (no cabe arriba), se posiciona 8 px por
   debajo del borde inferior del trigger y la flecha apunta hacia arriba.
 - Recalcular la posición en cada apertura (no se cachea). No se escucha `scroll`/
-  `resize` mientras está abierto — el tooltip vive lo que dura un hover, si el
-  usuario hace scroll con el tooltip abierto se cierra por `mouseleave`. Mantiene
-  el componente simple; suficiente para el caso de uso (celda de tabla).
+  `resize` mientras está abierto — si el usuario hace scroll con el tooltip abierto
+  y el badge sigue bajo el cursor, el chip (`position: fixed`) queda en las coords
+  de apertura hasta el `mouseleave`. Mantiene el componente simple; suficiente para
+  el caso de uso (celda de tabla).
 
 **Accesibilidad:**
 
 - El trigger recibe `aria-describedby={tooltipId}` (id generado con `useId()`) solo
   mientras el tooltip está visible.
 - El nodo del tooltip lleva `role="tooltip"` e `id={tooltipId}`.
-- Se dispara con foco de teclado (`onFocus`/`onBlur`), no solo con mouse.
+- Los handlers `onFocus`/`onBlur` existen en el componente pero son inertes para un
+  trigger no focuseable (un `<span>` no recibe foco). El acceso de lectores de
+  pantalla al tipo de licencia lo da un texto `sr-only` incondicional dentro del
+  badge (`EstatusEmpleadoBadge.tsx`), no el tooltip.
 - `Escape` lo cierra (listener agregado solo mientras `visible`).
 - `pointer-events: none` en el nodo del tooltip para que nunca intercepte el mouse.
 

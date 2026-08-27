@@ -13,7 +13,7 @@
 - Sin dependencias nuevas (regla del proyecto). Solo React + `react-dom` + Tailwind.
 - El componente vive en `App/frontend/src/components/admin/ui/` — árbol admin, nunca compartido con el árbol alumno (regla 11 de `CLAUDE.md`).
 - Tokens de marca exactos para el chip: `bg-navy` (`#1b2a4a`), `text-bone` (`#f7f6f3`). Radio `rounded-md`, `text-xs`, `shadow-md`.
-- Accesible: se dispara también con foco de teclado; `role="tooltip"` + `aria-describedby` (id de `useId()`) en el trigger solo mientras está visible; `Escape` cierra; `pointer-events: none` en el nodo del tooltip.
+- Accesible: `role="tooltip"` + `aria-describedby` (id de `useId()`) en el trigger solo mientras está visible; `Escape` cierra; `pointer-events: none` en el nodo del tooltip. Los handlers `onFocus`/`onBlur` existen pero son inertes para un trigger `<span>` no focuseable — el acceso de lectores de pantalla al tipo de licencia lo da un texto `sr-only` incondicional dentro del badge, no el tooltip.
 - Delay de apertura 150 ms; cierre inmediato en `mouseleave` / `blur` / `Escape`.
 - Solo flip vertical (arriba ↔ abajo). Sin flip horizontal.
 - `EstatusEmpleadoBadge`: la condición para mostrar el tooltip sigue siendo exactamente `estatus === 'LICENCIA' && tipoLicencia`; el resto del componente no cambia.
