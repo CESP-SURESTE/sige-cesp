@@ -15,6 +15,7 @@ import { PlatformAdminModule } from './platform-admin/platform-admin.module';
 import { MailModule } from './mail/mail.module';
 import { GruposModule } from './grupos/grupos.module';
 import { SalonesModule } from './salones/salones.module';
+import { MateriasModule } from './materias/materias.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { SalonesModule } from './salones/salones.module';
     PlatformAdminModule,
     GruposModule,
     SalonesModule,
+    MateriasModule,
   ],
   controllers: [AppController],
   providers: [AppService],
