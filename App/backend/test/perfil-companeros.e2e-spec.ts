@@ -82,6 +82,7 @@ describe('PerfilController — GET /perfil/grupo/companeros (e2e)', () => {
         sedeId: opts.sedeId,
       },
     });
+    usuarioIdsCreados.push(usuario.id);
     const matricula = `FXCOMP${randomUUID().slice(0, 10).toUpperCase()}`;
     const perfil = await prisma.perfilAlumno.create({
       data: {
@@ -100,7 +101,6 @@ describe('PerfilController — GET /perfil/grupo/companeros (e2e)', () => {
         telefono: '9990000000',
       },
     });
-    usuarioIdsCreados.push(usuario.id);
     return { usuarioId: usuario.id, perfilId: perfil.id, matricula };
   }
 

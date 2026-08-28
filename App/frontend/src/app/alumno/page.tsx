@@ -39,9 +39,9 @@ import { IconCandado, IconPerfil } from '@/components/alumno/ui/shell/icons';
  * el layout de una sola tarjeta con secciones apiladas se reemplazó por un
  * encabezado (`EncabezadoPerfil`, banner + avatar + badges) y un sidebar de
  * navegación (`SidebarSecciones` + `PanelSeccion`) que muestra una sección a
- * la vez (Datos personales, Sede, Carrera, Contactos), más 4 secciones
- * "próximamente" deshabilitadas. Los datos y el contrato con el backend no
- * cambiaron, solo cómo se presentan.
+ * la vez (Datos personales, Sede, Carrera, Contactos, Compañeros), más 4
+ * secciones "próximamente" deshabilitadas. Los datos y el contrato con el
+ * backend no cambiaron, solo cómo se presentan.
  */
 export default function AlumnoPerfilPage() {
   const {
@@ -282,7 +282,7 @@ function PanelSeccion({
     case 'companeros':
       return <SeccionCompaneros />;
     default: {
-      // Guard de exhaustividad — si se agrega un 5to `SeccionId` sin
+      // Guard de exhaustividad — si se agrega un 6to `SeccionId` sin
       // actualizar este switch, esto deja de compilar en vez de devolver
       // `undefined` en silencio (hallazgo de la revisión final del
       // rediseño, 2026-08-21).
@@ -477,8 +477,11 @@ function ContactoItem({ contacto }: { contacto: ContactoAlumno }) {
 
 /**
  * Compañeros de salón — Fase 11, Día 32. Sección propia con su `useQuery`
- * (dispara al montarse; React Query cachea, volver a la sección no
- * re-fetchea). Consume `GET /perfil/grupo/companeros` — ver
+ * (dispara al montarse). El `QueryClient` de `app/providers.tsx` no fija
+ * `staleTime`, así que al re-montar la sección (o al volver el foco a la
+ * ventana) React Query re-valida en background: el dato cacheado se
+ * pinta al instante, sin parpadeo de "Cargando…", y el refetch corre
+ * detrás. Consume `GET /perfil/grupo/companeros` — ver
  * `lib/api/perfil.ts`. Solo lectura, datos mínimos (nombre + matrícula +
  * semestre). Regla 11: árbol propio de alumno, sin componentes de admin.
  */
@@ -550,7 +553,7 @@ function GrupoCompaneros({ grupo }: { grupo: GrupoConCompaneros }) {
           {grupo.companeros.map((companero: CompaneroItem) => (
             <li key={companero.usuarioId} className="py-2 first:pt-0 last:pb-0">
               <p className="text-sm font-medium text-slate">
-                {nombreCompletoDe(companero)}
+                {apellidosNombreDe(companero)}
               </p>
               <p className="text-xs text-slate/50">
                 {companero.matricula} · Semestre {companero.semestreActual}
@@ -579,9 +582,10 @@ function Campo({
 }
 
 /**
- * Nombre completo del alumno — helper compartido entre `EncabezadoPerfil` y
- * `SeccionDatosPersonales` (antes duplicado en ambos, extraído en la ronda
- * final de fixes del rediseño de 2026-08-21).
+ * Nombre completo del alumno, en formato "Nombres ApellidoPaterno
+ * ApellidoMaterno" — helper para mostrar el nombre de una sola persona
+ * (encabezado, ficha de datos personales). Extraído en la ronda final de
+ * fixes del rediseño de 2026-08-21 para no duplicarlo.
  */
 function nombreCompletoDe(persona: {
   nombres: string;
@@ -591,6 +595,23 @@ function nombreCompletoDe(persona: {
   return [persona.nombres, persona.apellidoPaterno, persona.apellidoMaterno]
     .filter(Boolean)
     .join(' ');
+}
+
+/**
+ * Nombre en formato "Apellidos, Nombres" — para listados ordenados por
+ * apellido en el backend (compañeros de salón, Día 32), donde el token
+ * líder visible debe coincidir con el criterio de orden. Mismo formato que
+ * la lista de alumnos del detalle de grupo en admin, copiado — no
+ * compartido (regla 11: sin componentes entre `app/admin/` y `app/alumno/`).
+ */
+function apellidosNombreDe(persona: {
+  nombres: string;
+  apellidoPaterno: string;
+  apellidoMaterno: string | null;
+}): string {
+  return `${[persona.apellidoPaterno, persona.apellidoMaterno]
+    .filter(Boolean)
+    .join(' ')}, ${persona.nombres}`;
 }
 
 /** Fechas del backend vienen ISO 8601 completo (regla de `CLAUDE.md` raíz) —
