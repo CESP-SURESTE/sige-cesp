@@ -251,3 +251,37 @@ export function obtenerUrlDescargaMalla(): Promise<{
 } | null> {
   return apiFetchAuth('/perfil/malla');
 }
+
+/**
+ * `GET /perfil/grupo/companeros` — Fase 11, Día 32.
+ *
+ * Compañeros matriculados en el/los grupo(s) del propio alumno, agrupados
+ * por grupo. Shape espejo exacto de `PerfilService.obtenerCompanerosDeGrupo`
+ * (`App/backend/src/perfil/perfil.service.ts`) — mismo criterio de "mantener
+ * en sync a mano" que el resto de este archivo. Excluye al propio alumno.
+ * NO filtra por estatus/activo (consistente con Día 30). Array vacío si el
+ * alumno no está en ningún grupo; un grupo puede venir con `companeros: []`
+ * si es el único inscrito.
+ */
+export interface CompaneroItem {
+  usuarioId: string;
+  nombres: string;
+  apellidoPaterno: string;
+  apellidoMaterno: string | null;
+  matricula: string;
+  semestreActual: number;
+}
+
+export interface GrupoConCompaneros {
+  grupoId: string;
+  nombre: string;
+  anioInicio: number;
+  cicloActual: number;
+  carrera: { id: string; nombre: string };
+  salon: { id: string; nombre: string };
+  companeros: CompaneroItem[];
+}
+
+export function obtenerCompaneros(): Promise<GrupoConCompaneros[]> {
+  return apiFetchAuth<GrupoConCompaneros[]>('/perfil/grupo/companeros');
+}
