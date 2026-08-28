@@ -356,6 +356,12 @@ export default function AdminGruposPage() {
                   </td>
                   <td className="px-4 py-3 text-slate/80">{grupo.capacidad}</td>
                   <td className="px-4 py-3">
+                    <Link
+                      href={`/admin/grupos/${grupo.id}`}
+                      className="mr-3 text-navy hover:underline"
+                    >
+                      Alumnos
+                    </Link>
                     <button
                       type="button"
                       onClick={() => setGrupoAEliminar(grupo)}

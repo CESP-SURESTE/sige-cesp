@@ -1,4 +1,5 @@
 import { apiFetchAuth, apiFetchAuthPaginado, type ApiListaPaginada } from './http';
+import type { EstatusAcademico } from './personas';
 
 /**
  * `POST`/`GET /grupos` — Fase 9, Día 28 (backend) / Día 29 (frontend).
@@ -107,4 +108,70 @@ export function listarGrupos(
 
 export function eliminarGrupo(id: string): Promise<{ ok: true }> {
   return apiFetchAuth<{ ok: true }>(`/grupos/${id}`, { method: 'DELETE' });
+}
+
+/**
+ * Fila plana de la tabla de unión `GrupoAlumno` (`schema.prisma`) — lo que
+ * devuelve `POST /grupos/:id/alumnos` (`GruposService.matricular`, Fase 10
+ * Día 30): la fila recién creada, sin relaciones expandidas ni datos del
+ * alumno (para eso está `GrupoAlumnoListItem` de `GET /grupos/:id/alumnos`).
+ */
+export interface GrupoAlumno {
+  id: string;
+  grupoId: string;
+  alumnoId: string;
+  fechaInscripcion: string;
+}
+
+/**
+ * Espejo de `GrupoAlumnoListItem` (`App/backend/src/grupos/grupos.service.ts`,
+ * Fase 10 Día 30) — el shape que devuelve `GET /grupos/:id/alumnos`.
+ * `estatusAcademico` reusa el tipo de `lib/api/personas.ts` (mismo enum del
+ * schema, ya exportado — no se re-declara).
+ */
+export interface GrupoAlumnoListItem {
+  usuarioId: string;
+  nombres: string;
+  apellidoPaterno: string;
+  apellidoMaterno: string | null;
+  matricula: string;
+  semestreActual: number;
+  estatusAcademico: EstatusAcademico;
+  fechaInscripcion: string;
+}
+
+/** `GET /grupos/:id` — Fase 10, Día 31. Mismo shape que un item de `GET /grupos`. */
+export function obtenerGrupo(id: string): Promise<GrupoListItem> {
+  return apiFetchAuth<GrupoListItem>(`/grupos/${id}`);
+}
+
+/** `GET /grupos/:id/alumnos` — Fase 10, Día 30. Sin paginar. */
+export function listarAlumnosDeGrupo(
+  grupoId: string,
+): Promise<GrupoAlumnoListItem[]> {
+  return apiFetchAuth<GrupoAlumnoListItem[]>(`/grupos/${grupoId}/alumnos`);
+}
+
+/**
+ * `POST /grupos/:id/alumnos` — Fase 10, Día 30. Devuelve la fila `GrupoAlumno`
+ * PLANA recién creada (no un `Grupo`).
+ */
+export function matricularAlumno(
+  grupoId: string,
+  usuarioId: string,
+): Promise<GrupoAlumno> {
+  return apiFetchAuth<GrupoAlumno>(`/grupos/${grupoId}/alumnos`, {
+    method: 'POST',
+    body: JSON.stringify({ usuarioId }),
+  });
+}
+
+/** `DELETE /grupos/:id/alumnos/:usuarioId` — Fase 10, Día 30. */
+export function desmatricularAlumno(
+  grupoId: string,
+  usuarioId: string,
+): Promise<{ ok: true }> {
+  return apiFetchAuth<{ ok: true }>(`/grupos/${grupoId}/alumnos/${usuarioId}`, {
+    method: 'DELETE',
+  });
 }
