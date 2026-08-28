@@ -74,6 +74,7 @@ export class GruposController {
     return { data };
   }
 
+  // Si en el futuro se agrega un segmento fijo bajo /grupos (p. ej. GET /grupos/resumen, como GET /personas/resumen), DEBE declararse ANTES de este @Get(':id') dinámico.
   @Get(':id')
   @Roles(RolUsuario.ADMINISTRATIVO)
   async obtener(@Param('id') id: string, @SedeActual() sedeId: string) {

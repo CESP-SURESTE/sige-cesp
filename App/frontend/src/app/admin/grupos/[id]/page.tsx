@@ -255,6 +255,7 @@ export default function AdminGrupoDetallePage() {
                 placeholder="Busca por nombre o matrícula…"
                 autoComplete="off"
                 value={inputValue}
+                displayValue={() => inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
               />
               <ComboboxOptions className="absolute z-20 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-mist bg-white py-1 text-sm shadow-lg focus:outline-none">

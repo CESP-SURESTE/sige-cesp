@@ -816,6 +816,7 @@ describe('GruposController — POST /grupos (e2e)', () => {
         };
       };
       expect(body.data.id).toBe(grupo.id);
+      expect(body.data.nombre).toBe(grupo.nombre);
       expect(body.data.capacidad).toBe(25);
       expect(body.data.carrera.id).toBe(carreraMeridaId);
       expect(typeof body.data.carrera.nombre).toBe('string');
@@ -852,6 +853,35 @@ describe('GruposController — POST /grupos (e2e)', () => {
       expect((res.body as { code: string }).code).toBe('NOT_FOUND');
 
       await prisma.grupo.delete({ where: { id: grupoVlld.id } });
+    });
+
+    it('GET /grupos/:id con rol MAESTRO -> 403 ROL_NO_AUTORIZADO', async () => {
+      const grupo = await prisma.grupo.create({
+        data: {
+          sedeId: sedeMeridaId,
+          carreraId: carreraMeridaId,
+          salonId: salonMeridaId,
+          nombre: `Grupo E2E GET rol ${Date.now()}`,
+          anioInicio: 2027,
+          cicloActual: 1,
+          capacidad: 20,
+        },
+      });
+
+      const token = await firmarToken({
+        role: 'authenticated',
+        rol: RolUsuario.MAESTRO,
+        sede_id: sedeMeridaId,
+      });
+
+      const res = await request(app.getHttpServer())
+        .get(`/grupos/${grupo.id}`)
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(res.status).toBe(403);
+      expect((res.body as ErrorBody).code).toBe('ROL_NO_AUTORIZADO');
+
+      await prisma.grupo.delete({ where: { id: grupo.id } });
     });
   });
 });
