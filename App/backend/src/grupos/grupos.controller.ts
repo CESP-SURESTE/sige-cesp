@@ -74,6 +74,13 @@ export class GruposController {
     return { data };
   }
 
+  @Get(':id')
+  @Roles(RolUsuario.ADMINISTRATIVO)
+  async obtener(@Param('id') id: string, @SedeActual() sedeId: string) {
+    const data = await this.gruposService.obtenerPorId(id, sedeId);
+    return { data };
+  }
+
   @Post(':id/alumnos')
   @HttpCode(201)
   @Roles(RolUsuario.ADMINISTRATIVO)

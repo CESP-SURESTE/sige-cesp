@@ -778,4 +778,80 @@ describe('GruposController — POST /grupos (e2e)', () => {
       expect((res.body as ErrorBody).code).toBe('UNAUTHORIZED');
     });
   });
+
+  describe('GET /grupos/:id', () => {
+    it('GET /grupos/:id devuelve el grupo con carrera y salon expandidos', async () => {
+      const grupo = await prisma.grupo.create({
+        data: {
+          sedeId: sedeMeridaId,
+          carreraId: carreraMeridaId,
+          salonId: salonMeridaId,
+          nombre: `Grupo E2E GET ${Date.now()}`,
+          anioInicio: 2027,
+          cicloActual: 2,
+          capacidad: 25,
+        },
+      });
+
+      const token = await firmarToken({
+        role: 'authenticated',
+        rol: RolUsuario.ADMINISTRATIVO,
+        sede_id: sedeMeridaId,
+      });
+
+      const res = await request(app.getHttpServer())
+        .get(`/grupos/${grupo.id}`)
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(res.status).toBe(200);
+      const body = res.body as {
+        data: {
+          id: string;
+          nombre: string;
+          anioInicio: number;
+          cicloActual: number;
+          capacidad: number;
+          carrera: { id: string; nombre: string };
+          salon: { id: string; nombre: string };
+        };
+      };
+      expect(body.data.id).toBe(grupo.id);
+      expect(body.data.capacidad).toBe(25);
+      expect(body.data.carrera.id).toBe(carreraMeridaId);
+      expect(typeof body.data.carrera.nombre).toBe('string');
+      expect(body.data.salon.id).toBe(salonMeridaId);
+      expect(typeof body.data.salon.nombre).toBe('string');
+
+      await prisma.grupo.delete({ where: { id: grupo.id } });
+    });
+
+    it('GET /grupos/:id de un grupo de otra sede -> 404 NOT_FOUND', async () => {
+      const grupoVlld = await prisma.grupo.create({
+        data: {
+          sedeId: sedeValladolidId,
+          carreraId: carreraValladolidId,
+          salonId: salonValladolidId,
+          nombre: `Grupo E2E GET ajeno ${Date.now()}`,
+          anioInicio: 2027,
+          cicloActual: 1,
+          capacidad: 20,
+        },
+      });
+
+      const token = await firmarToken({
+        role: 'authenticated',
+        rol: RolUsuario.ADMINISTRATIVO,
+        sede_id: sedeMeridaId,
+      });
+
+      const res = await request(app.getHttpServer())
+        .get(`/grupos/${grupoVlld.id}`)
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(res.status).toBe(404);
+      expect((res.body as { code: string }).code).toBe('NOT_FOUND');
+
+      await prisma.grupo.delete({ where: { id: grupoVlld.id } });
+    });
+  });
 });

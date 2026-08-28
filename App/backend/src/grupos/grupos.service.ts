@@ -210,6 +210,43 @@ export class GruposService {
   }
 
   /**
+   * `GET /grupos/:id` — Fase 10, Día 31 (adición para la vista de detalle
+   * de la UI). `id` debe existir Y pertenecer a la sede del actor -> 404
+   * NOT_FOUND. Devuelve el mismo shape que un item de `GET /grupos`
+   * (`carrera`/`salon` expandidos a `{ id, nombre }`) — no hay tipo nuevo.
+   * NO reutiliza `obtenerGrupoEnSede` (ese helper devuelve el `Grupo` plano,
+   * lo consumen `matricular`/`desmatricular`/`listarAlumnos`) — hace su
+   * propio `findFirst` con el `select` expandido.
+   */
+  async obtenerPorId(id: string, sedeId: string): Promise<GrupoListItem> {
+    try {
+      const grupo = await this.prisma.grupo.findFirst({
+        where: { id, sedeId },
+        select: {
+          id: true,
+          nombre: true,
+          anioInicio: true,
+          cicloActual: true,
+          capacidad: true,
+          carrera: { select: { id: true, nombre: true } },
+          salon: { select: { id: true, nombre: true } },
+        },
+      });
+      if (!grupo) {
+        throw new NotFoundException({
+          error: 'Grupo no encontrado en tu sede',
+          code: 'NOT_FOUND',
+        });
+      }
+      return grupo;
+    } catch (err) {
+      if (err instanceof NotFoundException) throw err;
+      console.error('[GruposService.obtenerPorId] error inesperado:', err);
+      throw err;
+    }
+  }
+
+  /**
    * `DELETE /grupos/:id` — calco del patrón de `SalonesService.eliminar`.
    * `id` debe existir Y pertenecer a la sede del actor -> 404 NOT_FOUND.
    * Bloquea con `409 CONFLICT` si el grupo tiene alumnos inscritos
