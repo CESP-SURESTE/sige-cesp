@@ -33,6 +33,7 @@ import {
   type EstatusAcademico,
   type PersonaListItemAlumno,
 } from '@/lib/api/personas';
+import { ConfirmarMatricularAlumnoModal } from './ConfirmarMatricularAlumnoModal';
 import { ConfirmarQuitarAlumnoModal } from './ConfirmarQuitarAlumnoModal';
 
 /**
@@ -68,6 +69,8 @@ export default function AdminGrupoDetallePage() {
   const [alumnoAQuitar, setAlumnoAQuitar] = useState<GrupoAlumnoListItem | null>(
     null,
   );
+  const [alumnoAConfirmar, setAlumnoAConfirmar] =
+    useState<PersonaListItemAlumno | null>(null);
 
   const grupoQuery = useQuery({
     queryKey: ['admin', 'grupos', 'detalle', id],
@@ -150,6 +153,7 @@ export default function AdminGrupoDetallePage() {
     onSuccess: () => {
       toast.success('Alumno matriculado');
       setInputValue('');
+      setAlumnoAConfirmar(null);
       void queryClient.invalidateQueries({
         queryKey: ['admin', 'grupos', 'detalle', id],
       });
@@ -244,7 +248,10 @@ export default function AdminGrupoDetallePage() {
           <Combobox
             immediate
             onChange={(usuarioId: string | null) => {
-              if (usuarioId) matricularMutation.mutate(usuarioId);
+              if (!usuarioId) return;
+              setAlumnoAConfirmar(
+                candidatos.find((p) => p.usuarioId === usuarioId) ?? null,
+              );
             }}
             disabled={matricularMutation.isPending}
           >
@@ -376,6 +383,18 @@ export default function AdminGrupoDetallePage() {
           </table>
         </div>
       </div>
+
+      {alumnoAConfirmar && grupo && (
+        <ConfirmarMatricularAlumnoModal
+          alumno={alumnoAConfirmar}
+          grupoNombre={grupo.nombre}
+          matriculando={matricularMutation.isPending}
+          onConfirmar={() =>
+            matricularMutation.mutate(alumnoAConfirmar.usuarioId)
+          }
+          onCancelar={() => setAlumnoAConfirmar(null)}
+        />
+      )}
 
       {alumnoAQuitar && grupo && (
         <ConfirmarQuitarAlumnoModal
