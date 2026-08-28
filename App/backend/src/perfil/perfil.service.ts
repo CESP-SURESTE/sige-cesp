@@ -351,6 +351,102 @@ export class PerfilService {
           : null,
     };
   }
+
+  /**
+   * `GET /perfil/grupo/companeros` — Fase 11, Día 32.
+   *
+   * El alumno autenticado ve a sus compañeros de salón: todos los grupos en
+   * los que está matriculado, cada uno con la lista de los OTROS alumnos
+   * inscritos (se excluye a sí mismo). Solo `ALUMNO` (el `RolesGuard` a
+   * nivel de método en `PerfilController` ya lo garantiza).
+   *
+   * La regla 4 de CLAUDE.md raíz (contactos/infoMedica como sub-recurso
+   * anidado al perfil) NO aplica literalmente acá: esto no es el sub-recurso
+   * de un perfil ajeno, es la vista que el propio alumno tiene de su(s)
+   * grupo(s). El aislamiento por sede es implícito y total — se parte del
+   * `PerfilAlumno` del actor y se navega solo por sus `GrupoAlumno`; nunca
+   * se consulta `Grupo` por `nombre`/`sedeId` desde afuera, así que un grupo
+   * homónimo en otra sede jamás entra al resultado.
+   *
+   * NO filtra por `Usuario.activo` ni `estatusAcademico` de los compañeros
+   * — mismo criterio que `POST /grupos/:id/alumnos` (Día 30): la matrícula
+   * en el grupo es el único predicado.
+   *
+   * Orden: grupos por `anioInicio desc, cicloActual desc, nombre asc`;
+   * `companeros` por `apellidoPaterno asc, apellidoMaterno asc, nombres asc`.
+   */
+  async obtenerCompanerosDeGrupo(actorUsuarioId: string) {
+    const perfilAlumno = await this.prisma.perfilAlumno.findUnique({
+      where: { usuarioId: actorUsuarioId },
+      select: { id: true },
+    });
+
+    if (!perfilAlumno) {
+      // Defensivo — el `RolesGuard(@Roles(ALUMNO))` ya garantizó rol ALUMNO,
+      // y la alta transaccional (regla 9) garantiza que un ALUMNO siempre
+      // tiene su PerfilAlumno. Si llega acá es inconsistencia de datos.
+      // Regla 12 — loguear antes de responder.
+      console.error(
+        '[PerfilService.obtenerCompanerosDeGrupo] Actor ALUMNO sin PerfilAlumno — inconsistencia de datos:',
+        { actorUsuarioId },
+      );
+      throw new NotFoundException({
+        error: 'No se encontró el perfil de alumno del usuario autenticado',
+        code: 'NOT_FOUND',
+      });
+    }
+
+    const inscripciones = await this.prisma.grupoAlumno.findMany({
+      where: { alumnoId: perfilAlumno.id },
+      orderBy: [
+        { grupo: { anioInicio: 'desc' } },
+        { grupo: { cicloActual: 'desc' } },
+        { grupo: { nombre: 'asc' } },
+      ],
+      select: {
+        grupo: {
+          select: {
+            id: true,
+            nombre: true,
+            anioInicio: true,
+            cicloActual: true,
+            carrera: { select: { id: true, nombre: true } },
+            salon: { select: { id: true, nombre: true } },
+            alumnos: {
+              where: { alumnoId: { not: perfilAlumno.id } },
+              orderBy: [
+                { alumno: { apellidoPaterno: 'asc' } },
+                { alumno: { apellidoMaterno: 'asc' } },
+                { alumno: { nombres: 'asc' } },
+              ],
+              select: {
+                alumno: {
+                  select: {
+                    usuarioId: true,
+                    nombres: true,
+                    apellidoPaterno: true,
+                    apellidoMaterno: true,
+                    matricula: true,
+                    semestreActual: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    return inscripciones.map(({ grupo }) => ({
+      grupoId: grupo.id,
+      nombre: grupo.nombre,
+      anioInicio: grupo.anioInicio,
+      cicloActual: grupo.cicloActual,
+      carrera: grupo.carrera,
+      salon: grupo.salon,
+      companeros: grupo.alumnos.map((ga) => ga.alumno),
+    }));
+  }
 }
 
 /**

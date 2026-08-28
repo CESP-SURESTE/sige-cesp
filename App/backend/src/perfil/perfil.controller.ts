@@ -19,9 +19,10 @@ import { PerfilService } from './perfil.service';
  * (JWT `sub`, ver `PerfilService.obtenerPerfilPropio`) — no hay `:id` ni
  * query param por el que se pueda pedir el perfil de otra persona.
  *
- * `GET /perfil/malla` (Fase 7, Día 24) es la excepción — sí restringida a
- * `ALUMNO`, `RolesGuard` declarado a nivel de MÉTODO (no de clase, para no
- * afectar `GET /perfil`), mismo criterio de composición de guards que
+ * `GET /perfil/malla` (Fase 7, Día 24) y `GET /perfil/grupo/companeros`
+ * (Fase 11, Día 32) son las excepciones — sí restringidas a `ALUMNO`,
+ * `RolesGuard` declarado a nivel de MÉTODO (no de clase, para no afectar
+ * `GET /perfil`), mismo criterio de composición de guards que
  * `SedesController` (Día 20: guard declarado por método cuando la clase
  * sirve rutas con requisitos distintos).
  */
@@ -44,7 +45,18 @@ export class PerfilController {
   @Roles(RolUsuario.ALUMNO)
   async obtenerUrlDescargaMalla(@ActorUsuarioId() actorUsuarioId: string) {
     const data =
-      await this.mallaCurricularService.obtenerUrlDescargaPropia(actorUsuarioId);
+      await this.mallaCurricularService.obtenerUrlDescargaPropia(
+        actorUsuarioId,
+      );
+    return { data };
+  }
+
+  @Get('grupo/companeros')
+  @UseGuards(RolesGuard)
+  @Roles(RolUsuario.ALUMNO)
+  async obtenerCompaneros(@ActorUsuarioId() actorUsuarioId: string) {
+    const data =
+      await this.perfilService.obtenerCompanerosDeGrupo(actorUsuarioId);
     return { data };
   }
 }
