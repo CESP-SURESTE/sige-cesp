@@ -1,22 +1,38 @@
 'use client';
 
+import {
+  Combobox,
+  ComboboxInput,
+  ComboboxOption,
+  ComboboxOptions,
+} from '@headlessui/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
+import { useBuscarDebounced } from '@/components/admin/ui/personas-listado/useBuscarDebounced';
 import {
   MENSAJE_ERROR_GENERICO,
   resolverMensajeError,
 } from '@/components/admin/ui/persona-alta/mensajes-error';
+import {
+  INPUT_CLASS,
+  LABEL_CLASS,
+} from '@/components/admin/ui/persona-alta/estilos';
 import { ApiError } from '@/lib/api/http';
 import {
   desmatricularAlumno,
   listarAlumnosDeGrupo,
+  matricularAlumno,
   obtenerGrupo,
   type GrupoAlumnoListItem,
 } from '@/lib/api/grupos';
-import type { EstatusAcademico } from '@/lib/api/personas';
+import {
+  listarAlumnos,
+  type EstatusAcademico,
+  type PersonaListItemAlumno,
+} from '@/lib/api/personas';
 import { ConfirmarQuitarAlumnoModal } from './ConfirmarQuitarAlumnoModal';
 
 /**
@@ -101,6 +117,61 @@ export default function AdminGrupoDetallePage() {
   const inscritos = alumnos.length;
   const lleno = grupo ? inscritos >= grupo.capacidad : false;
 
+  const { inputValue, setInputValue, buscar } = useBuscarDebounced();
+
+  const buscarQuery = useQuery({
+    queryKey: ['admin', 'personas', 'ALUMNO', 'buscar-grupo', buscar],
+    queryFn: async () => {
+      try {
+        return await listarAlumnos({ buscar, limit: 20 });
+      } catch (err) {
+        console.error('[AdminGrupoDetallePage] Error al buscar alumnos:', err);
+        throw err;
+      }
+    },
+    enabled: buscar.length >= 2,
+  });
+
+  const idsMatriculados = useMemo(
+    () => new Set(alumnos.map((a) => a.usuarioId)),
+    [alumnos],
+  );
+
+  const candidatos = useMemo(() => {
+    if (!grupo) return [] as PersonaListItemAlumno[];
+    return (buscarQuery.data?.data ?? []).filter(
+      (p) =>
+        p.carrera.id === grupo.carrera.id && !idsMatriculados.has(p.usuarioId),
+    );
+  }, [buscarQuery.data, grupo, idsMatriculados]);
+
+  const matricularMutation = useMutation({
+    mutationFn: (usuarioId: string) => matricularAlumno(id, usuarioId),
+    onSuccess: () => {
+      toast.success('Alumno matriculado');
+      setInputValue('');
+      void queryClient.invalidateQueries({
+        queryKey: ['admin', 'grupos', 'detalle', id],
+      });
+    },
+    onError: (err) => {
+      console.error('[AdminGrupoDetallePage] Error al matricular alumno:', err);
+      if (
+        err instanceof ApiError &&
+        [
+          'VALIDATION_ERROR',
+          'CAPACIDAD_EXCEDIDA',
+          'CONFLICT',
+          'NOT_FOUND',
+        ].includes(err.code)
+      ) {
+        toast.error(err.message);
+        return;
+      }
+      toast.error(MENSAJE_ERROR_GENERICO);
+    },
+  });
+
   if (grupoQuery.isError) {
     return (
       <div className="space-y-6">
@@ -159,11 +230,75 @@ export default function AdminGrupoDetallePage() {
         )}
       </div>
 
-      {/* PLACEHOLDER Task 3: aquí se monta el autocomplete de "Agregar alumno".
-          Recibe: grupo (para carreraId + capacidad), alumnos (para el filtro de
-          no-ya-matriculado), lleno (para deshabilitar), y una mutation de
-          matricular que invalida ['admin','grupos','detalle',id] y
-          ['admin','grupos','detalle',id,'alumnos']. */}
+      {/* Agregar alumno — autocomplete (Fase 10, Día 31) */}
+      <div className="rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm">
+        <label htmlFor="buscar-alumno" className={LABEL_CLASS}>
+          Agregar alumno
+        </label>
+        {lleno ? (
+          <p className="mt-2 rounded-lg border border-warning-border bg-warning-bg px-3 py-2 text-xs text-warning">
+            Grupo lleno ({grupo?.capacidad} / {grupo?.capacidad}) — quita un
+            alumno para agregar otro.
+          </p>
+        ) : (
+          <Combobox
+            immediate
+            onChange={(usuarioId: string | null) => {
+              if (usuarioId) matricularMutation.mutate(usuarioId);
+            }}
+            disabled={matricularMutation.isPending}
+          >
+            <div className="relative mt-1">
+              <ComboboxInput
+                id="buscar-alumno"
+                className={INPUT_CLASS}
+                placeholder="Busca por nombre o matrícula…"
+                autoComplete="off"
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+              />
+              <ComboboxOptions className="absolute z-20 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-mist bg-white py-1 text-sm shadow-lg focus:outline-none">
+                {buscar.length < 2 ? (
+                  <p className="px-3 py-2 text-xs text-slate/60">
+                    Escribe al menos 2 caracteres para buscar.
+                  </p>
+                ) : buscarQuery.isLoading ? (
+                  <p className="px-3 py-2 text-xs text-slate/60">Buscando…</p>
+                ) : buscarQuery.isError ? (
+                  <p className="px-3 py-2 text-xs text-crimson">
+                    No se pudo buscar. Intenta de nuevo.
+                  </p>
+                ) : candidatos.length === 0 ? (
+                  <p className="px-3 py-2 text-xs text-slate/60">
+                    Sin alumnos de esta carrera para agregar.
+                  </p>
+                ) : (
+                  candidatos.map((p) => (
+                    <ComboboxOption
+                      key={p.usuarioId}
+                      value={p.usuarioId}
+                      className={({ focus }) =>
+                        `cursor-pointer px-3 py-2 text-slate ${
+                          focus ? 'bg-mist/40' : ''
+                        }`
+                      }
+                    >
+                      {[p.apellidoPaterno, p.apellidoMaterno]
+                        .filter(Boolean)
+                        .join(' ')}
+                      , {p.nombres} — {p.matricula}
+                    </ComboboxOption>
+                  ))
+                )}
+              </ComboboxOptions>
+            </div>
+          </Combobox>
+        )}
+        <p className="mt-2 text-xs text-slate/50">
+          Solo aparecen alumnos de la carrera del grupo que aún no están
+          matriculados.
+        </p>
+      </div>
 
       {/* Tabla de matriculados */}
       <div className="rounded-lg border-l-4 border-navy bg-white shadow-sm">
