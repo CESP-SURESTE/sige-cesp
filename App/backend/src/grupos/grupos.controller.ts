@@ -17,6 +17,7 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { SedeGuard } from '../common/guards/sede.guard';
 import { CrearGrupoDto } from './dto/crear-grupo.dto';
 import { ListarGruposQueryDto } from './dto/listar-grupos.query.dto';
+import { MatricularAlumnoDto } from './dto/matricular-alumno.dto';
 import { GruposService } from './grupos.service';
 
 /**
@@ -60,6 +61,51 @@ export class GruposController {
     @ActorUsuarioId() actorUsuarioId: string,
   ) {
     const data = await this.gruposService.eliminar(id, sedeId, actorUsuarioId);
+    return { data };
+  }
+
+  @Get(':id/alumnos')
+  @Roles(RolUsuario.ADMINISTRATIVO)
+  async listarAlumnos(
+    @Param('id') id: string,
+    @SedeActual() sedeId: string,
+  ) {
+    const data = await this.gruposService.listarAlumnos(id, sedeId);
+    return { data };
+  }
+
+  @Post(':id/alumnos')
+  @HttpCode(201)
+  @Roles(RolUsuario.ADMINISTRATIVO)
+  async matricular(
+    @Param('id') id: string,
+    @Body() body: MatricularAlumnoDto,
+    @SedeActual() sedeId: string,
+    @ActorUsuarioId() actorUsuarioId: string,
+  ) {
+    const data = await this.gruposService.matricular(
+      id,
+      body.usuarioId,
+      sedeId,
+      actorUsuarioId,
+    );
+    return { data };
+  }
+
+  @Delete(':id/alumnos/:usuarioId')
+  @Roles(RolUsuario.ADMINISTRATIVO)
+  async desmatricular(
+    @Param('id') id: string,
+    @Param('usuarioId') usuarioId: string,
+    @SedeActual() sedeId: string,
+    @ActorUsuarioId() actorUsuarioId: string,
+  ) {
+    const data = await this.gruposService.desmatricular(
+      id,
+      usuarioId,
+      sedeId,
+      actorUsuarioId,
+    );
     return { data };
   }
 }
