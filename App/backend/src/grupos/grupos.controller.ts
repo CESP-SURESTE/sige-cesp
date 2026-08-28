@@ -15,6 +15,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { SedeActual } from '../common/decorators/sede-actual.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { SedeGuard } from '../common/guards/sede.guard';
+import { AsignarMaestroDto } from './dto/asignar-maestro.dto';
 import { CrearGrupoDto } from './dto/crear-grupo.dto';
 import { ListarGruposQueryDto } from './dto/listar-grupos.query.dto';
 import { MatricularAlumnoDto } from './dto/matricular-alumno.dto';
@@ -74,6 +75,16 @@ export class GruposController {
     return { data };
   }
 
+  @Get(':id/asignaciones')
+  @Roles(RolUsuario.ADMINISTRATIVO)
+  async listarAsignaciones(
+    @Param('id') id: string,
+    @SedeActual() sedeId: string,
+  ) {
+    const data = await this.gruposService.listarAsignaciones(id, sedeId);
+    return { data };
+  }
+
   // Si en el futuro se agrega un segmento fijo bajo /grupos (p. ej. GET /grupos/resumen, como GET /personas/resumen), DEBE declararse ANTES de este @Get(':id') dinámico.
   @Get(':id')
   @Roles(RolUsuario.ADMINISTRATIVO)
@@ -111,6 +122,42 @@ export class GruposController {
     const data = await this.gruposService.desmatricular(
       id,
       usuarioId,
+      sedeId,
+      actorUsuarioId,
+    );
+    return { data };
+  }
+
+  @Post(':id/asignaciones')
+  @HttpCode(201)
+  @Roles(RolUsuario.ADMINISTRATIVO)
+  async asignarMaestro(
+    @Param('id') id: string,
+    @Body() body: AsignarMaestroDto,
+    @SedeActual() sedeId: string,
+    @ActorUsuarioId() actorUsuarioId: string,
+  ) {
+    const data = await this.gruposService.asignarMaestro(
+      id,
+      body.materiaId,
+      body.usuarioId,
+      sedeId,
+      actorUsuarioId,
+    );
+    return { data };
+  }
+
+  @Delete(':id/asignaciones/:asignacionId')
+  @Roles(RolUsuario.ADMINISTRATIVO)
+  async eliminarAsignacion(
+    @Param('id') id: string,
+    @Param('asignacionId') asignacionId: string,
+    @SedeActual() sedeId: string,
+    @ActorUsuarioId() actorUsuarioId: string,
+  ) {
+    const data = await this.gruposService.eliminarAsignacion(
+      id,
+      asignacionId,
       sedeId,
       actorUsuarioId,
     );

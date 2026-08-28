@@ -12,6 +12,7 @@ import {
   RolUsuario,
   type Grupo,
   type GrupoAlumno,
+  type GrupoMateriaMaestro,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { CrearGrupoDto } from './dto/crear-grupo.dto';
@@ -43,6 +44,17 @@ export interface GrupoAlumnoListItem {
   semestreActual: number;
   estatusAcademico: EstatusAcademico;
   fechaInscripcion: string;
+}
+
+export interface AsignacionListItem {
+  id: string;
+  materia: { id: string; nombre: string; ciclo: number };
+  maestro: {
+    usuarioId: string;
+    nombres: string;
+    apellidoPaterno: string;
+    apellidoMaterno: string | null;
+  };
 }
 
 @Injectable()
@@ -326,6 +338,27 @@ export class GruposService {
     return usuario.perfilAlumno;
   }
 
+  /**
+   * Resuelve un `Usuario.id` a su `PerfilMaestro`, exigiendo que sea un
+   * `MAESTRO` de la sede del actor. Cubre en un solo query: id inexistente,
+   * maestro de otra sede (`sedeId` en el where), un `Usuario` ALUMNO/
+   * ADMINISTRATIVO (`rol` en el where), y un MAESTRO sin fila de perfil
+   * (defensivo). NO valida `estatus` — coherente con Día 30.
+   */
+  private async resolverMaestroEnSede(usuarioId: string, sedeId: string) {
+    const usuario = await this.prisma.usuario.findFirst({
+      where: { id: usuarioId, sedeId, rol: RolUsuario.MAESTRO },
+      include: { perfilMaestro: true },
+    });
+    if (!usuario || !usuario.perfilMaestro) {
+      throw new NotFoundException({
+        error: 'Maestro no encontrado en tu sede',
+        code: 'NOT_FOUND',
+      });
+    }
+    return usuario.perfilMaestro;
+  }
+
   private async obtenerGrupoEnSede(id: string, sedeId: string) {
     const grupo = await this.prisma.grupo.findFirst({ where: { id, sedeId } });
     if (!grupo) {
@@ -536,5 +569,191 @@ export class GruposService {
       console.error('[GruposService.listarAlumnos] error inesperado:', err);
       throw err;
     }
+  }
+
+  /**
+   * `POST /grupos/:id/asignaciones` — Fase 12, Día 33. Valida grupo∈sede,
+   * materia con `carreraId === grupo.carreraId` Y `ciclo ===
+   * grupo.cicloActual` (400 VALIDATION_ERROR), maestro∈sede (`rol: MAESTRO`,
+   * sin chequeo de `estatus` — coherente con Día 30). Co-docencia
+   * permitida: solo el triple `(grupoId, materiaId, maestroId)` exacto ya
+   * existente es 409 CONFLICT (pre-check en la transacción, respaldado por
+   * `@@unique([grupoId, materiaId, maestroId])`). Audita `ALTA`.
+   */
+  async asignarMaestro(
+    grupoId: string,
+    materiaId: string,
+    usuarioId: string,
+    sedeId: string,
+    actorUsuarioId: string,
+  ): Promise<GrupoMateriaMaestro> {
+    const grupo = await this.obtenerGrupoEnSede(grupoId, sedeId);
+
+    const materia = await this.prisma.materia.findUnique({
+      where: { id: materiaId },
+      select: { id: true, carreraId: true, ciclo: true },
+    });
+    if (
+      !materia ||
+      materia.carreraId !== grupo.carreraId ||
+      materia.ciclo !== grupo.cicloActual
+    ) {
+      throw new BadRequestException({
+        error:
+          'La materia no corresponde a la carrera y el ciclo de este grupo',
+        code: 'VALIDATION_ERROR',
+      });
+    }
+
+    const maestro = await this.resolverMaestroEnSede(usuarioId, sedeId);
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const yaAsignado = await tx.grupoMateriaMaestro.findUnique({
+          where: {
+            grupoId_materiaId_maestroId: {
+              grupoId,
+              materiaId,
+              maestroId: maestro.id,
+            },
+          },
+          select: { id: true },
+        });
+        if (yaAsignado) {
+          throw new ConflictException({
+            error: 'Ese maestro ya está asignado a esa materia en este grupo',
+            code: 'CONFLICT',
+          });
+        }
+
+        const fila = await tx.grupoMateriaMaestro.create({
+          data: { grupoId, materiaId, maestroId: maestro.id },
+        });
+
+        await tx.registroAuditoria.create({
+          data: {
+            usuarioId: actorUsuarioId,
+            sedeId,
+            accion: AccionAuditoria.ALTA,
+            entidad: 'GrupoMateriaMaestro',
+            entidadId: fila.id,
+            detalle: { grupoId, materiaId, maestroId: maestro.id },
+          },
+        });
+
+        return fila;
+      });
+    } catch (err) {
+      if (
+        err instanceof ConflictException ||
+        err instanceof BadRequestException ||
+        err instanceof NotFoundException
+      ) {
+        throw err;
+      }
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        throw new ConflictException({
+          error: 'Ese maestro ya está asignado a esa materia en este grupo',
+          code: 'CONFLICT',
+        });
+      }
+      console.error('[GruposService.asignarMaestro] error inesperado:', err);
+      throw err;
+    }
+  }
+
+  /**
+   * `GET /grupos/:id/asignaciones` — Fase 12, Día 33. Sin paginar (catálogo
+   * chico). Orden `materia.nombre asc, maestro.apellidoPaterno asc,
+   * maestro.apellidoMaterno asc`.
+   */
+  async listarAsignaciones(
+    grupoId: string,
+    sedeId: string,
+  ): Promise<AsignacionListItem[]> {
+    await this.obtenerGrupoEnSede(grupoId, sedeId);
+
+    const filas = await this.prisma.grupoMateriaMaestro.findMany({
+      where: { grupoId },
+      orderBy: [
+        { materia: { nombre: 'asc' } },
+        { maestro: { apellidoPaterno: 'asc' } },
+        { maestro: { apellidoMaterno: 'asc' } },
+      ],
+      select: {
+        id: true,
+        materia: { select: { id: true, nombre: true, ciclo: true } },
+        maestro: {
+          select: {
+            usuarioId: true,
+            nombres: true,
+            apellidoPaterno: true,
+            apellidoMaterno: true,
+          },
+        },
+      },
+    });
+
+    return filas.map((f) => ({
+      id: f.id,
+      materia: f.materia,
+      maestro: f.maestro,
+    }));
+  }
+
+  /**
+   * `DELETE /grupos/:id/asignaciones/:asignacionId` — Fase 12, Día 33.
+   * DELETE real de la fila de unión (regla 3 no aplica, igual que
+   * `GrupoAlumno`). `404` si no existe, o si su `grupoId !== :id`, o si el
+   * grupo no es de la sede. Audita `ELIMINACION` antes del delete.
+   */
+  async eliminarAsignacion(
+    grupoId: string,
+    asignacionId: string,
+    sedeId: string,
+    actorUsuarioId: string,
+  ): Promise<{ ok: true }> {
+    await this.obtenerGrupoEnSede(grupoId, sedeId);
+
+    const fila = await this.prisma.grupoMateriaMaestro.findUnique({
+      where: { id: asignacionId },
+      select: { id: true, grupoId: true },
+    });
+    if (!fila || fila.grupoId !== grupoId) {
+      throw new NotFoundException({
+        error: 'Asignación no encontrada en este grupo',
+        code: 'NOT_FOUND',
+      });
+    }
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.registroAuditoria.create({
+          data: {
+            usuarioId: actorUsuarioId,
+            sedeId,
+            accion: AccionAuditoria.ELIMINACION,
+            entidad: 'GrupoMateriaMaestro',
+            entidadId: fila.id,
+            detalle: { grupoId },
+          },
+        });
+        await tx.grupoMateriaMaestro.delete({ where: { id: fila.id } });
+      });
+    } catch (err) {
+      console.error(
+        '[GruposService.eliminarAsignacion] error inesperado:',
+        err,
+      );
+      throw new InternalServerErrorException({
+        error: 'Error inesperado al eliminar la asignación',
+        code: 'SERVER_ERROR',
+      });
+    }
+
+    return { ok: true };
   }
 }
