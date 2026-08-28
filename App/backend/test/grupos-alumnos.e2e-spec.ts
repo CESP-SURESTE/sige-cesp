@@ -470,6 +470,7 @@ describe('GruposController — matrícula de alumnos (e2e)', () => {
 
     const alta = await matricular(grupoId, alumnoUsuarioId, token);
     expect(alta.status).toBe(201);
+    const grupoAlumnoId = (alta.body as GrupoAlumnoBody).data.id;
 
     const res = await request(app.getHttpServer())
       .delete(`/grupos/${grupoId}/alumnos/${alumnoUsuarioId}`)
@@ -484,10 +485,16 @@ describe('GruposController — matrícula de alumnos (e2e)', () => {
     expect(fila).toBeNull();
 
     const registro = await prisma.registroAuditoria.findFirst({
-      where: { entidad: 'GrupoAlumno', accion: 'ELIMINACION', sedeId: sedeMeridaId },
-      orderBy: { fecha: 'desc' },
+      where: {
+        entidad: 'GrupoAlumno',
+        accion: 'ELIMINACION',
+        entidadId: grupoAlumnoId,
+      },
     });
     expect(registro).not.toBeNull();
+    expect((registro?.detalle as { matricula?: string })?.matricula).toBe(
+      perfil.matricula,
+    );
   });
 
   it('DELETE de un alumno NO inscrito -> 404 NOT_FOUND', async () => {
@@ -605,5 +612,51 @@ describe('GruposController — matrícula de alumnos (e2e)', () => {
 
     expect(res.status).toBe(404);
     expect((res.body as ErrorBody).code).toBe('NOT_FOUND');
+  });
+
+  it('POST /grupos/:id/alumnos con rol MAESTRO -> 403 ROL_NO_AUTORIZADO', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.MAESTRO,
+    });
+
+    const res = await request(app.getHttpServer())
+      .post(`/grupos/${randomUUID()}/alumnos`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ usuarioId: randomUUID() });
+
+    expect(res.status).toBe(403);
+    expect((res.body as ErrorBody).code).toBe('ROL_NO_AUTORIZADO');
+  });
+
+  it('DELETE /grupos/:id/alumnos/:usuarioId con rol ALUMNO -> 403 ROL_NO_AUTORIZADO', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ALUMNO,
+    });
+
+    const res = await request(app.getHttpServer())
+      .delete(`/grupos/${randomUUID()}/alumnos/${randomUUID()}`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(403);
+    expect((res.body as ErrorBody).code).toBe('ROL_NO_AUTORIZADO');
+  });
+
+  it('GET /grupos/:id/alumnos con rol MAESTRO -> 403 ROL_NO_AUTORIZADO', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.MAESTRO,
+    });
+
+    const res = await request(app.getHttpServer())
+      .get(`/grupos/${randomUUID()}/alumnos`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(403);
+    expect((res.body as ErrorBody).code).toBe('ROL_NO_AUTORIZADO');
   });
 });

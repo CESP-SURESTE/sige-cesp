@@ -376,6 +376,21 @@ export class GruposService {
       ) {
         throw err;
       }
+      // La carrera concurrente (doble-POST real) está aceptada por diseño
+      // (sin `SELECT ... FOR UPDATE`): el pre-check + `create` deja una
+      // ventana donde el `@@unique([grupoId, alumnoId])` de Postgres puede
+      // dispararse como `P2002`. Lo degradamos al contrato en vez de dejar
+      // que caiga al 500 genérico. No hay e2e para esto — es un camino de
+      // concurrencia no observable de forma determinista.
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        throw new ConflictException({
+          error: 'El alumno ya está inscrito en este grupo',
+          code: 'CONFLICT',
+        });
+      }
       console.error('[GruposService.matricular] error inesperado:', err);
       throw err;
     }
