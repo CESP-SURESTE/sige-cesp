@@ -232,7 +232,8 @@ model Grupo {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  alumnos GrupoAlumno[]
+  alumnos      GrupoAlumno[]
+  asignaciones GrupoMateriaMaestro[]
 
   @@map("grupos")
 }
@@ -250,14 +251,29 @@ model GrupoAlumno {
 }
 
 model Materia {
-  id        String   @id @default(uuid())
-  nombre    String
-  carreraId String   @map("carrera_id")
-  carrera   Carrera  @relation(fields: [carreraId], references: [id])
-  ciclo     Int
-  createdAt DateTime @default(now()) @map("created_at")
+  id           String                @id @default(uuid())
+  nombre       String
+  carreraId    String                @map("carrera_id")
+  carrera      Carrera               @relation(fields: [carreraId], references: [id])
+  ciclo        Int
+  createdAt    DateTime              @default(now()) @map("created_at")
+  asignaciones GrupoMateriaMaestro[]
 
   @@map("materias")
+}
+
+model GrupoMateriaMaestro {
+  id         String        @id @default(uuid())
+  grupoId    String        @map("grupo_id")
+  grupo      Grupo         @relation(fields: [grupoId], references: [id])
+  materiaId  String        @map("materia_id")
+  materia    Materia       @relation(fields: [materiaId], references: [id])
+  maestroId  String        @map("maestro_id")
+  maestro    PerfilMaestro @relation(fields: [maestroId], references: [id])
+  asignadoEn DateTime      @default(now()) @map("asignado_en")
+
+  @@unique([grupoId, materiaId, maestroId])
+  @@map("grupo_materia_maestro")
 }
 
 // ============================
@@ -386,8 +402,9 @@ model PerfilMaestro {
   createdAt         DateTime        @default(now()) @map("created_at")
   updatedAt         DateTime        @updatedAt @map("updated_at")
 
-  contactos  ContactoMaestro[]
-  infoMedica InfoMedicaMaestro?
+  contactos    ContactoMaestro[]
+  infoMedica   InfoMedicaMaestro?
+  asignaciones GrupoMateriaMaestro[]
 
   @@map("perfiles_maestro")
 }

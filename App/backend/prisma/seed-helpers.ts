@@ -442,6 +442,28 @@ export async function seedSede(config: SedeSeedConfig) {
     carreras.push(carrera);
   }
 
+  // Materias de ciclo 1 por carrera — Día 33 (Fase 12). 3 por carrera, todas
+  // `ciclo: 1` para emparejar con los grupos sembrados (`cicloActual: 1`).
+  // Sin `@@unique` en `Materia`, así que se usa findFirst + create (mismo
+  // patrón que los grupos más abajo en esta función).
+  const NOMBRES_MATERIAS_CICLO_1 = [
+    'Fundamentos de Investigación',
+    'Matemáticas I',
+    'Comunicación Oral y Escrita',
+  ];
+  for (const carrera of carreras) {
+    for (const nombreMateria of NOMBRES_MATERIAS_CICLO_1) {
+      const existente = await prisma.materia.findFirst({
+        where: { carreraId: carrera.id, nombre: nombreMateria, ciclo: 1 },
+      });
+      if (!existente) {
+        await prisma.materia.create({
+          data: { carreraId: carrera.id, nombre: nombreMateria, ciclo: 1 },
+        });
+      }
+    }
+  }
+
   const salones: Salon[] = [];
   for (const nombreSalon of config.salones) {
     const salon = await prisma.salon.upsert({
