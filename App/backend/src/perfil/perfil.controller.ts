@@ -25,6 +25,11 @@ import { PerfilService } from './perfil.service';
  * `GET /perfil`), mismo criterio de composición de guards que
  * `SedesController` (Día 20: guard declarado por método cuando la clase
  * sirve rutas con requisitos distintos).
+ *
+ * `GET /perfil/asignaciones` (Fase 12, Día 34) es el equivalente del lado
+ * MAESTRO — mismo patrón de `RolesGuard` a nivel de MÉTODO, pero
+ * `@Roles(MAESTRO)`: el maestro autenticado ve sus grupos y materias
+ * asignados (`GrupoMateriaMaestro`).
  */
 @Controller('perfil')
 @UseGuards(SedeGuard)
@@ -57,6 +62,15 @@ export class PerfilController {
   async obtenerCompaneros(@ActorUsuarioId() actorUsuarioId: string) {
     const data =
       await this.perfilService.obtenerCompanerosDeGrupo(actorUsuarioId);
+    return { data };
+  }
+
+  @Get('asignaciones')
+  @UseGuards(RolesGuard)
+  @Roles(RolUsuario.MAESTRO)
+  async obtenerAsignaciones(@ActorUsuarioId() actorUsuarioId: string) {
+    const data =
+      await this.perfilService.obtenerAsignacionesPropias(actorUsuarioId);
     return { data };
   }
 }
