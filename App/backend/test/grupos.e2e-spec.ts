@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
@@ -53,6 +54,9 @@ describe('GruposController — POST /grupos (e2e)', () => {
   const kid = 'test-key-1';
   const alg = 'ES256';
   const nombrePrueba = `Grupo E2E ${Date.now()}`;
+  const materiaIdsCreados: string[] = [];
+  const usuarioIdsCreados: string[] = [];
+  const asignacionIdsCreados: string[] = [];
 
   async function firmarToken(claims: Record<string, unknown>): Promise<string> {
     return new jose.SignJWT(claims)
@@ -120,15 +124,41 @@ describe('GruposController — POST /grupos (e2e)', () => {
   });
 
   afterAll(async () => {
+    if (asignacionIdsCreados.length > 0) {
+      await prisma.registroAuditoria.deleteMany({
+        where: {
+          entidad: 'GrupoMateriaMaestro',
+          entidadId: { in: asignacionIdsCreados },
+        },
+      });
+    }
     await prisma.registroAuditoria.deleteMany({
       where: { entidad: 'Grupo', sedeId: sedeMeridaId },
     });
     await prisma.grupoAlumno.deleteMany({
       where: { grupo: { nombre: { startsWith: 'Grupo E2E' } } },
     });
+    // FK grupo_materia_maestro_grupo_id_fkey es ON DELETE RESTRICT (Día 33):
+    // hay que borrar estas filas ANTES del grupo.deleteMany o el teardown truena.
+    await prisma.grupoMateriaMaestro.deleteMany({
+      where: { grupo: { nombre: { startsWith: 'Grupo E2E' } } },
+    });
     await prisma.grupo.deleteMany({
       where: { nombre: { startsWith: 'Grupo E2E' } },
     });
+    if (materiaIdsCreados.length > 0) {
+      await prisma.materia.deleteMany({
+        where: { id: { in: materiaIdsCreados } },
+      });
+    }
+    if (usuarioIdsCreados.length > 0) {
+      await prisma.perfilMaestro.deleteMany({
+        where: { usuarioId: { in: usuarioIdsCreados } },
+      });
+      await prisma.usuario.deleteMany({
+        where: { id: { in: usuarioIdsCreados } },
+      });
+    }
     await app.close();
   });
 
@@ -776,6 +806,78 @@ describe('GruposController — POST /grupos (e2e)', () => {
 
       expect(res.status).toBe(401);
       expect((res.body as ErrorBody).code).toBe('UNAUTHORIZED');
+    });
+
+    it('con asignaciones de maestro por materia (sin alumnos) -> 409 CONFLICT, el grupo sigue existiendo', async () => {
+      const token = await firmarToken({
+        role: 'authenticated',
+        sede_id: sedeMeridaId,
+        rol: RolUsuario.ADMINISTRATIVO,
+      });
+
+      const nombreGrupo = `${nombrePrueba} delete-con-asignacion`;
+      const creado = await request(app.getHttpServer())
+        .post('/grupos')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ...bodyValido(), nombre: nombreGrupo, cicloActual: 5 });
+      expect(creado.status).toBe(201);
+      const grupoId = (creado.body as GrupoBody).data.id;
+
+      const materia = await prisma.materia.create({
+        data: {
+          carreraId: carreraMeridaId,
+          nombre: `Materia E2E delete-grupo ${randomUUID().slice(0, 8)}`,
+          ciclo: 5,
+        },
+      });
+      materiaIdsCreados.push(materia.id);
+
+      const maestroUsuario = await prisma.usuario.create({
+        data: {
+          id: randomUUID(),
+          email: `fixture.grupos.del.maestro.${randomUUID()}@example.com`,
+          rol: RolUsuario.MAESTRO,
+          sedeId: sedeMeridaId,
+        },
+      });
+      usuarioIdsCreados.push(maestroUsuario.id);
+      await prisma.perfilMaestro.create({
+        data: {
+          usuarioId: maestroUsuario.id,
+          nombres: 'Fixture',
+          apellidoPaterno: 'DeleteGrupo',
+          apellidoMaterno: `Z${randomUUID().slice(0, 4)}`,
+          curp: `FX${randomUUID().slice(0, 16).toUpperCase()}`,
+          cedulaProfesional: `${randomUUID().slice(0, 7)}`,
+          correoPersonal: `fixture.grupos.del.maestro.p.${randomUUID()}@example.com`,
+          telefono: '9990000000',
+          fechaContratacion: new Date('2024-08-01'),
+          estatus: 'ACTIVO',
+        },
+      });
+
+      const asignada = await request(app.getHttpServer())
+        .post(`/grupos/${grupoId}/asignaciones`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ materiaId: materia.id, usuarioId: maestroUsuario.id });
+      expect(asignada.status).toBe(201);
+      asignacionIdsCreados.push(
+        (asignada.body as { data: { id: string } }).data.id,
+      );
+
+      const res = await request(app.getHttpServer())
+        .delete(`/grupos/${grupoId}`)
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(res.status).toBe(409);
+      const body = res.body as ErrorBody;
+      expect(body.code).toBe('CONFLICT');
+      expect(body.error).toContain('1');
+
+      const sigueExistiendo = await prisma.grupo.findUnique({
+        where: { id: grupoId },
+      });
+      expect(sigueExistiendo).not.toBeNull();
     });
   });
 

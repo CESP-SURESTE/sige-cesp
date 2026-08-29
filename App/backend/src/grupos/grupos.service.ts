@@ -262,9 +262,12 @@ export class GruposService {
    * `DELETE /grupos/:id` — calco del patrón de `SalonesService.eliminar`.
    * `id` debe existir Y pertenecer a la sede del actor -> 404 NOT_FOUND.
    * Bloquea con `409 CONFLICT` si el grupo tiene alumnos inscritos
-   * (`GrupoAlumno`) — mensaje incluye la cantidad. `RegistroAuditoria` de
-   * `ELIMINACION` se crea ANTES del `tx.grupo.delete` dentro de la misma
-   * transacción, con `detalle: { nombre }` como snapshot.
+   * (`GrupoAlumno`) O asignaciones de maestro por materia
+   * (`GrupoMateriaMaestro`, FK `ON DELETE RESTRICT` desde Día 33) — mensaje
+   * incluye la cantidad, chequeo explícito por `count` en ambos casos (no el
+   * catch genérico de `P2003`). `RegistroAuditoria` de `ELIMINACION` se crea
+   * ANTES del `tx.grupo.delete` dentro de la misma transacción, con
+   * `detalle: { nombre }` como snapshot.
    */
   async eliminar(
     id: string,
@@ -285,6 +288,16 @@ export class GruposService {
     if (alumnosInscritos > 0) {
       throw new ConflictException({
         error: `No se puede eliminar: el grupo tiene ${alumnosInscritos} alumno(s) inscrito(s)`,
+        code: 'CONFLICT',
+      });
+    }
+
+    const asignacionesActivas = await this.prisma.grupoMateriaMaestro.count({
+      where: { grupoId: id },
+    });
+    if (asignacionesActivas > 0) {
+      throw new ConflictException({
+        error: `No se puede eliminar: el grupo tiene ${asignacionesActivas} asignación(es) de maestro por materia`,
         code: 'CONFLICT',
       });
     }
@@ -720,7 +733,7 @@ export class GruposService {
 
     const fila = await this.prisma.grupoMateriaMaestro.findUnique({
       where: { id: asignacionId },
-      select: { id: true, grupoId: true },
+      select: { id: true, grupoId: true, materiaId: true, maestroId: true },
     });
     if (!fila || fila.grupoId !== grupoId) {
       throw new NotFoundException({
@@ -738,7 +751,11 @@ export class GruposService {
             accion: AccionAuditoria.ELIMINACION,
             entidad: 'GrupoMateriaMaestro',
             entidadId: fila.id,
-            detalle: { grupoId },
+            detalle: {
+              grupoId,
+              materiaId: fila.materiaId,
+              maestroId: fila.maestroId,
+            },
           },
         });
         await tx.grupoMateriaMaestro.delete({ where: { id: fila.id } });

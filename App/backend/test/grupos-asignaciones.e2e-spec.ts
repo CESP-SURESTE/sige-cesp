@@ -128,6 +128,7 @@ describe('GruposController — asignaciones de maestro por materia (e2e)', () =>
         sedeId,
       },
     });
+    usuarioIdsCreados.push(usuario.id);
     await prisma.perfilMaestro.create({
       data: {
         usuarioId: usuario.id,
@@ -142,7 +143,6 @@ describe('GruposController — asignaciones de maestro por materia (e2e)', () =>
         estatus: 'ACTIVO',
       },
     });
-    usuarioIdsCreados.push(usuario.id);
     return usuario.id;
   }
 
