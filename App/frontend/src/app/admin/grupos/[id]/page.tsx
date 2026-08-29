@@ -35,6 +35,7 @@ import {
 } from '@/lib/api/personas';
 import { ConfirmarMatricularAlumnoModal } from './ConfirmarMatricularAlumnoModal';
 import { ConfirmarQuitarAlumnoModal } from './ConfirmarQuitarAlumnoModal';
+import { SeccionAsignaciones } from './SeccionAsignaciones';
 
 /**
  * Detalle de un grupo — Fase 10, Día 31. Primera ruta dinámica del proyecto
@@ -383,6 +384,8 @@ export default function AdminGrupoDetallePage() {
           </table>
         </div>
       </div>
+
+      {grupo && <SeccionAsignaciones grupo={grupo} />}
 
       {alumnoAConfirmar && grupo && (
         <ConfirmarMatricularAlumnoModal

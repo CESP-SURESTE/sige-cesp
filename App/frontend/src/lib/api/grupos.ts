@@ -175,3 +175,62 @@ export function desmatricularAlumno(
     method: 'DELETE',
   });
 }
+
+/**
+ * `AsignacionListItem` — espejo de `App/backend/src/grupos/grupos.service.ts`
+ * (Día 33). Lo que devuelve `GET /grupos/:id/asignaciones`.
+ */
+export interface AsignacionListItem {
+  id: string;
+  materia: { id: string; nombre: string; ciclo: number };
+  maestro: {
+    usuarioId: string;
+    nombres: string;
+    apellidoPaterno: string;
+    apellidoMaterno: string | null;
+  };
+}
+
+/**
+ * Fila plana de `GrupoMateriaMaestro` (`schema.prisma`, Día 33) — lo que
+ * devuelve `POST /grupos/:id/asignaciones` (`GruposService.asignarMaestro`).
+ */
+export interface GrupoMateriaMaestro {
+  id: string;
+  grupoId: string;
+  materiaId: string;
+  maestroId: string;
+  asignadoEn: string;
+}
+
+/** `GET /grupos/:id/asignaciones` — Fase 12, Día 33. Sin paginar. */
+export function listarAsignaciones(
+  grupoId: string,
+): Promise<AsignacionListItem[]> {
+  return apiFetchAuth<AsignacionListItem[]>(`/grupos/${grupoId}/asignaciones`);
+}
+
+/**
+ * `POST /grupos/:id/asignaciones` — Fase 12, Día 33. Devuelve la fila
+ * `GrupoMateriaMaestro` PLANA. `usuarioId` es un `Usuario.id` de un maestro.
+ */
+export function asignarMaestro(
+  grupoId: string,
+  input: { materiaId: string; usuarioId: string },
+): Promise<GrupoMateriaMaestro> {
+  return apiFetchAuth<GrupoMateriaMaestro>(`/grupos/${grupoId}/asignaciones`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+/** `DELETE /grupos/:id/asignaciones/:asignacionId` — Fase 12, Día 33. */
+export function eliminarAsignacion(
+  grupoId: string,
+  asignacionId: string,
+): Promise<{ ok: true }> {
+  return apiFetchAuth<{ ok: true }>(
+    `/grupos/${grupoId}/asignaciones/${asignacionId}`,
+    { method: 'DELETE' },
+  );
+}
