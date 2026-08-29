@@ -260,6 +260,21 @@ describe('PerfilController — GET /perfil/asignaciones (e2e)', () => {
     expect(data[0].carrera.id).toBe(carreraLaeId);
     expect(data[0].salon.id).toBe(salonMeridaId);
     expect(data[0].materias.map((m) => m.id)).toEqual([matA, matZ]); // nombre asc
+
+    // Fija los campos escalares del shape (finding 8): la UI del maestro los
+    // renderiza, pero antes ningún assert los tocaba — quitar cualquiera del
+    // `select` de Prisma dejaba los 8 tests en verde.
+    expect(data[0]).toMatchObject({
+      anioInicio: 2027,
+      cicloActual: 1,
+      carrera: { id: carreraLaeId },
+      salon: { id: salonMeridaId },
+    });
+    expect(data[0].nombre).toBeTruthy();
+    expect(data[0].carrera.nombre).toBeTruthy();
+    expect(data[0].salon.nombre).toBeTruthy();
+    expect(data[0].materias[0]).toMatchObject({ id: matA, ciclo: 1 });
+    expect(data[0].materias[0].nombre).toBeTruthy();
   });
 
   it('maestro con asignaciones en 2 grupos -> 2 grupos, orden anioInicio/cicloActual desc, nombre asc', async () => {

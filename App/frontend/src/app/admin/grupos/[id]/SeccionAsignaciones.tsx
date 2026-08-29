@@ -140,6 +140,7 @@ export function SeccionAsignaciones({ grupo }: { grupo: GrupoListItem }) {
         carreraId: grupo.carrera.id,
         ciclo: grupo.cicloActual,
       }),
+    onMutate: () => setErrorNuevaMateria(null),
     onSuccess: () => {
       toast.success('Materia creada');
       setModalMateriaAbierto(false);
@@ -212,6 +213,14 @@ export function SeccionAsignaciones({ grupo }: { grupo: GrupoListItem }) {
         </p>
       )}
 
+      {maestrosQuery.data && maestrosQuery.data.total > maestros.length && (
+        <p className="mt-2 rounded-lg border border-warning-border bg-warning-bg px-3 py-2 text-xs text-warning">
+          Mostrando los primeros {maestros.length} de{' '}
+          {maestrosQuery.data.total} maestros. Si el maestro que buscas no
+          aparece, contacta a soporte.
+        </p>
+      )}
+
       {!materiasQuery.isLoading &&
         !materiasQuery.isError &&
         materias.length === 0 && (
@@ -224,7 +233,9 @@ export function SeccionAsignaciones({ grupo }: { grupo: GrupoListItem }) {
 
       {!materiasQuery.isLoading &&
         !materiasQuery.isError &&
+        !asignacionesQuery.isLoading &&
         !asignacionesQuery.isError &&
+        !maestrosQuery.isLoading &&
         !maestrosQuery.isError &&
         materias.length > 0 && (
           <ul className="mt-4 divide-y divide-mist">
@@ -276,11 +287,14 @@ export function SeccionAsignaciones({ grupo }: { grupo: GrupoListItem }) {
                   <div className="mt-2 flex items-center gap-2">
                     {disponibles.length === 0 ? (
                       <span className="text-xs text-slate/50">
-                        Todos los maestros ya están asignados a esta materia.
+                        {maestros.length === 0
+                          ? 'No hay maestros registrados en esta sede.'
+                          : 'Todos los maestros ya están asignados a esta materia.'}
                       </span>
                     ) : (
                       <>
                         <select
+                          aria-label={`Agregar maestro a ${materia.nombre}`}
                           value={seleccion}
                           disabled={filaOcupada || maestrosQuery.isError}
                           onChange={(e) =>
@@ -295,6 +309,11 @@ export function SeccionAsignaciones({ grupo }: { grupo: GrupoListItem }) {
                           {disponibles.map((m) => (
                             <option key={m.usuarioId} value={m.usuarioId}>
                               {nombreMaestro(m)}
+                              {m.estatus === 'BAJA'
+                                ? ' (Baja)'
+                                : m.estatus === 'LICENCIA'
+                                  ? ' (Licencia)'
+                                  : ''}
                             </option>
                           ))}
                         </select>
