@@ -285,3 +285,32 @@ export interface GrupoConCompaneros {
 export function obtenerCompaneros(): Promise<GrupoConCompaneros[]> {
   return apiFetchAuth<GrupoConCompaneros[]>('/perfil/grupo/companeros');
 }
+
+/**
+ * `GET /perfil/asignaciones` — Fase 12, Día 34.
+ *
+ * Grupos y materias que el maestro autenticado tiene asignados, agrupados
+ * por grupo. Shape espejo exacto de `PerfilService.obtenerAsignacionesPropias`
+ * (`App/backend/src/perfil/perfil.service.ts`) — mismo criterio de "mantener
+ * en sync a mano" que el resto de este archivo. Solo `MAESTRO`. Array vacío
+ * si el maestro no tiene asignaciones.
+ */
+export interface MateriaAsignada {
+  id: string;
+  nombre: string;
+  ciclo: number;
+}
+
+export interface GrupoConMaterias {
+  grupoId: string;
+  nombre: string;
+  anioInicio: number;
+  cicloActual: number;
+  carrera: { id: string; nombre: string };
+  salon: { id: string; nombre: string };
+  materias: MateriaAsignada[];
+}
+
+export function obtenerMisAsignaciones(): Promise<GrupoConMaterias[]> {
+  return apiFetchAuth<GrupoConMaterias[]>('/perfil/asignaciones');
+}

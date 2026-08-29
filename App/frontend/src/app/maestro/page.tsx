@@ -3,8 +3,10 @@
 import { useQuery } from '@tanstack/react-query';
 import { ApiError } from '@/lib/api/http';
 import {
+  obtenerMisAsignaciones,
   obtenerPerfil,
   type ContactoMaestro,
+  type GrupoConMaterias,
   type Perfil,
   type PerfilMaestro,
 } from '@/lib/api/perfil';
@@ -107,6 +109,7 @@ function PerfilContenido({ perfil }: { perfil: Perfil }) {
         <SeccionDatosPersonales maestro={perfil.maestro} email={perfil.email} />
         <SeccionSede sede={perfil.sede} />
         <SeccionContactos maestro={perfil.maestro} />
+        <SeccionAsignaciones />
       </div>
     </div>
   );
@@ -207,6 +210,90 @@ function ContactoItem({ contacto }: { contacto: ContactoMaestro }) {
         <Campo etiqueta="Teléfono" valor={contacto.telefono} />
         <Campo etiqueta="Correo" valor={contacto.correo} />
       </dl>
+    </div>
+  );
+}
+
+/**
+ * Mis grupos y materias asignadas — Fase 12, Día 34. Sección propia con su
+ * `useQuery` contra `GET /perfil/asignaciones` (`lib/api/perfil.ts`). Solo
+ * lectura, agrupada por grupo. Regla 11: árbol `app/maestro/` propio, sin
+ * componentes de admin. Regla 12: `console.error` en el catch del `queryFn`.
+ */
+function SeccionAsignaciones() {
+  const {
+    data: grupos,
+    isLoading,
+    isError,
+    error,
+  } = useQuery({
+    queryKey: ['maestro', 'asignaciones'],
+    queryFn: async () => {
+      try {
+        return await obtenerMisAsignaciones();
+      } catch (err) {
+        console.error(
+          '[MaestroAsignaciones] Error al obtener asignaciones:',
+          err,
+        );
+        throw err;
+      }
+    },
+  });
+
+  return (
+    <section className="rounded-lg border border-mist p-5">
+      <h2 className="text-sm font-semibold text-navy">Mis grupos y materias</h2>
+
+      {isLoading && <p className="mt-3 text-sm text-slate/60">Cargando…</p>}
+
+      {isError && (
+        <p className="mt-3 rounded-lg border border-error-border bg-error-bg px-4 py-3 text-sm text-crimson">
+          {error instanceof ApiError
+            ? error.message
+            : 'No se pudieron cargar tus asignaciones. Intenta de nuevo más tarde.'}
+        </p>
+      )}
+
+      {!isLoading && !isError && grupos && grupos.length === 0 && (
+        <p className="mt-3 text-sm text-slate/60">
+          Aún no tienes materias asignadas.
+        </p>
+      )}
+
+      {!isLoading && !isError && grupos && grupos.length > 0 && (
+        <div className="mt-3 space-y-4">
+          {grupos.map((grupo) => (
+            <GrupoAsignado key={grupo.grupoId} grupo={grupo} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function GrupoAsignado({ grupo }: { grupo: GrupoConMaterias }) {
+  return (
+    <div className="rounded-lg border border-mist bg-bone/60 p-4">
+      <h3 className="text-sm font-semibold text-navy">{grupo.nombre}</h3>
+      <p className="mt-0.5 text-xs text-slate/60">
+        {grupo.carrera.nombre} · {grupo.anioInicio}-{grupo.cicloActual} · Salón{' '}
+        {grupo.salon.nombre}
+      </p>
+      {grupo.materias.length === 0 ? (
+        <p className="mt-3 text-sm text-slate/60">
+          Sin materias asignadas en este grupo.
+        </p>
+      ) : (
+        <ul className="mt-3 divide-y divide-mist">
+          {grupo.materias.map((materia) => (
+            <li key={materia.id} className="py-2 first:pt-0 last:pb-0">
+              <p className="text-sm font-medium text-slate">{materia.nombre}</p>
+              <p className="text-xs text-slate/50">Ciclo {materia.ciclo}</p>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
