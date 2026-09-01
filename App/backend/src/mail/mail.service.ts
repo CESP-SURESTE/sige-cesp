@@ -136,6 +136,52 @@ export class MailService {
   }
 
   /**
+   * Helper privado — realiza la petición real a Mailgun (config, auth, fetch, error handling).
+   * Asumeque `MAILGUN_ENVIOS_HABILITADO` ya fue verificado por el caller.
+   * Lanza si falta config, si la red falla, o si Mailgun rechaza.
+   */
+  private async enviarCorreoAMailgun(
+    correoDestino: string,
+    asunto: string,
+    cuerpoTexto: string,
+    cuerpoHtml?: string,
+  ): Promise<void> {
+    const apiKey = process.env.MAILGUN_API_KEY;
+    const domain = process.env.MAILGUN_DOMAIN;
+    const baseUrl = process.env.MAILGUN_BASE_URL ?? 'https://api.mailgun.net';
+
+    if (!apiKey || !domain) {
+      throw new Error('Falta MAILGUN_API_KEY o MAILGUN_DOMAIN en el entorno');
+    }
+
+    const body = new URLSearchParams({
+      from: `SIGE CESP <postmaster@${domain}>`,
+      to: correoDestino,
+      subject: asunto,
+      text: cuerpoTexto,
+      ...(cuerpoHtml ? { html: cuerpoHtml } : {}),
+    });
+
+    const auth = Buffer.from(`api:${apiKey}`).toString('base64');
+    const clientFetch = this.getFetch();
+    const response = await clientFetch(`${baseUrl}/v3/${domain}/messages`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${auth}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: body.toString(),
+    });
+
+    if (!response.ok) {
+      const detalle = await response.text().catch(() => '');
+      throw new Error(
+        `Mailgun respondió ${response.status} ${response.statusText}: ${detalle}`,
+      );
+    }
+  }
+
+  /**
    * Envía el correo de bienvenida a una persona recién dada de alta.
    * Lanza si `MAILGUN_API_KEY`/`MAILGUN_DOMAIN` faltan, si Mailgun responde
    * con un status no-2xx, o si `fetch` rechaza (red) — el caller decide qué
@@ -156,46 +202,15 @@ export class MailService {
       return;
     }
 
-    const apiKey = process.env.MAILGUN_API_KEY;
-    const domain = process.env.MAILGUN_DOMAIN;
-    const baseUrl = process.env.MAILGUN_BASE_URL ?? 'https://api.mailgun.net';
-
-    if (!apiKey || !domain) {
-      throw new Error('Falta MAILGUN_API_KEY o MAILGUN_DOMAIN en el entorno');
-    }
-
     const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:3000';
     const loginUrl = `${frontendUrl}/login`;
 
-    const body = new URLSearchParams({
-      from: `SIGE CESP <postmaster@${domain}>`,
-      // Destino real (feature 2026-08-18) — `correoDestino`, NO `params.email`
-      // (ese es el login, mostrado en el CUERPO del mensaje vía
-      // `buildTexto`/`buildHtml`, ver comentario de `EnviarCorreoBienvenidaParams`).
-      to: params.correoDestino,
-      subject: 'Bienvenido a SIGE — tu cuenta ya está lista',
-      text: this.buildTexto(params, loginUrl),
-      html: this.buildHtml(params, loginUrl),
-    });
-
-    const auth = Buffer.from(`api:${apiKey}`).toString('base64');
-
-    const clientFetch = this.getFetch();
-    const response = await clientFetch(`${baseUrl}/v3/${domain}/messages`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Basic ${auth}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: body.toString(),
-    });
-
-    if (!response.ok) {
-      const detalle = await response.text().catch(() => '');
-      throw new Error(
-        `Mailgun respondió ${response.status} ${response.statusText}: ${detalle}`,
-      );
-    }
+    await this.enviarCorreoAMailgun(
+      params.correoDestino,
+      'Bienvenido a SIGE — tu cuenta ya está lista',
+      this.buildTexto(params, loginUrl),
+      this.buildHtml(params, loginUrl),
+    );
   }
 
   /**
@@ -217,38 +232,11 @@ export class MailService {
       return;
     }
 
-    const apiKey = process.env.MAILGUN_API_KEY;
-    const domain = process.env.MAILGUN_DOMAIN;
-    const baseUrl = process.env.MAILGUN_BASE_URL ?? 'https://api.mailgun.net';
-
-    if (!apiKey || !domain) {
-      throw new Error('Falta MAILGUN_API_KEY o MAILGUN_DOMAIN en el entorno');
-    }
-
-    const body = new URLSearchParams({
-      from: `SIGE CESP <postmaster@${domain}>`,
-      to: params.correoDestino,
-      subject: params.asunto,
-      text: params.cuerpoTexto,
-      ...(params.cuerpoHtml ? { html: params.cuerpoHtml } : {}),
-    });
-
-    const auth = Buffer.from(`api:${apiKey}`).toString('base64');
-    const clientFetch = this.getFetch();
-    const response = await clientFetch(`${baseUrl}/v3/${domain}/messages`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Basic ${auth}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: body.toString(),
-    });
-
-    if (!response.ok) {
-      const detalle = await response.text().catch(() => '');
-      throw new Error(
-        `Mailgun respondió ${response.status} ${response.statusText}: ${detalle}`,
-      );
-    }
+    await this.enviarCorreoAMailgun(
+      params.correoDestino,
+      params.asunto,
+      params.cuerpoTexto,
+      params.cuerpoHtml,
+    );
   }
 }
