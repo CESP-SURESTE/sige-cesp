@@ -107,6 +107,11 @@ enum AreaPersonalServicios {
   OTRO
 }
 
+enum TipoNotificacion {
+  AVISO
+  RECORDATORIO_EVENTO
+}
+
 // ============================
 // SEDE / INFRAESTRUCTURA
 // ============================
@@ -128,6 +133,7 @@ model Sede {
   grupos              Grupo[]
   responsables        SedeResponsable[]
   registrosAuditoria  RegistroAuditoria[]
+  notificaciones      Notificacion[]
 
   @@map("sedes")
 }
@@ -299,6 +305,7 @@ model Usuario {
   perfilAdministrativo PerfilAdministrativo?
   mallasSubidas        MallaCurricular[]
   registrosAuditoria   RegistroAuditoria[]
+  notificaciones       Notificacion[]
 
   @@map("usuarios")
 }
@@ -563,6 +570,31 @@ model RegistroAuditoria {
   fecha             DateTime         @default(now())
 
   @@map("registro_auditoria")
+}
+
+/// Notificación in-app para un usuario — Fase 14, Día 38. Capa compartida:
+/// la crean el fan-out de avisos (Fase 16) y el job de recordatorios de
+/// calendario (Fase 15). NO se audita (regla 5 aplica a acciones de
+/// negocio; esto es estado de entrega derivado, alto volumen). `leidoEn`
+/// null = no leída; el badge cuenta esas. `referenciaId` apunta a
+/// `Aviso.id` o `EventoCalendario.id` según `tipo` — sin FK (las entidades
+/// referidas no existen todavía en la Fase 14 y el borrado en cascada lo
+/// maneja cada módulo dueño al borrar su entidad).
+model Notificacion {
+  id           String           @id @default(uuid())
+  usuarioId    String           @map("usuario_id")
+  usuario      Usuario          @relation(fields: [usuarioId], references: [id])
+  sedeId       String           @map("sede_id")
+  sede         Sede             @relation(fields: [sedeId], references: [id])
+  tipo         TipoNotificacion
+  referenciaId String           @map("referencia_id")
+  titulo       String
+  cuerpoCorto  String           @map("cuerpo_corto")
+  leidoEn      DateTime?        @map("leido_en")
+  createdAt    DateTime         @default(now()) @map("created_at")
+
+  @@index([usuarioId, leidoEn])
+  @@map("notificaciones")
 }
 
 model Seccion {
