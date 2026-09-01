@@ -7,6 +7,7 @@ import { VolverAlPanel } from '@/components/admin/ui/VolverAlPanel';
 import { obtenerPerfil } from '@/lib/api/perfil';
 import { Sidebar } from './Sidebar';
 import { ProfileDropdown } from './ProfileDropdown';
+import { NotificacionesBell } from './NotificacionesBell';
 import { useSidebarState } from './useSidebarState';
 import { IconChevronDoble, IconCerrar, IconMenu, IconUbicacion } from './icons';
 
@@ -174,7 +175,8 @@ function Topbar({
       <div className="justify-self-center">
         <SedeBadge />
       </div>
-      <div className="flex shrink-0 items-center justify-self-end">
+      <div className="flex shrink-0 items-center gap-1 justify-self-end">
+        <NotificacionesBell />
         <ProfileDropdown email={email} />
       </div>
     </header>
