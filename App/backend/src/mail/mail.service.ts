@@ -73,6 +73,15 @@ export interface EnviarCorreoBienvenidaParams {
   temporaryPassword: string;
 }
 
+export interface EnviarNotificacionParams {
+  /** Destino real del envío (`to:`). Normalmente `correoPersonal` del perfil. */
+  correoDestino: string;
+  asunto: string;
+  cuerpoTexto: string;
+  /** Opcional — si falta, se manda solo `text`. */
+  cuerpoHtml?: string;
+}
+
 @Injectable()
 export class MailService {
   constructor(
@@ -171,6 +180,60 @@ export class MailService {
 
     const auth = Buffer.from(`api:${apiKey}`).toString('base64');
 
+    const clientFetch = this.getFetch();
+    const response = await clientFetch(`${baseUrl}/v3/${domain}/messages`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${auth}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: body.toString(),
+    });
+
+    if (!response.ok) {
+      const detalle = await response.text().catch(() => '');
+      throw new Error(
+        `Mailgun respondió ${response.status} ${response.statusText}: ${detalle}`,
+      );
+    }
+  }
+
+  /**
+   * Envío genérico de notificación por correo — Fase 14, Día 38. Lo usan el
+   * fan-out de avisos (Fase 16) y el job de recordatorios (Fase 15) como
+   * efecto best-effort: el CALLER envuelve en su propio try/catch y no deja
+   * que un fallo de Mailgun tumbe la operación (mismo criterio que
+   * `enviarCorreoBienvenida` + `PersonasService.altaPersona`).
+   *
+   * Mismo comportamiento del flag `MAILGUN_ENVIOS_HABILITADO` (falla cerrado):
+   * apagado -> loguea y retorna sin pegarle a Mailgun.
+   */
+  async enviarNotificacion(params: EnviarNotificacionParams): Promise<void> {
+    if (!enviosHabilitados()) {
+      console.log(
+        '[MailService] Envío deshabilitado (MAILGUN_ENVIOS_HABILITADO=false) — se hubiera enviado a:',
+        params.correoDestino,
+      );
+      return;
+    }
+
+    const apiKey = process.env.MAILGUN_API_KEY;
+    const domain = process.env.MAILGUN_DOMAIN;
+    const baseUrl = process.env.MAILGUN_BASE_URL ?? 'https://api.mailgun.net';
+
+    if (!apiKey || !domain) {
+      throw new Error('Falta MAILGUN_API_KEY o MAILGUN_DOMAIN en el entorno');
+    }
+
+    const body = new URLSearchParams({
+      from: `SIGE CESP <postmaster@${domain}>`,
+      to: params.correoDestino,
+      subject: params.asunto,
+      text: params.cuerpoTexto,
+      ...(params.cuerpoHtml ? { html: params.cuerpoHtml } : {}),
+    });
+
+    const auth = Buffer.from(`api:${apiKey}`).toString('base64');
     const clientFetch = this.getFetch();
     const response = await clientFetch(`${baseUrl}/v3/${domain}/messages`, {
       method: 'POST',
