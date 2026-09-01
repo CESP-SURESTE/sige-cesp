@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   conteoNoLeidas,
   listarNotificaciones,
@@ -90,6 +91,7 @@ export function NotificacionesBell() {
       await queryClient.invalidateQueries({ queryKey: ['notificaciones'] });
     } catch (err) {
       console.error('[NotificacionesBell] Error al marcar leída:', err);
+      toast.error('No se pudo marcar la notificación como leída');
     }
   }
 
@@ -103,6 +105,8 @@ export function NotificacionesBell() {
             ? `Notificaciones (${noLeidas} sin leer)`
             : 'Notificaciones'
         }
+        aria-haspopup="menu"
+        aria-expanded={abierto}
         className="relative rounded-lg p-1.5 text-slate transition-colors hover:bg-mist/50 focus-visible:ring-2 focus-visible:ring-navy focus-visible:outline-none"
       >
         <IconCampana className="size-5" />
@@ -118,7 +122,7 @@ export function NotificacionesBell() {
           <div className="border-b border-mist px-4 py-2.5 text-xs font-semibold tracking-wide text-slate uppercase">
             Notificaciones
           </div>
-          <ul className="max-h-96 divide-y divide-mist overflow-y-auto">
+          <ul role="menu" className="max-h-96 divide-y divide-mist overflow-y-auto">
             {(lista?.data.length ?? 0) === 0 && (
               <li className="px-4 py-6 text-center text-sm text-slate/60">
                 No tienes notificaciones
@@ -128,6 +132,7 @@ export function NotificacionesBell() {
               <li key={n.id}>
                 <button
                   type="button"
+                  role="menuitem"
                   onClick={() => onClickItem(n)}
                   className={[
                     'block w-full px-4 py-3 text-left transition-colors hover:bg-bone',
