@@ -583,7 +583,7 @@ model RegistroAuditoria {
 model Notificacion {
   id           String           @id @default(uuid())
   usuarioId    String           @map("usuario_id")
-  usuario      Usuario          @relation(fields: [usuarioId], references: [id])
+  usuario      Usuario          @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
   sedeId       String           @map("sede_id")
   sede         Sede             @relation(fields: [sedeId], references: [id])
   tipo         TipoNotificacion
@@ -594,6 +594,7 @@ model Notificacion {
   createdAt    DateTime         @default(now()) @map("created_at")
 
   @@index([usuarioId, leidoEn])
+  @@index([usuarioId, createdAt])
   @@map("notificaciones")
 }
 

@@ -314,6 +314,11 @@ describe('NotificacionesController (e2e)', () => {
     expect((res.body as ErrorBody).code).toBe('UNAUTHORIZED');
   });
 
+  // Nota: este caso verifica aislamiento por `usuarioId` a nivel de aplicación
+  // (NotificacionesService filtra siempre por el actor), NO aislamiento activo
+  // por RLS de Postgres — Prisma se conecta con un rol que hace bypass de RLS
+  // en este proyecto (ver el comentario de SedeGuard). La RLS sigue siendo
+  // defensa en profundidad contra acceso directo vía cliente de Supabase.
   it('un usuario de otra sede no ve las notificaciones ajenas', async () => {
     // Sede Valladolid — nombre exacto verificado en prisma/seed.ts: 'CESP Valladolid'
     const sedeVlld = await prisma.sede.findUniqueOrThrow({
