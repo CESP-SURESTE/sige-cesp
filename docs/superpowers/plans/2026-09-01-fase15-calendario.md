@@ -417,9 +417,12 @@ describe('expandirOcurrencias', () => {
       { desde: fecha('2026-10-01'), hasta: fecha('2026-11-04') },
     );
     // Semana 1 (5-11 oct): lun 5, mie 7. Semana 3 (19-25 oct, +2 semanas): lun 19, mie 21.
-    // Semana 5 (2-8 nov, +2 semanas): lun 2 nov (dentro del rango, hasta = 4 nov).
+    // Semana 5 (1-7 nov, +2 semanas): lun 2 nov, mie 4 nov — 4 nov ES el borde superior
+    // del rango (hasta = 4 nov) y el rango es INCLUSIVO en ambos extremos, así que entra.
     expect(resultado).toEqual(
-      ['2026-10-05', '2026-10-07', '2026-10-19', '2026-10-21', '2026-11-02'].map(fecha),
+      ['2026-10-05', '2026-10-07', '2026-10-19', '2026-10-21', '2026-11-02', '2026-11-04'].map(
+        fecha,
+      ),
     );
   });
 
