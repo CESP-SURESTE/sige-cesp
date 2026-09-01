@@ -112,6 +112,21 @@ enum TipoNotificacion {
   RECORDATORIO_EVENTO
 }
 
+enum CategoriaEvento {
+  EXAMEN
+  SOCIAL
+  ADMINISTRATIVO
+  SUSPENSION_CLASES
+  OTRO
+}
+
+/// Compartido con Aviso (Fase 16) — mismo shape de "a quién le toca esto".
+enum AlcanceDestino {
+  SEDE
+  CARRERA
+  GRUPO
+}
+
 // ============================
 // SEDE / INFRAESTRUCTURA
 // ============================
@@ -134,6 +149,7 @@ model Sede {
   responsables        SedeResponsable[]
   registrosAuditoria  RegistroAuditoria[]
   notificaciones      Notificacion[]
+  eventosCalendario   EventoCalendario[]
 
   @@map("sedes")
 }
@@ -306,6 +322,7 @@ model Usuario {
   mallasSubidas        MallaCurricular[]
   registrosAuditoria   RegistroAuditoria[]
   notificaciones       Notificacion[]
+  eventosCreados       EventoCalendario[]
 
   @@map("usuarios")
 }
@@ -596,6 +613,55 @@ model Notificacion {
   @@index([usuarioId, leidoEn])
   @@index([usuarioId, createdAt])
   @@map("notificaciones")
+}
+
+/// Evento de calendario escolar — Fase 15, Día 40. `alcanceId` apunta a
+/// `Carrera.id` o `Grupo.id` según `alcanceTipo`, o es null si `SEDE` — sin
+/// FK (el alcance se valida en `validarAlcancePublicacion`, no vía
+/// constraint de DB, mismo criterio que `Notificacion.referenciaId`).
+/// `recurrenciaRegla` es `Json?` (shape `ReglaRecurrencia` de
+/// `recurrencia.util.ts`, validado en el DTO — no en la DB); las
+/// ocurrencias NUNCA se persisten (regla 1), se expanden al vuelo.
+/// `fechaFin` es informativo (ver Global Constraints) — no genera
+/// ocurrencias adicionales.
+model EventoCalendario {
+  id               String          @id @default(uuid())
+  sedeId           String          @map("sede_id")
+  sede             Sede            @relation(fields: [sedeId], references: [id])
+  autorUsuarioId   String          @map("autor_usuario_id")
+  autor            Usuario         @relation(fields: [autorUsuarioId], references: [id])
+  titulo           String
+  descripcion      String?
+  fechaInicio      DateTime        @map("fecha_inicio") @db.Date
+  horaInicio       String?         @map("hora_inicio")
+  fechaFin         DateTime?       @map("fecha_fin") @db.Date
+  categoria        CategoriaEvento
+  alcanceTipo      AlcanceDestino  @map("alcance_tipo")
+  alcanceId        String?         @map("alcance_id")
+  recurrenciaRegla Json?           @map("recurrencia_regla")
+  recurrenciaHasta DateTime?       @map("recurrencia_hasta") @db.Date
+  createdAt        DateTime        @default(now()) @map("created_at")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
+
+  recordatoriosEnviados RecordatorioEnviado[]
+
+  @@map("eventos_calendario")
+}
+
+/// Idempotencia del job de recordatorios — Fase 15, Día 42. Una fila por
+/// ocurrencia ya notificada (`@@unique` la hace segura ante corridas
+/// solapadas del cron). `onDelete: Cascade` — si se borra el evento, sus
+/// recordatorios enviados dejan de tener sentido (no son historial de
+/// negocio, regla 5 no aplica).
+model RecordatorioEnviado {
+  id              String           @id @default(uuid())
+  eventoId        String           @map("evento_id")
+  evento          EventoCalendario @relation(fields: [eventoId], references: [id], onDelete: Cascade)
+  fechaOcurrencia DateTime         @map("fecha_ocurrencia") @db.Date
+  enviadoEn       DateTime         @default(now()) @map("enviado_en")
+
+  @@unique([eventoId, fechaOcurrencia])
+  @@map("recordatorio_enviado")
 }
 
 model Seccion {
