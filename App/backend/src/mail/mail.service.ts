@@ -137,7 +137,7 @@ export class MailService {
 
   /**
    * Helper privado — realiza la petición real a Mailgun (config, auth, fetch, error handling).
-   * Asumeque `MAILGUN_ENVIOS_HABILITADO` ya fue verificado por el caller.
+   * Asume que `MAILGUN_ENVIOS_HABILITADO` ya fue verificado por el caller.
    * Lanza si falta config, si la red falla, o si Mailgun rechaza.
    */
   private async enviarCorreoAMailgun(
