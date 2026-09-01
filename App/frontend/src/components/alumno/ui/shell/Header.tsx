@@ -2,6 +2,7 @@
 
 import { ProfileDropdown } from './ProfileDropdown';
 import { SedeCarreraBadge } from './SedeCarreraBadge';
+import { NotificacionesBell } from './NotificacionesBell';
 
 /**
  * Header del área ALUMNO — rediseño de navbar (2026-08-16). Reemplaza el
@@ -26,7 +27,10 @@ export function Header({ email }: { email: string | null }) {
           <span className="text-sm font-medium text-slate">Panel del alumno</span>
         </div>
         <SedeCarreraBadge />
-        <ProfileDropdown email={email} />
+        <div className="flex items-center gap-1">
+          <NotificacionesBell />
+          <ProfileDropdown email={email} />
+        </div>
       </div>
     </header>
   );

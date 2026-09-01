@@ -2,6 +2,7 @@
 
 import { ProfileDropdown } from './ProfileDropdown';
 import { SedeBadge } from './SedeBadge';
+import { NotificacionesBell } from './NotificacionesBell';
 
 /**
  * Header del área MAESTRO — rediseño de navbar (2026-08-16). Mismo criterio
@@ -19,7 +20,10 @@ export function Header({ email }: { email: string | null }) {
           <span className="text-sm font-medium text-slate">Panel del maestro</span>
         </div>
         <SedeBadge />
-        <ProfileDropdown email={email} />
+        <div className="flex items-center gap-1">
+          <NotificacionesBell />
+          <ProfileDropdown email={email} />
+        </div>
       </div>
     </header>
   );
