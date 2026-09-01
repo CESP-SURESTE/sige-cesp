@@ -157,15 +157,15 @@ describe('InternalRecordatoriosController (e2e)', () => {
     expect((res.body as ErrorBody).code).toBe('UNAUTHORIZED');
   });
 
-  it('3. RECORDATORIOS_HABILITADO=false + secreto correcto -> no-op', async () => {
+  it('3. RECORDATORIOS_HABILITADO=false + secreto correcto -> 200 no-op', async () => {
     process.env.RECORDATORIOS_HABILITADO = 'false';
 
     const res = await ejecutar(SECRETO_TEST);
-    // El controller no declara `@HttpCode`, así que Nest usa el default de
-    // POST (201) — no hay un `200` documentado para esta ruta interna en
-    // ningún lado (ni CLAUDE.md ni el brief de Task 5), así que el test
-    // sigue el comportamiento real en vez de forzar un status distinto.
-    expect(res.status).toBe(201);
+    // `@HttpCode(200)` explícito en el controller (fix posterior al review
+    // de esta suite, ver docstring del controller) — mismo criterio que
+    // `POST /auth/login`/`POST /platform-admin/login`, endpoints RPC/acción
+    // que no crean un recurso durable.
+    expect(res.status).toBe(200);
     expect((res.body as EjecutarBody).data).toEqual({
       ocurrenciasProcesadas: 0,
       notificacionesCreadas: 0,
@@ -180,7 +180,7 @@ describe('InternalRecordatoriosController (e2e)', () => {
     eventoDentroDeVentanaId = await crearEvento(fechaUtcEnDias(1));
 
     const res = await ejecutar(SECRETO_TEST);
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(200);
     const data = (res.body as EjecutarBody).data;
     expect(data.ocurrenciasProcesadas).toBeGreaterThanOrEqual(1);
     expect(data.notificacionesCreadas).toBeGreaterThanOrEqual(1);
@@ -203,7 +203,7 @@ describe('InternalRecordatoriosController (e2e)', () => {
     expect(antes).toBeGreaterThanOrEqual(1);
 
     const res = await ejecutar(SECRETO_TEST);
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(200);
 
     const despues = await prisma.notificacion.count({
       where: { referenciaId: eventoDentroDeVentanaId },
@@ -215,7 +215,7 @@ describe('InternalRecordatoriosController (e2e)', () => {
     const eventoFueraDeVentanaId = await crearEvento(fechaUtcEnDias(5));
 
     const res = await ejecutar(SECRETO_TEST);
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(200);
 
     const notificaciones = await prisma.notificacion.count({
       where: { referenciaId: eventoFueraDeVentanaId },
