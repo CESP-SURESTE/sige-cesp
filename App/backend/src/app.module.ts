@@ -17,6 +17,7 @@ import { GruposModule } from './grupos/grupos.module';
 import { SalonesModule } from './salones/salones.module';
 import { MateriasModule } from './materias/materias.module';
 import { NotificacionesModule } from './notificaciones/notificaciones.module';
+import { CalendarioModule } from './calendario/calendario.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { NotificacionesModule } from './notificaciones/notificaciones.module';
     SalonesModule,
     MateriasModule,
     NotificacionesModule,
+    CalendarioModule,
   ],
   controllers: [AppController],
   providers: [AppService],
