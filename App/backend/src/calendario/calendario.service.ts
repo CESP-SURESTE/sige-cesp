@@ -12,7 +12,11 @@ import {
   type EventoCalendario,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { validarAlcancePublicacion } from '../common/publicacion/alcance-publicacion.util';
+import { MailService } from '../mail/mail.service';
+import {
+  validarAlcancePublicacion,
+  resolverDestinatarios,
+} from '../common/publicacion/alcance-publicacion.util';
 import { expandirOcurrencias, type ReglaRecurrencia } from './recurrencia.util';
 import type { ActualizarEventoDto } from './dto/actualizar-evento.dto';
 import type { CrearEventoDto } from './dto/crear-evento.dto';
@@ -127,9 +131,16 @@ function hayCambiosReales(
   return false;
 }
 
+function enviosDeRecordatoriosHabilitados(): boolean {
+  return process.env.RECORDATORIOS_HABILITADO === 'true';
+}
+
 @Injectable()
 export class CalendarioService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly mailService: MailService,
+  ) {}
 
   /**
    * `POST /eventos` — Fase 15, Día 41. Orden: (1) `validarAlcancePublicacion`
@@ -496,5 +507,176 @@ export class CalendarioService {
       console.error('[CalendarioService.eliminar] error inesperado:', err);
       throw err;
     }
+  }
+
+  /**
+   * Job de recordatorios — Fase 15, Día 42. Para cada evento con al menos
+   * una ocurrencia en las próximas 24-48h (expandiendo recurrencia), por
+   * cada ocurrencia sin fila en `RecordatorioEnviado(eventoId,
+   * fechaOcurrencia)`: resuelve destinatarios, crea las `Notificacion`
+   * (tipo `RECORDATORIO_EVENTO`) + el `RecordatorioEnviado` en la MISMA
+   * transacción (el `@@unique` lo hace idempotente si 2 corridas se
+   * solapan), y DESPUÉS de confirmar manda el correo best-effort por
+   * destinatario (patrón `altaPersona` + Mailgun — un fallo de correo
+   * nunca revierte ni tumba el resto del job).
+   *
+   * `RECORDATORIOS_HABILITADO` en falso (default) hace que el método
+   * retorne de inmediato sin tocar la DB — mismo criterio "falla cerrado"
+   * que `MAILGUN_ENVIOS_HABILITADO`.
+   */
+  async generarRecordatoriosPendientes(): Promise<{
+    ocurrenciasProcesadas: number;
+    notificacionesCreadas: number;
+  }> {
+    if (!enviosDeRecordatoriosHabilitados()) {
+      console.log(
+        '[CalendarioService] Recordatorios deshabilitados (RECORDATORIOS_HABILITADO=false) — job no-op.',
+      );
+      return { ocurrenciasProcesadas: 0, notificacionesCreadas: 0 };
+    }
+
+    const ahora = new Date();
+    const desde = new Date(ahora.getTime());
+    const hasta = new Date(ahora.getTime() + 48 * 60 * 60 * 1000);
+
+    let ocurrenciasProcesadas = 0;
+    let notificacionesCreadas = 0;
+
+    try {
+      const eventos = await this.prisma.eventoCalendario.findMany({
+        where: { sedeId: undefined }, // sin filtro de sede: el job corre para TODAS las sedes.
+      });
+
+      for (const evento of eventos) {
+        const fechas = expandirOcurrencias(
+          {
+            fechaInicio: evento.fechaInicio,
+            recurrenciaRegla:
+              evento.recurrenciaRegla as ReglaRecurrencia | null,
+            recurrenciaHasta: evento.recurrenciaHasta,
+          },
+          { desde, hasta },
+        );
+
+        for (const fechaOcurrencia of fechas) {
+          ocurrenciasProcesadas++;
+
+          const yaEnviado = await this.prisma.recordatorioEnviado.findUnique({
+            where: {
+              eventoId_fechaOcurrencia: {
+                eventoId: evento.id,
+                fechaOcurrencia,
+              },
+            },
+          });
+          if (yaEnviado) continue;
+
+          const destinatarios = await resolverDestinatarios(
+            this.prisma,
+            evento.sedeId,
+            evento.alcanceTipo,
+            evento.alcanceId,
+          );
+
+          try {
+            const resultado = await this.prisma.$transaction(async (tx) => {
+              await tx.recordatorioEnviado.create({
+                data: { eventoId: evento.id, fechaOcurrencia },
+              });
+              if (destinatarios.length === 0) {
+                return { creadas: 0 };
+              }
+              await tx.notificacion.createMany({
+                data: destinatarios.map((usuarioId) => ({
+                  usuarioId,
+                  sedeId: evento.sedeId,
+                  tipo: 'RECORDATORIO_EVENTO' as const,
+                  referenciaId: evento.id,
+                  titulo: evento.titulo,
+                  cuerpoCorto: `Recordatorio: ${evento.titulo} — ${fechaOcurrencia
+                    .toISOString()
+                    .slice(0, 10)}`,
+                })),
+              });
+              return { creadas: destinatarios.length };
+            });
+
+            notificacionesCreadas += resultado.creadas;
+
+            if (destinatarios.length > 0) {
+              const perfiles =
+                await this.obtenerCorreosPersonales(destinatarios);
+              for (const correo of perfiles) {
+                try {
+                  await this.mailService.enviarNotificacion({
+                    correoDestino: correo,
+                    asunto: `Recordatorio: ${evento.titulo}`,
+                    cuerpoTexto: `Tienes un evento próximo: ${evento.titulo} el ${fechaOcurrencia
+                      .toISOString()
+                      .slice(0, 10)}.`,
+                  });
+                } catch (err) {
+                  console.error(
+                    '[CalendarioService.generarRecordatoriosPendientes] fallo al enviar correo:',
+                    err,
+                  );
+                }
+              }
+            }
+          } catch (err) {
+            if (
+              err instanceof Prisma.PrismaClientKnownRequestError &&
+              err.code === 'P2002'
+            ) {
+              console.log(
+                `[CalendarioService.generarRecordatoriosPendientes] ocurrencia ya procesada por otra corrida concurrente (evento ${evento.id}, ${fechaOcurrencia
+                  .toISOString()
+                  .slice(0, 10)})`,
+              );
+              continue;
+            }
+            throw err;
+          }
+        }
+      }
+
+      return { ocurrenciasProcesadas, notificacionesCreadas };
+    } catch (err) {
+      console.error(
+        '[CalendarioService.generarRecordatoriosPendientes] error inesperado:',
+        err,
+      );
+      throw err;
+    }
+  }
+
+  /**
+   * Resuelve `correoPersonal` para una lista de `Usuario.id`, cualquiera
+   * que sea su rol — el correo de bienvenida (Fase 4) ya estableció que
+   * el correo real/legible SIEMPRE es `correoPersonal` del perfil, nunca
+   * `Usuario.email` (login sintético). Usuarios sin ningún perfil
+   * (no debería pasar en la práctica) se omiten silenciosamente — no hay
+   * a dónde mandarles el correo.
+   */
+  private async obtenerCorreosPersonales(
+    usuarioIds: string[],
+  ): Promise<string[]> {
+    const [alumnos, maestros, administrativos] = await Promise.all([
+      this.prisma.perfilAlumno.findMany({
+        where: { usuarioId: { in: usuarioIds } },
+        select: { correoPersonal: true },
+      }),
+      this.prisma.perfilMaestro.findMany({
+        where: { usuarioId: { in: usuarioIds } },
+        select: { correoPersonal: true },
+      }),
+      this.prisma.perfilAdministrativo.findMany({
+        where: { usuarioId: { in: usuarioIds } },
+        select: { correoPersonal: true },
+      }),
+    ]);
+    return [...alumnos, ...maestros, ...administrativos].map(
+      (p) => p.correoPersonal,
+    );
   }
 }

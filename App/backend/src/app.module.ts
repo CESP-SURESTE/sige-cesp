@@ -5,6 +5,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { SedeGuardModule } from './common/guards/sede-guard.module';
 import { RolesGuardModule } from './common/guards/roles-guard.module';
 import { PlatformAdminGuardModule } from './common/guards/platform-admin-guard.module';
+import { InternalJobGuardModule } from './common/guards/internal-job-guard.module';
 import { SedesModule } from './sedes/sedes.module';
 import { AuthModule } from './auth/auth.module';
 import { PersonasModule } from './personas/personas.module';
@@ -25,6 +26,7 @@ import { CalendarioModule } from './calendario/calendario.module';
     SedeGuardModule,
     RolesGuardModule,
     PlatformAdminGuardModule,
+    InternalJobGuardModule,
     SedesModule,
     AuthModule,
     MailModule,
