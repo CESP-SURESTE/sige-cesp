@@ -6,6 +6,7 @@ import type { App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
 import { loadEnv } from '../src/load-env';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { MAIL_FETCH_OVERRIDE } from '../src/mail/mail.service';
 import { configureApp } from '../src/setup-app';
 
 loadEnv();
@@ -41,10 +42,14 @@ interface EjecutarBody {
  * de forma inequívoca vía su propio `id` (`referenciaId` en `Notificacion`)
  * en vez de contar filas globales.
  *
- * `MAILGUN_ENVIOS_HABILITADO` ya está en `false` en `.env` de este repo (el
- * mismo criterio "falla cerrado" que usan las suites que pasan por
- * `PersonasService.altaPersona`) — no hace falta mockear `MailService` acá,
- * el correo real nunca se intenta.
+ * Correo: esta suite fuerza `MAILGUN_ENVIOS_HABILITADO='true'` y sustituye
+ * el `fetch` de `MailService` vía `MAIL_FETCH_OVERRIDE` (mismo patrón que
+ * `personas-mail.e2e-spec.ts`) por un `jest.fn()` que por defecto responde
+ * `200 OK` — así el correo real a Mailgun NUNCA se intenta, pero el caso 7
+ * puede simular que un envío rechaza y verificar que el batching best-effort
+ * (`enviarCorreosRecordatorioEnLotes`) igual completa el job, intenta al
+ * resto de destinatarios y loguea el rechazo (regla 12). El env previo se
+ * restaura en `afterAll`.
  */
 describe('InternalRecordatoriosController (e2e)', () => {
   let app: INestApplication<App>;
@@ -55,10 +60,25 @@ describe('InternalRecordatoriosController (e2e)', () => {
   const envPrevio = {
     INTERNAL_JOB_SECRET: process.env.INTERNAL_JOB_SECRET,
     RECORDATORIOS_HABILITADO: process.env.RECORDATORIOS_HABILITADO,
+    MAILGUN_ENVIOS_HABILITADO: process.env.MAILGUN_ENVIOS_HABILITADO,
   };
 
   let sedeMeridaId: string;
   let adminMeridaId: string;
+
+  // `fetch` mockeado que inyecta `MailService` vía `MAIL_FETCH_OVERRIDE`.
+  // Por defecto responde `200 OK`; el caso 7 lo reprograma para que la
+  // primera llamada rechace.
+  let fetchMock: jest.Mock;
+
+  function mockFetchOk(): void {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      text: () => Promise.resolve(''),
+    });
+  }
 
   const eventoIdsCreados: string[] = [];
 
@@ -97,10 +117,17 @@ describe('InternalRecordatoriosController (e2e)', () => {
 
   beforeAll(async () => {
     process.env.INTERNAL_JOB_SECRET = SECRETO_TEST;
+    process.env.MAILGUN_ENVIOS_HABILITADO = 'true';
+
+    fetchMock = jest.fn();
+    mockFetchOk();
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(MAIL_FETCH_OVERRIDE)
+      .useValue(fetchMock)
+      .compile();
 
     app = moduleFixture.createNestApplication();
     configureApp(app);
@@ -140,6 +167,12 @@ describe('InternalRecordatoriosController (e2e)', () => {
       delete process.env.RECORDATORIOS_HABILITADO;
     } else {
       process.env.RECORDATORIOS_HABILITADO = envPrevio.RECORDATORIOS_HABILITADO;
+    }
+    if (envPrevio.MAILGUN_ENVIOS_HABILITADO === undefined) {
+      delete process.env.MAILGUN_ENVIOS_HABILITADO;
+    } else {
+      process.env.MAILGUN_ENVIOS_HABILITADO =
+        envPrevio.MAILGUN_ENVIOS_HABILITADO;
     }
 
     await app.close();
@@ -226,5 +259,73 @@ describe('InternalRecordatoriosController (e2e)', () => {
       where: { eventoId: eventoFueraDeVentanaId },
     });
     expect(recordatorio).toBeNull();
+  });
+
+  it('7. Un correo que rechaza -> el job completa el conteo, intenta al resto de destinatarios y loguea el rechazo', async () => {
+    process.env.RECORDATORIOS_HABILITADO = 'true';
+
+    // La 1ª llamada a Mailgun rechaza (destinatario no autorizado en el
+    // sandbox — el caso real más frecuente hoy); las demás responden OK.
+    let numeroLlamada = 0;
+    fetchMock.mockImplementation(() => {
+      numeroLlamada += 1;
+      if (numeroLlamada === 1) {
+        return Promise.resolve({
+          ok: false,
+          status: 400,
+          statusText: 'Bad Request',
+          text: () =>
+            Promise.resolve("'to' parameter is not a valid mailbox address"),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        text: () => Promise.resolve(''),
+      });
+    });
+    const errorSpy = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+
+    try {
+      // Evento SEDE (CESP Mérida tiene >= 2 usuarios activos con perfil por
+      // el seed) dentro de la ventana de 48h y aún sin `RecordatorioEnviado`.
+      const eventoId = await crearEvento(fechaUtcEnDias(2));
+
+      const res = await ejecutar(SECRETO_TEST);
+      expect(res.status).toBe(200);
+
+      // (a) el job devuelve el conteo correcto: la transacción de
+      // Notificacion/RecordatorioEnviado no depende del correo.
+      const notificaciones = await prisma.notificacion.count({
+        where: { referenciaId: eventoId },
+      });
+      expect(notificaciones).toBeGreaterThanOrEqual(2);
+      const data = (res.body as EjecutarBody).data;
+      expect(data.notificacionesCreadas).toBeGreaterThanOrEqual(notificaciones);
+
+      const recordatorio = await prisma.recordatorioEnviado.findFirst({
+        where: { eventoId },
+      });
+      expect(recordatorio).not.toBeNull();
+
+      // (b) los demás correos se intentaron pese al 1er rechazo.
+      expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2);
+
+      // (c) el rechazo se logueó con el contexto del envío (regla 12).
+      const logueoRechazo = errorSpy.mock.calls.some(
+        (args) =>
+          typeof args[0] === 'string' &&
+          args[0].includes('fallo al enviar correo de recordatorio') &&
+          args[0].includes(eventoId),
+      );
+      expect(logueoRechazo).toBe(true);
+    } finally {
+      errorSpy.mockRestore();
+      fetchMock.mockReset();
+      mockFetchOk();
+    }
   });
 });

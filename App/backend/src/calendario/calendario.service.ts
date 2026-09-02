@@ -43,6 +43,20 @@ interface Actor {
 const MAX_DIAS_RANGO = 62;
 
 /**
+ * Tamaño de lote para el fan-out del correo del job de recordatorios
+ * (`generarRecordatoriosPendientes`). Un evento de alcance `SEDE` puede
+ * resolver a cientos de destinatarios; mandarlos en un loop secuencial
+ * (una request HTTP a Mailgun por vez, ~200-500ms cada una) no sobrevive
+ * el timeout del load balancer de Render y se perderían la mayoría de los
+ * correos sin reintento. Se procesan en lotes de este tamaño con
+ * `Promise.allSettled` — suficiente paralelismo para no serializar
+ * cientos de requests, sin abrir tantas conexiones salientes de golpe que
+ * Mailgun rate-limitee (el sandbox actual tiene cuota baja). Sin librería
+ * de concurrencia nueva: `slice` + `Promise.allSettled` a mano.
+ */
+const LOTE_CORREOS_RECORDATORIO = 20;
+
+/**
  * Convierte una fecha `YYYY-MM-DD` (ya acotada por el `@Matches` de cada
  * DTO — mes 01-12, día 01-31) a `Date` en UTC puro, validando roundtrip:
  * `new Date('2026-02-30T00:00:00.000Z')` NO produce `Invalid Date` — hace
@@ -682,24 +696,13 @@ export class CalendarioService {
             notificacionesCreadas += resultado.creadas;
 
             if (destinatarios.length > 0) {
-              const perfiles =
+              const correos =
                 await this.obtenerCorreosPersonales(destinatarios);
-              for (const correo of perfiles) {
-                try {
-                  await this.mailService.enviarNotificacion({
-                    correoDestino: correo,
-                    asunto: `Recordatorio: ${evento.titulo}`,
-                    cuerpoTexto: `Tienes un evento próximo: ${evento.titulo} el ${fechaOcurrencia
-                      .toISOString()
-                      .slice(0, 10)}.`,
-                  });
-                } catch (err) {
-                  console.error(
-                    '[CalendarioService.generarRecordatoriosPendientes] fallo al enviar correo:',
-                    err,
-                  );
-                }
-              }
+              await this.enviarCorreosRecordatorioEnLotes(
+                correos,
+                evento,
+                fechaOcurrencia,
+              );
             }
           } catch (err) {
             if (
@@ -734,27 +737,64 @@ export class CalendarioService {
    * el correo real/legible SIEMPRE es `correoPersonal` del perfil, nunca
    * `Usuario.email` (login sintético). Usuarios sin ningún perfil
    * (no debería pasar en la práctica) se omiten silenciosamente — no hay
-   * a dónde mandarles el correo.
+   * a dónde mandarles el correo. Devuelve el par `usuarioId`/`correoPersonal`
+   * para poder identificar en el log a qué destinatario correspondió un
+   * envío fallido (regla 12).
    */
   private async obtenerCorreosPersonales(
     usuarioIds: string[],
-  ): Promise<string[]> {
+  ): Promise<{ usuarioId: string; correoPersonal: string }[]> {
     const [alumnos, maestros, administrativos] = await Promise.all([
       this.prisma.perfilAlumno.findMany({
         where: { usuarioId: { in: usuarioIds } },
-        select: { correoPersonal: true },
+        select: { usuarioId: true, correoPersonal: true },
       }),
       this.prisma.perfilMaestro.findMany({
         where: { usuarioId: { in: usuarioIds } },
-        select: { correoPersonal: true },
+        select: { usuarioId: true, correoPersonal: true },
       }),
       this.prisma.perfilAdministrativo.findMany({
         where: { usuarioId: { in: usuarioIds } },
-        select: { correoPersonal: true },
+        select: { usuarioId: true, correoPersonal: true },
       }),
     ]);
-    return [...alumnos, ...maestros, ...administrativos].map(
-      (p) => p.correoPersonal,
-    );
+    return [...alumnos, ...maestros, ...administrativos];
+  }
+
+  /**
+   * Fan-out best-effort del correo de recordatorio, en lotes de
+   * `LOTE_CORREOS_RECORDATORIO` con `Promise.allSettled` por lote (ver
+   * docstring de la constante). Un correo que rechaza no tumba el lote ni
+   * el job: se loguea con `console.error` incluyendo el `usuarioId` y la
+   * ocurrencia afectados y el error completo (regla 12), y se sigue con el
+   * resto. Nunca lanza — la creación de `Notificacion`/`RecordatorioEnviado`
+   * ya quedó confirmada en su transacción antes de llamar a este método.
+   */
+  private async enviarCorreosRecordatorioEnLotes(
+    destinatarios: { usuarioId: string; correoPersonal: string }[],
+    evento: EventoCalendario,
+    fechaOcurrencia: Date,
+  ): Promise<void> {
+    const fechaISO = fechaOcurrencia.toISOString().slice(0, 10);
+    for (let i = 0; i < destinatarios.length; i += LOTE_CORREOS_RECORDATORIO) {
+      const lote = destinatarios.slice(i, i + LOTE_CORREOS_RECORDATORIO);
+      const resultados = await Promise.allSettled(
+        lote.map((d) =>
+          this.mailService.enviarNotificacion({
+            correoDestino: d.correoPersonal,
+            asunto: `Recordatorio: ${evento.titulo}`,
+            cuerpoTexto: `Tienes un evento próximo: ${evento.titulo} el ${fechaISO}.`,
+          }),
+        ),
+      );
+      resultados.forEach((resultado, idx) => {
+        if (resultado.status === 'rejected') {
+          console.error(
+            `[CalendarioService.generarRecordatoriosPendientes] fallo al enviar correo de recordatorio (evento ${evento.id}, ocurrencia ${fechaISO}, usuarioId ${lote[idx].usuarioId}):`,
+            resultado.reason,
+          );
+        }
+      });
+    }
   }
 }
