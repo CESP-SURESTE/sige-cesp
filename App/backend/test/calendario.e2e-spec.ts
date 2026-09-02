@@ -36,6 +36,7 @@ interface OcurrenciaListBody {
     alcanceTipo: string;
     alcanceId: string | null;
     esRecurrente: boolean;
+    puedeEditar: boolean;
   }>;
 }
 
@@ -770,5 +771,163 @@ describe('CalendarioController (e2e)', () => {
     });
     expect(res.status).toBe(400);
     expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+  });
+
+  // --- Tarea 3 (Fase 15 pendientes Important, 2026-09-02):
+  // `puedeEditar: boolean` en cada `OcurrenciaEvento` de `GET /eventos` —
+  // misma regla que `PATCH`/`DELETE /eventos/:id` (autor del evento, o
+  // `ADMINISTRATIVO` de la sede del evento), derivada por request. ---
+
+  it('25. GET: un ADMINISTRATIVO ve puedeEditar=true en todo evento de su sede (recurrentes y de otros autores incluidos)', async () => {
+    const token = await tokenAdminMerida();
+
+    // Evento recurrente propio del admin — `puedeEditar` debe propagarse a
+    // TODAS sus ocurrencias con el mismo valor.
+    const recurrente = await postEvento(token, {
+      titulo: 'Evento admin recurrente puedeEditar E2E',
+      fechaInicio: '2027-06-07',
+      categoria: 'OTRO',
+      alcanceTipo: 'SEDE',
+      recurrenciaRegla: {
+        frecuencia: 'SEMANAL',
+        intervalo: 1,
+        diasSemana: [1],
+      },
+      recurrenciaHasta: '2027-06-30',
+    });
+    expect(recurrente.status).toBe(201);
+    const recurrenteId = (recurrente.body as EventoBody).data.id;
+
+    // Evento de OTRO autor (el maestro con asignación) en un grupo de la
+    // sede del admin — el admin igual puede editarlo.
+    const tokenM = await tokenMaestro();
+    const deMaestro = await postEvento(tokenM, {
+      titulo: 'Evento de maestro visto por admin E2E',
+      fechaInicio: '2027-06-08',
+      categoria: 'OTRO',
+      alcanceTipo: 'GRUPO',
+      alcanceId: grupoConAsignacionId,
+    });
+    expect(deMaestro.status).toBe(201);
+    const deMaestroId = (deMaestro.body as EventoBody).data.id;
+
+    const res = await getEventos(token, '2027-06-07', '2027-06-30');
+    expect(res.status).toBe(200);
+    const data = (res.body as OcurrenciaListBody).data;
+
+    const ocurrenciasRecurrente = data.filter(
+      (o) => o.eventoId === recurrenteId,
+    );
+    expect(ocurrenciasRecurrente.length).toBeGreaterThanOrEqual(2);
+    for (const o of ocurrenciasRecurrente) {
+      expect(o.puedeEditar).toBe(true);
+    }
+
+    const ocurrenciasDeMaestro = data.filter((o) => o.eventoId === deMaestroId);
+    expect(ocurrenciasDeMaestro).toHaveLength(1);
+    expect(ocurrenciasDeMaestro[0].puedeEditar).toBe(true);
+
+    // Invariante: un ADMINISTRATIVO puede editar TODO lo que ve (solo su
+    // sede).
+    for (const o of data) {
+      expect(o.puedeEditar).toBe(true);
+    }
+  });
+
+  it('26. GET: un MAESTRO ve puedeEditar=true solo en eventos que creó; false en SEDE de un admin y en eventos de otro maestro', async () => {
+    const tokenAdmin = await tokenAdminMerida();
+    const tokenM = await tokenMaestro();
+
+    // (a) Evento SEDE creado por el admin.
+    const sedeDeAdmin = await postEvento(tokenAdmin, {
+      titulo: 'Evento SEDE admin para maestro E2E',
+      fechaInicio: '2027-06-15',
+      categoria: 'OTRO',
+      alcanceTipo: 'SEDE',
+    });
+    expect(sedeDeAdmin.status).toBe(201);
+    const sedeDeAdminId = (sedeDeAdmin.body as EventoBody).data.id;
+
+    // (b) Evento GRUPO creado por ESTE maestro en su grupo asignado.
+    const propioDelMaestro = await postEvento(tokenM, {
+      titulo: 'Evento GRUPO propio del maestro E2E',
+      fechaInicio: '2027-06-15',
+      categoria: 'OTRO',
+      alcanceTipo: 'GRUPO',
+      alcanceId: grupoConAsignacionId,
+    });
+    expect(propioDelMaestro.status).toBe(201);
+    const propioDelMaestroId = (propioDelMaestro.body as EventoBody).data.id;
+
+    // (c) Segundo maestro co-asignado al MISMO grupo (co-docencia) crea otro
+    // evento GRUPO — el primer maestro lo VE (comparte grupo) pero NO puede
+    // editarlo.
+    const segundoMaestroId = await crearMaestro(sedeMeridaId);
+    const materiaCoId = await crearMateria(carreraLaeId, 1);
+    const asignacionCo = await request(app.getHttpServer())
+      .post(`/grupos/${grupoConAsignacionId}/asignaciones`)
+      .set('Authorization', `Bearer ${tokenAdmin}`)
+      .send({ materiaId: materiaCoId, usuarioId: segundoMaestroId });
+    expect(asignacionCo.status).toBe(201);
+    asignacionIdsCreados.push(
+      (asignacionCo.body as { data: { id: string } }).data.id,
+    );
+
+    const tokenSegundoMaestro = await firmarToken(
+      segundoMaestroId,
+      RolUsuario.MAESTRO,
+      sedeMeridaId,
+    );
+    const deOtroMaestro = await postEvento(tokenSegundoMaestro, {
+      titulo: 'Evento GRUPO de otro maestro E2E',
+      fechaInicio: '2027-06-15',
+      categoria: 'OTRO',
+      alcanceTipo: 'GRUPO',
+      alcanceId: grupoConAsignacionId,
+    });
+    expect(deOtroMaestro.status).toBe(201);
+    const deOtroMaestroId = (deOtroMaestro.body as EventoBody).data.id;
+
+    const res = await getEventos(tokenM, '2027-06-15', '2027-06-15');
+    expect(res.status).toBe(200);
+    const data = (res.body as OcurrenciaListBody).data;
+    const porId = (id: string) => data.find((o) => o.eventoId === id);
+
+    expect(porId(propioDelMaestroId)?.puedeEditar).toBe(true);
+    expect(porId(sedeDeAdminId)?.puedeEditar).toBe(false);
+    expect(porId(deOtroMaestroId)?.puedeEditar).toBe(false);
+  });
+
+  it('27. GET: un ALUMNO ve puedeEditar=false en todo evento (SEDE y de su grupo)', async () => {
+    const tokenAdmin = await tokenAdminMerida();
+
+    const sedeEvt = await postEvento(tokenAdmin, {
+      titulo: 'Evento SEDE para alumno puedeEditar E2E',
+      fechaInicio: '2027-07-01',
+      categoria: 'OTRO',
+      alcanceTipo: 'SEDE',
+    });
+    expect(sedeEvt.status).toBe(201);
+    const grupoEvt = await postEvento(tokenAdmin, {
+      titulo: 'Evento GRUPO para alumno puedeEditar E2E',
+      fechaInicio: '2027-07-01',
+      categoria: 'OTRO',
+      alcanceTipo: 'GRUPO',
+      alcanceId: grupoMatriculadoId,
+    });
+    expect(grupoEvt.status).toBe(201);
+    const sedeEvtId = (sedeEvt.body as EventoBody).data.id;
+    const grupoEvtId = (grupoEvt.body as EventoBody).data.id;
+
+    const tokenA = await tokenAlumno();
+    const res = await getEventos(tokenA, '2027-07-01', '2027-07-01');
+    expect(res.status).toBe(200);
+    const data = (res.body as OcurrenciaListBody).data;
+    expect(data.map((o) => o.eventoId)).toEqual(
+      expect.arrayContaining([sedeEvtId, grupoEvtId]),
+    );
+    for (const o of data) {
+      expect(o.puedeEditar).toBe(false);
+    }
   });
 });

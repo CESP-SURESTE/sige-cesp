@@ -32,6 +32,16 @@ export interface OcurrenciaEvento {
   alcanceTipo: AlcanceDestino;
   alcanceId: string | null;
   esRecurrente: boolean;
+  /**
+   * `true` si el actor de la request puede editar/borrar el evento base —
+   * es su autor, o es `ADMINISTRATIVO` de la sede del evento. MISMA regla
+   * que aplican `PATCH`/`DELETE /eventos/:id` (vía `puedeEditarEvento`,
+   * compartida). Regla 1 de `CLAUDE.md` raíz: se deriva por request, nunca
+   * se persiste ni existe columna para esto. Es propiedad del EVENTO, no de
+   * la ocurrencia: todas las ocurrencias de un mismo evento recurrente
+   * comparten el valor (se calcula una vez por evento y se propaga).
+   */
+  puedeEditar: boolean;
 }
 
 interface Actor {
@@ -41,6 +51,31 @@ interface Actor {
 }
 
 const MAX_DIAS_RANGO = 62;
+
+/**
+ * Regla booleana pura de permiso de edición/borrado de un evento (Fase 15,
+ * Día 41): `true` si el actor es el autor del evento, o si es
+ * `ADMINISTRATIVO` de la sede del evento. Compartida por dos caminos sin
+ * duplicar la condición:
+ *  - `obtenerPropioODeSede` (camino `PATCH`/`DELETE`), que además hace el
+ *    `findFirst` acotado a la sede del actor + lanza `403` si esto da
+ *    `false`. Como ese `findFirst` ya restringe `sedeId: actor.sedeId`, el
+ *    término `evento.sedeId === actor.sedeId` siempre es verdadero ahí —
+ *    el comportamiento de `PATCH`/`DELETE` no cambia.
+ *  - `listar` (`GET /eventos`), que la expone como `puedeEditar` en cada
+ *    `OcurrenciaEvento`.
+ * NO distingue "no existe" de "no autorizado" — eso lo resuelve quien la
+ * llama.
+ */
+function puedeEditarEvento(
+  evento: Pick<EventoCalendario, 'autorUsuarioId' | 'sedeId'>,
+  actor: Actor,
+): boolean {
+  return (
+    evento.autorUsuarioId === actor.usuarioId ||
+    (actor.rol === RolUsuario.ADMINISTRATIVO && evento.sedeId === actor.sedeId)
+  );
+}
 
 /**
  * Tamaño de lote para el fan-out del correo del job de recordatorios
@@ -306,6 +341,9 @@ export class CalendarioService {
 
       const ocurrencias: OcurrenciaEvento[] = [];
       for (const evento of eventos) {
+        // `puedeEditar` es propiedad del EVENTO base, no de la ocurrencia:
+        // se calcula una vez y se propaga a todas sus ocurrencias.
+        const puedeEditar = puedeEditarEvento(evento, actor);
         const fechas = expandirOcurrencias(
           {
             fechaInicio: evento.fechaInicio,
@@ -327,6 +365,7 @@ export class CalendarioService {
             alcanceTipo: evento.alcanceTipo,
             alcanceId: evento.alcanceId,
             esRecurrente: evento.recurrenciaRegla !== null,
+            puedeEditar,
           });
         }
       }
@@ -423,10 +462,7 @@ export class CalendarioService {
         code: 'NOT_FOUND',
       });
     }
-    if (
-      evento.autorUsuarioId !== actor.usuarioId &&
-      actor.rol !== RolUsuario.ADMINISTRATIVO
-    ) {
+    if (!puedeEditarEvento(evento, actor)) {
       throw new ForbiddenException({
         error: 'Solo el autor o un administrativo pueden modificar este evento',
         code: 'ROL_NO_AUTORIZADO',
