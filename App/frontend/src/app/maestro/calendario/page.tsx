@@ -32,21 +32,17 @@ import { generarGridMensual, rangoDelGrid } from './mes-grid.util';
  * todavía, que solo ve un mensaje informativo en el bloque de alcance).
  *
  * DIFERENCIA respecto al admin sobre mostrar "Editar"/"Eliminar" solo al
- * autor del evento: `OcurrenciaEvento` (`lib/api/calendario.ts`, tipo
- * compartido entre los 3 árboles) NO expone `autorUsuarioId` hoy — no hay
- * forma de distinguir en el cliente si el maestro autenticado es el autor
- * de un evento dado, así que el chip de cualquier evento visible abre el
- * modal en modo edición igual que en admin (con los botones "Guardar
- * cambios"/"Eliminar evento" siempre presentes). La capa de seguridad real
- * ya vive en el backend: `CalendarioService.actualizar`/`eliminar`
- * rechazan con `403 ROL_NO_AUTORIZADO` a un maestro no-autor, y ese código
- * ya cae en el mensaje amigable de `MENSAJES_ERROR_EVENTO.ROL_NO_AUTORIZADO`
- * de abajo — mismo criterio explícito documentado en el brief de esta
- * tarea ("ocultar el botón en el maestro NO-autor es solo UX, no la capa de
- * seguridad real"). Agregar `autorUsuarioId` al contrato de `GET /eventos`
- * para ocultar el botón de verdad queda fuera del alcance de esta tarea
- * (archivo compartido `lib/api/calendario.ts`, no listado en "Files" del
- * brief).
+ * autor del evento: `OcurrenciaEvento` trae `puedeEditar: boolean` (Fase 15,
+ * hallazgo Important — backend: `true` si el actor es autor del evento o un
+ * ADMINISTRATIVO de la sede). Un maestro que ve un evento de sede/carrera/de
+ * otro maestro lo recibe con `puedeEditar: false`: su chip se renderiza como
+ * elemento inerte (no `<button>`), sin acceso al `EventoModal` en modo
+ * edición ni, por transición, al `ConfirmarEliminarEventoModal`. Con
+ * `puedeEditar: true` el chip abre el modal de edición igual que en admin.
+ * La capa de seguridad real sigue en el backend
+ * (`CalendarioService.actualizar`/`eliminar` rechazan con `403
+ * ROL_NO_AUTORIZADO` a un maestro no-autor, que cae en
+ * `MENSAJES_ERROR_EVENTO.ROL_NO_AUTORIZADO`) — ocultar el acceso es solo UX.
  *
  * `mesActual` es el único estado de navegación; `rangoDelGrid` siempre
  * cubre 42 días (6 semanas), muy por debajo del tope de 62 días que valida
@@ -288,21 +284,45 @@ export default function MaestroCalendarioPage() {
                     {Number(celda.fecha.slice(8, 10))}
                   </span>
                   <div className="mt-1 space-y-1">
-                    {visibles.map((ocurrencia) => (
-                      <button
-                        key={`${ocurrencia.eventoId}-${ocurrencia.fecha}`}
-                        type="button"
-                        onClick={() => setModalEvento({ abierto: true, evento: ocurrencia })}
-                        title={ocurrencia.titulo}
-                        className={[
-                          'block w-full truncate rounded px-1.5 py-0.5 text-left text-xs font-medium',
-                          COLOR_POR_CATEGORIA[ocurrencia.categoria],
-                        ].join(' ')}
-                      >
-                        {ocurrencia.horaInicio ? `${ocurrencia.horaInicio} ` : ''}
-                        {ocurrencia.titulo}
-                      </button>
-                    ))}
+                    {visibles.map((ocurrencia) => {
+                      const claseChip = [
+                        'block w-full truncate rounded px-1.5 py-0.5 text-left text-xs font-medium',
+                        COLOR_POR_CATEGORIA[ocurrencia.categoria],
+                      ].join(' ');
+                      const contenidoChip = `${
+                        ocurrencia.horaInicio ? `${ocurrencia.horaInicio} ` : ''
+                      }${ocurrencia.titulo}`;
+
+                      // `puedeEditar` (backend, Fase 15): solo el autor del
+                      // evento o un ADMINISTRATIVO de la sede pueden
+                      // editarlo/eliminarlo. Sin permiso, el chip se muestra
+                      // pero no abre el modal de edición (ni, por transición,
+                      // el de borrado). El backend igual rechaza con 403 —
+                      // esto es solo UX.
+                      if (!ocurrencia.puedeEditar) {
+                        return (
+                          <div
+                            key={`${ocurrencia.eventoId}-${ocurrencia.fecha}`}
+                            title={ocurrencia.titulo}
+                            className={claseChip}
+                          >
+                            {contenidoChip}
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <button
+                          key={`${ocurrencia.eventoId}-${ocurrencia.fecha}`}
+                          type="button"
+                          onClick={() => setModalEvento({ abierto: true, evento: ocurrencia })}
+                          title={ocurrencia.titulo}
+                          className={claseChip}
+                        >
+                          {contenidoChip}
+                        </button>
+                      );
+                    })}
                     {restantes > 0 && (
                       <p className="px-1.5 text-xs text-slate/50">+{restantes} más</p>
                     )}

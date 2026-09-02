@@ -299,14 +299,14 @@ function construirPayloadEdicion(
     alcanceTipo: 'GRUPO',
     // Ver docstring del archivo — `null` explícito es "bórralo", `undefined`
     // es "sin cambio" (mismo patrón fijado en el review de Task 8, admin).
-    // `alcanceId` acá siempre trae un grupo real (`form.grupoId` ya se
-    // validó arriba) — el `|| null` es defensivo, nunca se ejercita.
-    alcanceId: (form.grupoId || null) as string | undefined,
-    descripcion: (form.descripcion.trim() || null) as string | undefined,
-    horaInicio: (form.todoElDia ? null : form.horaInicio || null) as
-      | string
-      | undefined,
-    fechaFin: (form.fechaFin || null) as string | undefined,
+    // `ActualizarEventoInput` ya modela `| null` en cada campo, así que estos
+    // 4 se asignan directo sin casteo. `alcanceId` acá siempre trae un grupo
+    // real (`form.grupoId` ya se validó arriba) — el `|| null` es defensivo,
+    // nunca se ejercita.
+    alcanceId: form.grupoId || null,
+    descripcion: form.descripcion.trim() || null,
+    horaInicio: form.todoElDia ? null : form.horaInicio || null,
+    fechaFin: form.fechaFin || null,
   };
 
   if (!evento.esRecurrente) {

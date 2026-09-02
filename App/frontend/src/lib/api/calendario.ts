@@ -33,6 +33,15 @@ export interface OcurrenciaEvento {
   alcanceTipo: AlcanceDestino;
   alcanceId: string | null;
   esRecurrente: boolean;
+  /**
+   * `true` si el actor puede editar/eliminar el evento (es su autor, o es un
+   * ADMINISTRATIVO de la sede del evento); `false` en el resto (alumno
+   * siempre `false`, maestro sobre un evento que no creó `false`). Espejo del
+   * campo agregado en el backend (`CalendarioService`, Fase 15). El árbol
+   * maestro lo usa para no ofrecer acceso a la edición/borrado de una
+   * ocurrencia que igual rechazaría el backend con `403`.
+   */
+  puedeEditar: boolean;
 }
 
 export interface CrearEventoInput {
@@ -48,7 +57,15 @@ export interface CrearEventoInput {
   recurrenciaHasta?: string;
 }
 
-export type ActualizarEventoInput = Partial<CrearEventoInput>;
+/**
+ * Igual que `Partial<CrearEventoInput>` pero admitiendo `null` explícito en
+ * cada campo: el backend (`ActualizarEventoDto` con `@IsOptional()`) distingue
+ * `undefined` ("sin cambio") de `null` ("bórralo" — limpia un campo opcional
+ * ya guardado). `Partial<>` no puede expresar ese `null`.
+ */
+export type ActualizarEventoInput = {
+  [K in keyof CrearEventoInput]?: CrearEventoInput[K] | null;
+};
 
 export function listarEventos(
   desde: string,

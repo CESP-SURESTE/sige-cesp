@@ -58,12 +58,13 @@ import type {
  * backend (`CalendarioService.actualizar`) ya no audita si no hay cambios
  * reales (`hayCambiosReales`), así que reenviar sin cambios es inofensivo.
  *
- * `descripcion`/`alcanceId`/`horaInicio`/`fechaFin`: `ActualizarEventoInput`
- * (espejo de `Partial<CrearEventoInput>` en `lib/api/calendario.ts`) no
- * modela `null` explícito, pero el backend SÍ lo requiere para "limpiar" un
- * valor existente (`ActualizarEventoDto` usa `@IsOptional()`, que en
- * `class-validator` deja pasar tanto `undefined` como `null` sin validar
- * — `undefined` significa "sin cambio", `null` significa "bórralo").
+ * `descripcion`/`alcanceId`/`horaInicio`/`fechaFin`: el backend requiere
+ * `null` explícito para "limpiar" un valor existente (`ActualizarEventoDto`
+ * usa `@IsOptional()`, que en `class-validator` deja pasar tanto `undefined`
+ * como `null` sin validar — `undefined` significa "sin cambio", `null`
+ * significa "bórralo"). `ActualizarEventoInput` (`lib/api/calendario.ts`) ya
+ * modela ese `null` en cada campo (mapped type con `| null`), así que estos
+ * 4 campos se asignan directo con el patrón `valor || null` sin casteo.
  * Ejemplo real: si el admin cambia `alcanceTipo` de CARRERA a SEDE sin
  * mandar `alcanceId: null`, `CalendarioService.actualizar` conserva el
  * `alcanceId` viejo y `validarAlcancePublicacion` lo rechaza con
@@ -73,10 +74,7 @@ import type {
  * `descripcion: ''` (en vez de `null`) al reenviar el valor completo del
  * form dispara `hayCambiosReales` (`'' !== null`) aunque el admin no haya
  * tocado nada, sobreescribiendo el `null` real y auditando una `EDICION`
- * espuria. Se castea puntualmente en los 4 campos que lo necesitan en vez
- * de ampliar el tipo compartido `ActualizarEventoInput` — ese archivo no
- * está en el alcance de esta tarea (solo `app/admin/calendario/**` +
- * `Sidebar`/`icons`).
+ * espuria.
  */
 
 const CATEGORIA_LABEL: Record<CategoriaEvento, string> = {
@@ -248,14 +246,10 @@ function construirPayloadEdicion(
     // detecta como cambio real (`'' !== null`) aunque el admin no haya tocado nada,
     // sobreescribiendo el `null` guardado y generando una auditoría `EDICION`
     // espuria (hallazgo de fix round 1/5).
-    descripcion: (form.descripcion.trim() || null) as string | undefined,
-    alcanceId: (form.alcanceTipo === 'SEDE' ? null : form.alcanceId) as
-      | string
-      | undefined,
-    horaInicio: (form.todoElDia ? null : form.horaInicio || null) as
-      | string
-      | undefined,
-    fechaFin: (form.fechaFin || null) as string | undefined,
+    descripcion: form.descripcion.trim() || null,
+    alcanceId: form.alcanceTipo === 'SEDE' ? null : form.alcanceId,
+    horaInicio: form.todoElDia ? null : form.horaInicio || null,
+    fechaFin: form.fechaFin || null,
   };
 
   if (!evento.esRecurrente) {
