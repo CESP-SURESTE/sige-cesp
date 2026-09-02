@@ -73,3 +73,13 @@ export function IconCampana({ className }: IconProps) {
     </svg>
   );
 }
+
+/** Calendario — link de nav a `/maestro/calendario` (Fase 15, Día 43). */
+export function IconCalendario({ className }: IconProps) {
+  return (
+    <svg {...BASE} className={className} aria-hidden="true">
+      <rect x="3.75" y="5.25" width="16.5" height="15" rx="2" />
+      <path d="M3.75 9.75h16.5M8.25 3v3.5M15.75 3v3.5" />
+    </svg>
+  );
+}
