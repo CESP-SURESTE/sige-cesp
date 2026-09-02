@@ -13,12 +13,12 @@ import { Matches } from 'class-validator';
  * comparaciones `NaN` pasen de largo en vez de rechazar el input).
  */
 export class ListarEventosQueryDto {
-  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+  @Matches(/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, {
     message: 'desde debe tener formato YYYY-MM-DD',
   })
   desde!: string;
 
-  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+  @Matches(/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, {
     message: 'hasta debe tener formato YYYY-MM-DD',
   })
   hasta!: string;

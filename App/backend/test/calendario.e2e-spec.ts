@@ -682,4 +682,93 @@ describe('CalendarioController (e2e)', () => {
     expect(res.status).toBe(401);
     expect((res.body as ErrorBody).code).toBe('UNAUTHORIZED');
   });
+
+  // --- Fix wave (revisión final Fase 15, 2026-09-01) ---
+
+  it('19. POST con recurrenciaHasta anterior a fechaInicio -> 400 VALIDATION_ERROR', async () => {
+    const token = await tokenAdminMerida();
+    const res = await postEvento(token, {
+      titulo: 'Evento recurrenciaHasta invalida E2E',
+      fechaInicio: '2027-05-10',
+      categoria: 'OTRO',
+      alcanceTipo: 'SEDE',
+      recurrenciaRegla: { frecuencia: 'DIARIA', intervalo: 1 },
+      recurrenciaHasta: '2027-05-01',
+    });
+    expect(res.status).toBe(400);
+    expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+  });
+
+  it('20. POST con fechaFin anterior a fechaInicio -> 400 VALIDATION_ERROR', async () => {
+    const token = await tokenAdminMerida();
+    const res = await postEvento(token, {
+      titulo: 'Evento fechaFin invalida E2E',
+      fechaInicio: '2027-05-10',
+      fechaFin: '2027-05-01',
+      categoria: 'OTRO',
+      alcanceTipo: 'SEDE',
+    });
+    expect(res.status).toBe(400);
+    expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+  });
+
+  it('21. PATCH que cruza recurrenciaHasta (existente) con una fechaInicio nueva posterior -> 400 VALIDATION_ERROR', async () => {
+    const token = await tokenAdminMerida();
+    const creado = await postEvento(token, {
+      titulo: 'Evento a mover con recurrencia E2E',
+      fechaInicio: '2027-05-10',
+      categoria: 'OTRO',
+      alcanceTipo: 'SEDE',
+      recurrenciaRegla: { frecuencia: 'DIARIA', intervalo: 1 },
+      recurrenciaHasta: '2027-05-20',
+    });
+    expect(creado.status).toBe(201);
+    const id = (creado.body as EventoBody).data.id;
+
+    const res = await request(app.getHttpServer())
+      .patch(`/eventos/${id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ fechaInicio: '2027-05-25' });
+    expect(res.status).toBe(400);
+    expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+  });
+
+  it('22. PATCH que cruza fechaFin (existente) con una fechaInicio nueva posterior -> 400 VALIDATION_ERROR', async () => {
+    const token = await tokenAdminMerida();
+    const creado = await postEvento(token, {
+      titulo: 'Evento a mover con fechaFin E2E',
+      fechaInicio: '2027-05-10',
+      fechaFin: '2027-05-12',
+      categoria: 'OTRO',
+      alcanceTipo: 'SEDE',
+    });
+    expect(creado.status).toBe(201);
+    const id = (creado.body as EventoBody).data.id;
+
+    const res = await request(app.getHttpServer())
+      .patch(`/eventos/${id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ fechaInicio: '2027-05-15' });
+    expect(res.status).toBe(400);
+    expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+  });
+
+  it('23. GET /eventos?desde=2026-13-45&hasta=2026-13-45 -> 400 VALIDATION_ERROR (regex acotado)', async () => {
+    const token = await tokenAdminMerida();
+    const res = await getEventos(token, '2026-13-45', '2026-13-45');
+    expect(res.status).toBe(400);
+    expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+  });
+
+  it('24. POST con fechaInicio 2026-02-30 (mes/dia individualmente en rango, fecha inexistente) -> 400 VALIDATION_ERROR, no rollover ni 500', async () => {
+    const token = await tokenAdminMerida();
+    const res = await postEvento(token, {
+      titulo: 'Evento fecha inexistente E2E',
+      fechaInicio: '2026-02-30',
+      categoria: 'OTRO',
+      alcanceTipo: 'SEDE',
+    });
+    expect(res.status).toBe(400);
+    expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+  });
 });

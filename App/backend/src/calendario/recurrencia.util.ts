@@ -64,6 +64,7 @@ function expandirDiaria(
   fechaInicio: Date,
   limite: Date,
   intervalo: number,
+  desdeEfectivo: Date,
 ): Date[] {
   const candidatos: Date[] = [];
   let cursor = new Date(fechaInicio);
@@ -71,7 +72,9 @@ function expandirDiaria(
     cursor.getTime() <= limite.getTime() &&
     candidatos.length < MAX_OCURRENCIAS
   ) {
-    candidatos.push(new Date(cursor));
+    if (cursor.getTime() >= desdeEfectivo.getTime()) {
+      candidatos.push(new Date(cursor));
+    }
     cursor = addDiasUTC(cursor, intervalo);
   }
   return candidatos;
@@ -82,6 +85,7 @@ function expandirSemanal(
   limite: Date,
   intervalo: number,
   diasSemana: number[],
+  desdeEfectivo: Date,
 ): Date[] {
   const dias = diasSemana.length > 0 ? diasSemana : [fechaInicio.getUTCDay()];
   const candidatos: Date[] = [];
@@ -95,7 +99,8 @@ function expandirSemanal(
       const fecha = addDiasUTC(semanaCursor, dia);
       if (
         fecha.getTime() >= fechaInicio.getTime() &&
-        fecha.getTime() <= limite.getTime()
+        fecha.getTime() <= limite.getTime() &&
+        fecha.getTime() >= desdeEfectivo.getTime()
       ) {
         candidatos.push(fecha);
       }
@@ -113,6 +118,7 @@ function expandirMensual(
   limite: Date,
   intervalo: number,
   diaMes: number,
+  desdeEfectivo: Date,
 ): Date[] {
   const candidatos: Date[] = [];
   let mesCursor = new Date(
@@ -122,7 +128,7 @@ function expandirMensual(
   while (candidatos.length < MAX_OCURRENCIAS) {
     const fecha = fechaDelMesUTC(mesCursor, diaMes);
     if (fecha.getTime() > limite.getTime()) break;
-    if (fecha.getTime() >= fechaInicio.getTime()) {
+    if (fecha.getTime() >= desdeEfectivo.getTime()) {
       candidatos.push(fecha);
     }
     mesCursor = new Date(
@@ -159,12 +165,22 @@ export function expandirOcurrencias(
   const limiteEfectivo =
     limiteSerie.getTime() < rango.hasta.getTime() ? limiteSerie : rango.hasta;
 
+  // Solo cuentan contra MAX_OCURRENCIAS las ocurrencias dentro (o después)
+  // del inicio del rango consultado — si la serie empieza mucho antes que
+  // `rango.desde`, no queremos gastar el tope de 366 en ocurrencias que de
+  // todos modos se van a descartar en el filtro final de abajo.
+  const desdeEfectivo =
+    evento.fechaInicio.getTime() > rango.desde.getTime()
+      ? evento.fechaInicio
+      : rango.desde;
+
   let candidatos: Date[];
   if (regla.frecuencia === 'DIARIA') {
     candidatos = expandirDiaria(
       evento.fechaInicio,
       limiteEfectivo,
       regla.intervalo,
+      desdeEfectivo,
     );
   } else if (regla.frecuencia === 'SEMANAL') {
     candidatos = expandirSemanal(
@@ -172,6 +188,7 @@ export function expandirOcurrencias(
       limiteEfectivo,
       regla.intervalo,
       regla.diasSemana ?? [],
+      desdeEfectivo,
     );
   } else {
     candidatos = expandirMensual(
@@ -179,6 +196,7 @@ export function expandirOcurrencias(
       limiteEfectivo,
       regla.intervalo,
       regla.diaMes ?? evento.fechaInicio.getUTCDate(),
+      desdeEfectivo,
     );
   }
 

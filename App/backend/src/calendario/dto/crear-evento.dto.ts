@@ -27,7 +27,7 @@ export class CrearEventoDto {
   @IsString()
   descripcion?: string;
 
-  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+  @Matches(/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, {
     message: 'fechaInicio debe tener formato YYYY-MM-DD',
   })
   fechaInicio!: string;
@@ -39,7 +39,7 @@ export class CrearEventoDto {
   horaInicio?: string;
 
   @IsOptional()
-  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+  @Matches(/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, {
     message: 'fechaFin debe tener formato YYYY-MM-DD',
   })
   fechaFin?: string;
@@ -60,7 +60,7 @@ export class CrearEventoDto {
   recurrenciaRegla?: ReglaRecurrenciaDto;
 
   @IsOptional()
-  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+  @Matches(/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, {
     message: 'recurrenciaHasta debe tener formato YYYY-MM-DD',
   })
   recurrenciaHasta?: string;

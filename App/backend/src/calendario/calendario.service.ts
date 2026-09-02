@@ -42,8 +42,31 @@ interface Actor {
 
 const MAX_DIAS_RANGO = 62;
 
+/**
+ * Convierte una fecha `YYYY-MM-DD` (ya acotada por el `@Matches` de cada
+ * DTO — mes 01-12, día 01-31) a `Date` en UTC puro, validando roundtrip:
+ * `new Date('2026-02-30T00:00:00.000Z')` NO produce `Invalid Date` — hace
+ * rollover silencioso al día siguiente del mes (`2026-03-02` en este caso,
+ * verificado a mano), lo que violaría el contrato de la API (aceptar una
+ * fecha inexistente como si fuera válida, o peor, como una fecha DISTINTA
+ * a la enviada). Comparar año/mes/día de vuelta contra el string original
+ * cierra ese hueco sin necesitar una librería de fechas nueva.
+ */
 function aFechaUTC(iso: string): Date {
-  return new Date(`${iso}T00:00:00.000Z`);
+  const fecha = new Date(`${iso}T00:00:00.000Z`);
+  const [anioStr, mesStr, diaStr] = iso.split('-');
+  if (
+    Number.isNaN(fecha.getTime()) ||
+    fecha.getUTCFullYear() !== Number(anioStr) ||
+    fecha.getUTCMonth() !== Number(mesStr) - 1 ||
+    fecha.getUTCDate() !== Number(diaStr)
+  ) {
+    throw new BadRequestException({
+      error: `Fecha inválida: ${iso}`,
+      code: 'VALIDATION_ERROR',
+    });
+  }
+  return fecha;
 }
 
 function aISO(fecha: Date): string {
@@ -156,10 +179,36 @@ export class CalendarioService {
       dto.alcanceId ?? null,
     );
 
+    // Validada una sola vez acá (fuera del `try`, junto al resto de las
+    // validaciones de negocio) — una `fechaInicio` con formato acotado por
+    // el DTO pero inexistente en el calendario real (ej. `2026-02-30`) debe
+    // salir como `VALIDATION_ERROR` limpio, no como "error inesperado"
+    // logueado por el catch de la transacción.
+    const fechaInicioValidada = aFechaUTC(dto.fechaInicio);
+
     if (dto.recurrenciaRegla && !dto.recurrenciaHasta) {
       throw new BadRequestException({
         error:
           'recurrenciaHasta es requerido cuando recurrenciaRegla está presente',
+        code: 'VALIDATION_ERROR',
+      });
+    }
+
+    if (
+      dto.recurrenciaHasta &&
+      aFechaUTC(dto.recurrenciaHasta).getTime() < fechaInicioValidada.getTime()
+    ) {
+      throw new BadRequestException({
+        error: 'recurrenciaHasta no puede ser anterior a fechaInicio',
+        code: 'VALIDATION_ERROR',
+      });
+    }
+    if (
+      dto.fechaFin &&
+      aFechaUTC(dto.fechaFin).getTime() < fechaInicioValidada.getTime()
+    ) {
+      throw new BadRequestException({
+        error: 'fechaFin no puede ser anterior a fechaInicio',
         code: 'VALIDATION_ERROR',
       });
     }
@@ -172,7 +221,7 @@ export class CalendarioService {
             autorUsuarioId: actor.usuarioId,
             titulo: dto.titulo,
             descripcion: dto.descripcion,
-            fechaInicio: aFechaUTC(dto.fechaInicio),
+            fechaInicio: fechaInicioValidada,
             horaInicio: dto.horaInicio,
             fechaFin: dto.fechaFin ? aFechaUTC(dto.fechaFin) : null,
             categoria: dto.categoria,
@@ -401,14 +450,43 @@ export class CalendarioService {
       dto.recurrenciaRegla !== undefined
         ? dto.recurrenciaRegla
         : existente.recurrenciaRegla;
-    const hastaFinal =
+    // Normalizado a `Date | null` sin importar de dónde venga (string del
+    // DTO vs. `Date` ya persistida) para poder comparar contra
+    // `fechaInicioFinal` (mismo criterio) más abajo.
+    const hastaFinal: Date | null =
       dto.recurrenciaHasta !== undefined
         ? dto.recurrenciaHasta
+          ? aFechaUTC(dto.recurrenciaHasta)
+          : null
         : existente.recurrenciaHasta;
     if (reglaFinal && !hastaFinal) {
       throw new BadRequestException({
         error:
           'recurrenciaHasta es requerido cuando recurrenciaRegla está presente',
+        code: 'VALIDATION_ERROR',
+      });
+    }
+
+    const fechaInicioFinal: Date =
+      dto.fechaInicio !== undefined
+        ? aFechaUTC(dto.fechaInicio)
+        : existente.fechaInicio;
+    const fechaFinFinal: Date | null =
+      dto.fechaFin !== undefined
+        ? dto.fechaFin
+          ? aFechaUTC(dto.fechaFin)
+          : null
+        : existente.fechaFin;
+
+    if (hastaFinal && hastaFinal.getTime() < fechaInicioFinal.getTime()) {
+      throw new BadRequestException({
+        error: 'recurrenciaHasta no puede ser anterior a fechaInicio',
+        code: 'VALIDATION_ERROR',
+      });
+    }
+    if (fechaFinFinal && fechaFinFinal.getTime() < fechaInicioFinal.getTime()) {
+      throw new BadRequestException({
+        error: 'fechaFin no puede ser anterior a fechaInicio',
         code: 'VALIDATION_ERROR',
       });
     }

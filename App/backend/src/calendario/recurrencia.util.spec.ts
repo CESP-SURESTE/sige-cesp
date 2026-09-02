@@ -131,4 +131,53 @@ describe('expandirOcurrencias', () => {
     );
     expect(resultado.length).toBeLessThanOrEqual(MAX_OCURRENCIAS);
   });
+
+  it('DIARIA con serie larga: rango lejos del inicio de la serie SI devuelve ocurrencias (bug real corregido)', () => {
+    const resultado = expandirOcurrencias(
+      {
+        fechaInicio: fecha('2025-01-01'),
+        recurrenciaRegla: { frecuencia: 'DIARIA', intervalo: 1 },
+        recurrenciaHasta: fecha('2027-12-31'),
+      },
+      { desde: fecha('2026-09-01'), hasta: fecha('2026-09-30') },
+    );
+    // 30 dias de septiembre, evento diario -> 30 ocurrencias.
+    expect(resultado.length).toBe(30);
+    expect(resultado[0]).toEqual(fecha('2026-09-01'));
+    expect(resultado[resultado.length - 1]).toEqual(fecha('2026-09-30'));
+  });
+
+  it('SEMANAL con serie larga: rango lejos del inicio de la serie SI devuelve ocurrencias (bug real corregido)', () => {
+    // 2018-01-01 es lunes.
+    const resultado = expandirOcurrencias(
+      {
+        fechaInicio: fecha('2018-01-01'),
+        recurrenciaRegla: {
+          frecuencia: 'SEMANAL',
+          intervalo: 1,
+          diasSemana: [1],
+        },
+        recurrenciaHasta: fecha('2030-12-31'),
+      },
+      { desde: fecha('2026-09-01'), hasta: fecha('2026-09-30') },
+    );
+    // Lunes de septiembre 2026: 7, 14, 21, 28 -> 4 ocurrencias.
+    expect(resultado.length).toBe(4);
+    resultado.forEach((f) => {
+      expect(f.getTime()).toBeGreaterThanOrEqual(fecha('2026-09-01').getTime());
+      expect(f.getTime()).toBeLessThanOrEqual(fecha('2026-09-30').getTime());
+    });
+  });
+
+  it('MENSUAL con serie larga: rango lejos del inicio de la serie SI devuelve ocurrencias (bug real corregido)', () => {
+    const resultado = expandirOcurrencias(
+      {
+        fechaInicio: fecha('2015-01-15'),
+        recurrenciaRegla: { frecuencia: 'MENSUAL', intervalo: 1, diaMes: 15 },
+        recurrenciaHasta: fecha('2030-12-31'),
+      },
+      { desde: fecha('2026-09-01'), hasta: fecha('2026-09-30') },
+    );
+    expect(resultado).toEqual([fecha('2026-09-15')]);
+  });
 });
