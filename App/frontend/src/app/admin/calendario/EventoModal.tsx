@@ -274,9 +274,21 @@ function construirPayloadEdicion(
 }
 
 /** Devuelve el mensaje de error de fechas cruzadas, o null si están OK.
- * Comparación de strings YYYY-MM-DD (lexicográfica = cronológica). */
-function validarFechasCruzadas(form: FormEvento): string | null {
-  if (form.fechaInicio && form.fechaFin && form.fechaFin < form.fechaInicio) {
+ * Comparación de strings YYYY-MM-DD (lexicográfica = cronológica).
+ *
+ * `fechaFinEditable` gatea el primer check: en edición de un evento recurrente
+ * legado, `form.fechaInicio` es la fecha de la OCURRENCIA clickeada (no el
+ * inicio real de la serie) y `fechaFin` suele ser informativa cerca del
+ * arranque — comparar ahí bloquearía guardar cualquier cambio (título,
+ * categoría…) sin campo visible para corregirlo. Solo se valida cuando el
+ * campo «Fecha de fin» está realmente visible/editable. */
+function validarFechasCruzadas(form: FormEvento, fechaFinEditable: boolean): string | null {
+  if (
+    fechaFinEditable &&
+    form.fechaInicio &&
+    form.fechaFin &&
+    form.fechaFin < form.fechaInicio
+  ) {
     return 'La fecha de fin no puede ser anterior a la fecha de inicio.';
   }
   if (
@@ -353,7 +365,7 @@ export function EventoModal({
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    const errorFechas = validarFechasCruzadas(form);
+    const errorFechas = validarFechasCruzadas(form, recurrenciaEditable && !form.seRepite);
     if (errorFechas) {
       toast.error(errorFechas);
       return;
