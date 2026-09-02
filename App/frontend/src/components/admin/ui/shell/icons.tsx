@@ -177,6 +177,15 @@ export function IconSalir({ className }: IconProps) {
   );
 }
 
+/** Calendario — link a "Calendario" en el sidebar (Fase 15, Día 43). Heroicons outline "calendar". */
+export function IconCalendario({ className }: IconProps) {
+  return (
+    <svg {...BASE} className={className} aria-hidden="true">
+      <path d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" />
+    </svg>
+  );
+}
+
 /** Campana — trigger de `NotificacionesBell` en el navbar (Fase 14, Día 39). */
 export function IconCampana({ className }: IconProps) {
   return (
