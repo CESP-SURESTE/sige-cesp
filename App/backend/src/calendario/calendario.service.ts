@@ -72,8 +72,11 @@ function puedeEditarEvento(
   actor: Actor,
 ): boolean {
   return (
-    evento.autorUsuarioId === actor.usuarioId ||
-    (actor.rol === RolUsuario.ADMINISTRATIVO && evento.sedeId === actor.sedeId)
+    // gate defensivo — un ALUMNO nunca autora un evento hoy, pero PATCH/DELETE lo cortan en RolesGuard; explícito acá para que Fase 16 herede la regla completa
+    actor.rol !== RolUsuario.ALUMNO &&
+    (evento.autorUsuarioId === actor.usuarioId ||
+      (actor.rol === RolUsuario.ADMINISTRATIVO &&
+        evento.sedeId === actor.sedeId))
   );
 }
 
@@ -644,9 +647,11 @@ export class CalendarioService {
    * fechaOcurrencia)`: resuelve destinatarios, crea las `Notificacion`
    * (tipo `RECORDATORIO_EVENTO`) + el `RecordatorioEnviado` en la MISMA
    * transacción (el `@@unique` lo hace idempotente si 2 corridas se
-   * solapan), y DESPUÉS de confirmar manda el correo best-effort por
-   * destinatario (patrón `altaPersona` + Mailgun — un fallo de correo
-   * nunca revierte ni tumba el resto del job).
+   * solapan), y DESPUÉS de confirmar hace el fan-out del correo
+   * best-effort en lotes de `LOTE_CORREOS_RECORDATORIO` con
+   * `Promise.allSettled` por lote (ver `enviarCorreosRecordatorioEnLotes`):
+   * cada rechazo se loguea con el `usuarioId` afectado (regla 12) y no
+   * revierte ni tumba el resto del job (patrón `altaPersona` + Mailgun).
    *
    * `RECORDATORIOS_HABILITADO` en falso (default) hace que el método
    * retorne de inmediato sin tocar la DB — mismo criterio "falla cerrado"
