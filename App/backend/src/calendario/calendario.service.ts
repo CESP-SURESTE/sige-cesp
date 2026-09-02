@@ -240,8 +240,7 @@ export class CalendarioService {
 
     if (dto.recurrenciaRegla && !dto.recurrenciaHasta) {
       throw new BadRequestException({
-        error:
-          'recurrenciaHasta es requerido cuando recurrenciaRegla está presente',
+        error: 'Falta indicar hasta qué fecha se repite el evento.',
         code: 'VALIDATION_ERROR',
       });
     }
@@ -251,7 +250,8 @@ export class CalendarioService {
       aFechaUTC(dto.recurrenciaHasta).getTime() < fechaInicioValidada.getTime()
     ) {
       throw new BadRequestException({
-        error: 'recurrenciaHasta no puede ser anterior a fechaInicio',
+        error:
+          'La fecha hasta la que se repite el evento no puede ser anterior a su fecha de inicio.',
         code: 'VALIDATION_ERROR',
       });
     }
@@ -260,7 +260,8 @@ export class CalendarioService {
       aFechaUTC(dto.fechaFin).getTime() < fechaInicioValidada.getTime()
     ) {
       throw new BadRequestException({
-        error: 'fechaFin no puede ser anterior a fechaInicio',
+        error:
+          'La fecha de fin no puede ser anterior a la fecha de inicio del evento.',
         code: 'VALIDATION_ERROR',
       });
     }
@@ -514,8 +515,7 @@ export class CalendarioService {
         : existente.recurrenciaHasta;
     if (reglaFinal && !hastaFinal) {
       throw new BadRequestException({
-        error:
-          'recurrenciaHasta es requerido cuando recurrenciaRegla está presente',
+        error: 'Falta indicar hasta qué fecha se repite el evento.',
         code: 'VALIDATION_ERROR',
       });
     }
@@ -533,13 +533,15 @@ export class CalendarioService {
 
     if (hastaFinal && hastaFinal.getTime() < fechaInicioFinal.getTime()) {
       throw new BadRequestException({
-        error: 'recurrenciaHasta no puede ser anterior a fechaInicio',
+        error:
+          'La fecha hasta la que se repite el evento no puede ser anterior a su fecha de inicio.',
         code: 'VALIDATION_ERROR',
       });
     }
     if (fechaFinFinal && fechaFinFinal.getTime() < fechaInicioFinal.getTime()) {
       throw new BadRequestException({
-        error: 'fechaFin no puede ser anterior a fechaInicio',
+        error:
+          'La fecha de fin no puede ser anterior a la fecha de inicio del evento.',
         code: 'VALIDATION_ERROR',
       });
     }
