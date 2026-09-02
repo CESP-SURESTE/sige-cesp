@@ -1,5 +1,7 @@
 'use client';
 
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { ProfileDropdown } from './ProfileDropdown';
 import { SedeCarreraBadge } from './SedeCarreraBadge';
 import { NotificacionesBell } from './NotificacionesBell';
@@ -15,7 +17,37 @@ import { NotificacionesBell } from './NotificacionesBell';
  * Client component separado de `layout.tsx` (server component) por el mismo
  * motivo que `AdminShell`: `ProfileDropdown`/`SedeCarreraBadge` necesitan
  * interacción/`useQuery`, `email` se resuelve en el servidor y llega como prop.
+ *
+ * `NavAlumno` (Fase 15, Día 44, Task 10) — nav de 2 links ("Mi perfil" /
+ * "Calendario") con estado activo vía `usePathname()`, calco de `NavMaestro`
+ * en `components/maestro/ui/shell/Header.tsx` (Task 9). Se coloca entre el
+ * bloque de título y `SedeCarreraBadge` — `NotificacionesBell`/
+ * `ProfileDropdown` se mantienen como el bloque final de la derecha, sin
+ * tocar su posición.
  */
+function NavAlumno() {
+  const pathname = usePathname();
+  const enCalendario = pathname.startsWith('/alumno/calendario');
+  return (
+    <nav className="flex items-center gap-4 text-sm font-medium">
+      <Link
+        href="/alumno"
+        aria-current={!enCalendario ? 'page' : undefined}
+        className={!enCalendario ? 'text-navy' : 'text-slate/60 hover:text-navy'}
+      >
+        Mi perfil
+      </Link>
+      <Link
+        href="/alumno/calendario"
+        aria-current={enCalendario ? 'page' : undefined}
+        className={enCalendario ? 'text-navy' : 'text-slate/60 hover:text-navy'}
+      >
+        Calendario
+      </Link>
+    </nav>
+  );
+}
+
 export function Header({ email }: { email: string | null }) {
   return (
     <header className="border-b border-mist px-6 py-4">
@@ -26,6 +58,7 @@ export function Header({ email }: { email: string | null }) {
           </span>
           <span className="text-sm font-medium text-slate">Panel del alumno</span>
         </div>
+        <NavAlumno />
         <SedeCarreraBadge />
         <div className="flex items-center gap-1">
           <NotificacionesBell />
