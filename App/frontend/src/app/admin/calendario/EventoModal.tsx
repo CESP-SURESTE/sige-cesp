@@ -215,7 +215,7 @@ function construirPayloadAlta(form: FormEvento): CrearEventoInput | null {
   };
   if (form.descripcion.trim()) payload.descripcion = form.descripcion.trim();
   if (!form.todoElDia && form.horaInicio) payload.horaInicio = form.horaInicio;
-  if (form.fechaFin) payload.fechaFin = form.fechaFin;
+  if (form.fechaFin && !form.seRepite) payload.fechaFin = form.fechaFin;
   if (form.alcanceTipo !== 'SEDE') payload.alcanceId = form.alcanceId;
 
   if (form.seRepite) {
@@ -249,7 +249,13 @@ function construirPayloadEdicion(
     descripcion: form.descripcion.trim() || null,
     alcanceId: form.alcanceTipo === 'SEDE' ? null : form.alcanceId,
     horaInicio: form.todoElDia ? null : form.horaInicio || null,
-    fechaFin: form.fechaFin || null,
+    // Con recurrencia, `fechaFin` no aplica (recurrenciaHasta es el fin real de
+    // la serie); se manda null para borrar una que hubiera quedado de antes.
+    // En edición de un recurrente ya existente `recurrenciaEditable` es false y
+    // el bloque «Se repite» no se muestra: ahí `form.seRepite` es false y este
+    // ternario cae en `form.fechaFin || null` — que reenvía el valor real del
+    // form (cargado desde `formDesdeOcurrencia`), sin cambio.
+    fechaFin: form.seRepite ? null : form.fechaFin || null,
   };
 
   if (!evento.esRecurrente) {
@@ -265,6 +271,23 @@ function construirPayloadEdicion(
   }
 
   return payload;
+}
+
+/** Devuelve el mensaje de error de fechas cruzadas, o null si están OK.
+ * Comparación de strings YYYY-MM-DD (lexicográfica = cronológica). */
+function validarFechasCruzadas(form: FormEvento): string | null {
+  if (form.fechaInicio && form.fechaFin && form.fechaFin < form.fechaInicio) {
+    return 'La fecha de fin no puede ser anterior a la fecha de inicio.';
+  }
+  if (
+    form.seRepite &&
+    form.fechaInicio &&
+    form.recurrenciaHasta &&
+    form.recurrenciaHasta < form.fechaInicio
+  ) {
+    return 'La fecha de «repetir hasta» no puede ser anterior a la fecha de inicio.';
+  }
+  return null;
 }
 
 export interface EventoModalProps {
@@ -330,6 +353,11 @@ export function EventoModal({
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    const errorFechas = validarFechasCruzadas(form);
+    if (errorFechas) {
+      toast.error(errorFechas);
+      return;
+    }
     if (esAlta) {
       const payload = construirPayloadAlta(form);
       if (!payload) {
@@ -404,19 +432,21 @@ export function EventoModal({
                 onChange={(e) => setForm((f) => ({ ...f, fechaInicio: e.target.value }))}
               />
             </div>
-            <div>
-              <label htmlFor="evento-modal-fecha-fin" className={LABEL_CLASS}>
-                Fecha de fin (opcional)
-              </label>
-              <input
-                id="evento-modal-fecha-fin"
-                type="date"
-                disabled={guardando}
-                className={INPUT_CLASS}
-                value={form.fechaFin}
-                onChange={(e) => setForm((f) => ({ ...f, fechaFin: e.target.value }))}
-              />
-            </div>
+            {recurrenciaEditable && !form.seRepite && (
+              <div>
+                <label htmlFor="evento-modal-fecha-fin" className={LABEL_CLASS}>
+                  Fecha de fin (opcional)
+                </label>
+                <input
+                  id="evento-modal-fecha-fin"
+                  type="date"
+                  disabled={guardando}
+                  className={INPUT_CLASS}
+                  value={form.fechaFin}
+                  onChange={(e) => setForm((f) => ({ ...f, fechaFin: e.target.value }))}
+                />
+              </div>
+            )}
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
@@ -534,7 +564,13 @@ export function EventoModal({
                     type="checkbox"
                     disabled={guardando}
                     checked={form.seRepite}
-                    onChange={(e) => setForm((f) => ({ ...f, seRepite: e.target.checked }))}
+                    onChange={(e) =>
+                      setForm((f) => ({
+                        ...f,
+                        seRepite: e.target.checked,
+                        fechaFin: e.target.checked ? '' : f.fechaFin,
+                      }))
+                    }
                   />
                   Se repite
                 </label>
