@@ -58,10 +58,12 @@ export class AvisosController {
   @Get()
   async feed(
     @Query() query: ListarAvisosQueryDto,
+    @SedeActual() sedeId: string,
     @ActorUsuarioId() actorUsuarioId: string,
   ) {
     return this.avisosService.feedDelActor(
       actorUsuarioId,
+      sedeId,
       query.page ?? 1,
       query.limit ?? 20,
     );
@@ -98,11 +100,13 @@ export class AvisosController {
   @Get(':id')
   async detalle(
     @Param('id') id: string,
+    @SedeActual() sedeId: string,
     @ActorUsuarioId() actorUsuarioId: string,
   ) {
     const data = await this.avisosService.verDetalleYMarcarLeido(
       id,
       actorUsuarioId,
+      sedeId,
     );
     return { data };
   }

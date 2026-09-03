@@ -411,11 +411,31 @@ describe('AvisosController (e2e)', () => {
       });
     });
 
+    it('cuerpo de más de 140 chars: cuerpoCorto se trunca a los primeros 140', async () => {
+      const cuerpoLargo = 'L'.repeat(200);
+      const res = await postAviso(await tokenAdminMerida(), {
+        titulo: 'Aviso largo',
+        cuerpo: cuerpoLargo,
+        alcanceTipo: 'GRUPO',
+        alcanceId: grupoId,
+      });
+      expect(res.status).toBe(201);
+      const notifs = await prisma.notificacion.findMany({
+        where: { referenciaId: (res.body as AvisoBody).data.id, tipo: 'AVISO' },
+      });
+      expect(notifs.length).toBeGreaterThan(0);
+      notifs.forEach((n) => {
+        expect(n.cuerpoCorto.length).toBe(140);
+        expect(n.cuerpoCorto).toBe(cuerpoLargo.slice(0, 140));
+      });
+    });
+
     it('audita ALTA en la misma transacción', async () => {
       const res = await postAviso(await tokenAdminMerida(), {
         titulo: 'Aviso auditado',
         cuerpo: 'x',
-        alcanceTipo: 'SEDE',
+        alcanceTipo: 'GRUPO',
+        alcanceId: grupoId,
       });
       expect(res.status).toBe(201);
       const audit = await prisma.registroAuditoria.findFirst({

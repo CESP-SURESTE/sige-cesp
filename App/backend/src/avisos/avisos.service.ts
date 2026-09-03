@@ -103,6 +103,8 @@ export class AvisosService {
           },
         });
 
+        // resolverDestinatarios solo usa delegates de modelo que el cliente transaccional también expone
+        // — el cast mantiene el fan-out de destinatarios DENTRO de la tx sin abrir una conexión nueva.
         const todos = await resolverDestinatarios(
           tx as unknown as PrismaService,
           actor.sedeId,
@@ -144,42 +146,53 @@ export class AvisosService {
       throw err;
     }
 
-    // Efecto best-effort: correo. Un fallo acá NO tumba la publicación.
-    try {
-      if (destinatarios.length > 0) {
-        const correos = await obtenerCorreosPersonales(
-          this.prisma,
-          destinatarios,
-        );
-        for (let i = 0; i < correos.length; i += LOTE_CORREOS_AVISO) {
-          const lote = correos.slice(i, i + LOTE_CORREOS_AVISO);
-          const resultados = await Promise.allSettled(
-            lote.map((c) =>
-              this.mailService.enviarNotificacion({
-                correoDestino: c.correoPersonal,
-                asunto: `Nuevo aviso: ${aviso.titulo}`,
-                cuerpoTexto: aviso.cuerpo,
-              }),
-            ),
+    // Efecto best-effort: correo. Fire-and-forget — un fan-out de alcance
+    // SEDE a cientos de personas no debe colgar la respuesta HTTP de una
+    // publicación que ya se guardó. Un fallo acá NO tumba la publicación.
+    if (destinatarios.length > 0) {
+      void this.enviarCorreosDeAvisoEnLotes(destinatarios, aviso).catch(
+        (err) => {
+          console.error(
+            `[AvisosService.publicar] fallo en el fan-out de correo del aviso ${aviso.id}:`,
+            err,
           );
-          resultados.forEach((r, idx) => {
-            if (r.status === 'rejected') {
-              console.error(
-                `[AvisosService.publicar] fallo al enviar correo de aviso ${aviso.id} a usuarioId ${lote[idx].usuarioId}:`,
-                r.reason,
-              );
-            }
-          });
-        }
-      }
-    } catch (err) {
-      console.error(
-        `[AvisosService.publicar] fallo en el fan-out de correo del aviso ${aviso.id}:`,
-        err,
+        },
       );
     }
 
     return aviso;
+  }
+
+  /**
+   * Fan-out best-effort del correo de un aviso, por lotes de
+   * `LOTE_CORREOS_AVISO`. Cada rechazo se loguea con su `usuarioId` (regla
+   * 12); NUNCA relanza — el `.catch` de `publicar` es solo un backstop.
+   */
+  private async enviarCorreosDeAvisoEnLotes(
+    destinatarios: string[],
+    aviso: AvisoDto,
+  ): Promise<void> {
+    const correos = await obtenerCorreosPersonales(this.prisma, destinatarios);
+    for (let i = 0; i < correos.length; i += LOTE_CORREOS_AVISO) {
+      const lote = correos.slice(i, i + LOTE_CORREOS_AVISO);
+      const resultados = await Promise.allSettled(
+        lote.map((c) =>
+          this.mailService.enviarNotificacion({
+            correoDestino: c.correoPersonal,
+            asunto: `Nuevo aviso: ${aviso.titulo}`,
+            cuerpoTexto: aviso.cuerpo,
+          }),
+        ),
+      );
+      resultados.forEach((r, idx) => {
+        if (r.status === 'rejected') {
+          console.error(
+            `[AvisosService.publicar] fallo al enviar correo de aviso ${aviso.id} a usuarioId ${lote[idx].usuarioId}:`,
+            r.reason,
+          );
+        }
+      });
+    }
   }
 
   /**
@@ -190,11 +203,14 @@ export class AvisosService {
    * actor (de ahí salen los ids de aviso y el `leidoEn`), después los
    * `Aviso` por `id in`, paginados y ordenados `createdAt desc`.
    *
-   * Doble filtro (regla 2): RLS por `sede_id` en Postgres + el filtro por
-   * `usuarioId` del actor a nivel de aplicación.
+   * Doble filtro (regla 2): filtro por `usuarioId` + `sedeId` a nivel de
+   * aplicación. El backend usa el rol `postgres` con BYPASSRLS — la RLS de
+   * `avisos` es la última línea solo para accesos que NO pasan por este
+   * backend (ver `prisma.service.ts`).
    */
   async feedDelActor(
     actorUsuarioId: string,
+    sedeId: string,
     page: number,
     limit: number,
   ): Promise<{
@@ -212,7 +228,7 @@ export class AvisosService {
       notifs.forEach((n) => leidoPorAviso.set(n.referenciaId, n.leidoEn));
       const avisoIds = [...leidoPorAviso.keys()];
 
-      const where = { id: { in: avisoIds } };
+      const where = { id: { in: avisoIds }, sedeId };
       const [total, avisos] = await Promise.all([
         this.prisma.aviso.count({ where }),
         this.prisma.aviso.findMany({
@@ -259,6 +275,7 @@ export class AvisosService {
   async verDetalleYMarcarLeido(
     id: string,
     actorUsuarioId: string,
+    sedeId: string,
   ): Promise<FeedItem> {
     try {
       const notif = await this.prisma.notificacion.findFirst({
@@ -273,7 +290,7 @@ export class AvisosService {
       }
 
       const aviso = await this.prisma.aviso.findFirst({
-        where: { id },
+        where: { id, sedeId },
         select: {
           id: true,
           titulo: true,
