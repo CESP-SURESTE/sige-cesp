@@ -615,6 +615,7 @@ model Notificacion {
 
   @@index([usuarioId, leidoEn])
   @@index([usuarioId, createdAt])
+  @@index([referenciaId, tipo])
   @@map("notificaciones")
 }
 
