@@ -19,6 +19,7 @@ import { SalonesModule } from './salones/salones.module';
 import { MateriasModule } from './materias/materias.module';
 import { NotificacionesModule } from './notificaciones/notificaciones.module';
 import { CalendarioModule } from './calendario/calendario.module';
+import { AvisosModule } from './avisos/avisos.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { CalendarioModule } from './calendario/calendario.module';
     MateriasModule,
     NotificacionesModule,
     CalendarioModule,
+    AvisosModule,
   ],
   controllers: [AppController],
   providers: [AppService],
