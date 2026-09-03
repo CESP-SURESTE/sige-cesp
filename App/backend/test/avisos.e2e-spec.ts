@@ -45,6 +45,23 @@ interface FeedBody {
 interface DetalleBody {
   data: FeedItemBody;
 }
+interface ReciboItemBody {
+  usuarioId: string;
+  nombreCompleto: string;
+  rol: string;
+  leidoEn: string | null;
+}
+interface RecibosBody {
+  data: {
+    total: number;
+    leidos: number;
+    noLeidos: number;
+    destinatarios: ReciboItemBody[];
+  };
+}
+interface OkBody {
+  data: { ok: true };
+}
 
 /**
  * Suite e2e de `avisos` (Fase 16, Día 46 — Task 2: `POST /avisos`). Calca
@@ -81,6 +98,11 @@ describe('AvisosController (e2e)', () => {
   const alg = 'ES256';
 
   const avisoIdsCreados: string[] = [];
+  // Avisos que un caso de test ya borró vía DELETE /avisos/:id: salen de
+  // `avisoIdsCreados` para que el `afterAll` no re-borre, pero sus filas de
+  // `RegistroAuditoria` (ALTA del autor + ELIMINACION) siguen en la DB y hay
+  // que limpiarlas igual (acotado a ids exactos, regla 14).
+  const avisoIdsBorradosEnTest: string[] = [];
   const grupoIdsCreados: string[] = [];
   const materiaIdsCreados: string[] = [];
   const usuarioIdsCreados: string[] = [];
@@ -296,15 +318,25 @@ describe('AvisosController (e2e)', () => {
   }, 30000);
 
   afterAll(async () => {
-    if (avisoIdsCreados.length > 0) {
+    const todosLosAvisoIds = [...avisoIdsCreados, ...avisoIdsBorradosEnTest];
+    if (todosLosAvisoIds.length > 0) {
       await prisma.notificacion.deleteMany({
-        where: { referenciaId: { in: avisoIdsCreados } },
+        where: { referenciaId: { in: todosLosAvisoIds } },
       });
       await prisma.aviso.deleteMany({
-        where: { id: { in: avisoIdsCreados } },
+        where: { id: { in: todosLosAvisoIds } },
       });
       await prisma.registroAuditoria.deleteMany({
-        where: { entidad: 'Aviso', entidadId: { in: avisoIdsCreados } },
+        where: { entidad: 'Aviso', entidadId: { in: todosLosAvisoIds } },
+      });
+    }
+    // Audits cuyo actor es una persona-fixture de esta corrida (p. ej. el
+    // ALTA de un aviso publicado por un maestro que luego se borró): sin
+    // esto, borrar el `Usuario` dispara `ON DELETE SET NULL` y viola el
+    // CHECK XOR `registro_auditoria_actor_check`.
+    if (usuarioIdsCreados.length > 0) {
+      await prisma.registroAuditoria.deleteMany({
+        where: { usuarioId: { in: usuarioIdsCreados } },
       });
     }
     if (asignacionIdsCreados.length > 0) {
@@ -603,6 +635,206 @@ describe('AvisosController (e2e)', () => {
       const res = await request(app.getHttpServer())
         .get(`/avisos/${randomUUID()}`)
         .set('Authorization', `Bearer ${await tokenAlumno()}`);
+      expect(res.status).toBe(404);
+    });
+
+    it('el feed del alumno NO incluye avisos de grupos donde no está matriculado', async () => {
+      const grupoSinElAlumno = await prisma.grupo.create({
+        data: {
+          sedeId: sedeMeridaId,
+          carreraId,
+          salonId,
+          nombre: `Grupo sin el alumno ${randomUUID().slice(0, 8)}`,
+          anioInicio: 2027,
+          cicloActual: 1,
+          capacidad: 10,
+        },
+      });
+      grupoIdsCreados.push(grupoSinElAlumno.id);
+      await postAviso(await tokenAdminMerida(), {
+        titulo: 'Aviso de grupo ajeno para el feed',
+        cuerpo: 'el alumno no deberia ver esto',
+        alcanceTipo: 'GRUPO',
+        alcanceId: grupoSinElAlumno.id,
+      });
+
+      const res = await request(app.getHttpServer())
+        .get('/avisos?page=1&limit=100')
+        .set('Authorization', `Bearer ${await tokenAlumno()}`);
+      expect(res.status).toBe(200);
+      const titulos = (res.body as FeedBody).data.map((a) => a.titulo);
+      expect(titulos).not.toContain('Aviso de grupo ajeno para el feed');
+    });
+  });
+
+  describe('GET /avisos/:id/recibos y DELETE /avisos/:id', () => {
+    it('el autor ve los recibos: total, leidos, noLeidos y la lista con leidoEn', async () => {
+      const pub = await postAviso(await tokenAdminMerida(), {
+        titulo: 'Con recibos',
+        cuerpo: 'x',
+        alcanceTipo: 'GRUPO',
+        alcanceId: grupoId,
+      });
+      // el alumno lo abre -> queda leído; el maestro no
+      await request(app.getHttpServer())
+        .get(`/avisos/${(pub.body as AvisoBody).data.id}`)
+        .set('Authorization', `Bearer ${await tokenAlumno()}`);
+
+      const res = await request(app.getHttpServer())
+        .get(`/avisos/${(pub.body as AvisoBody).data.id}/recibos`)
+        .set('Authorization', `Bearer ${await tokenAdminMerida()}`);
+      expect(res.status).toBe(200);
+      const data = (res.body as RecibosBody).data;
+      expect(data.total).toBe(2);
+      expect(data.leidos).toBe(1);
+      expect(data.noLeidos).toBe(1);
+      const alumno = data.destinatarios.find(
+        (d) => d.usuarioId === alumnoMatriculadoId,
+      );
+      expect(alumno!.leidoEn).not.toBeNull();
+      expect(alumno).toHaveProperty('nombreCompleto');
+      expect(alumno).toHaveProperty('rol', 'ALUMNO');
+      const maestro = data.destinatarios.find(
+        (d) => d.usuarioId === maestroConAsignacionId,
+      );
+      expect(maestro!.leidoEn).toBeNull();
+    });
+
+    it('un ADMINISTRATIVO de la sede que NO es el autor ve los recibos', async () => {
+      const pub = await postAviso(await tokenMaestro(), {
+        titulo: 'Del maestro',
+        cuerpo: 'x',
+        alcanceTipo: 'GRUPO',
+        alcanceId: grupoId,
+      });
+      const res = await request(app.getHttpServer())
+        .get(`/avisos/${(pub.body as AvisoBody).data.id}/recibos`)
+        .set('Authorization', `Bearer ${await tokenAdminMerida()}`);
+      expect(res.status).toBe(200);
+    });
+
+    it('un MAESTRO que no es el autor: 403', async () => {
+      const pub = await postAviso(await tokenAdminMerida(), {
+        titulo: 'x',
+        cuerpo: 'x',
+        alcanceTipo: 'GRUPO',
+        alcanceId: grupoId,
+      });
+      const otroMaestro = await crearMaestro(sedeMeridaId);
+      const res = await request(app.getHttpServer())
+        .get(`/avisos/${(pub.body as AvisoBody).data.id}/recibos`)
+        .set(
+          'Authorization',
+          `Bearer ${await firmarToken(
+            otroMaestro,
+            RolUsuario.MAESTRO,
+            sedeMeridaId,
+          )}`,
+        );
+      expect(res.status).toBe(403);
+      expect((res.body as ErrorBody).code).toBe('ROL_NO_AUTORIZADO');
+    });
+
+    it('un ALUMNO destinatario: 403 en /recibos', async () => {
+      const pub = await postAviso(await tokenAdminMerida(), {
+        titulo: 'x',
+        cuerpo: 'x',
+        alcanceTipo: 'GRUPO',
+        alcanceId: grupoId,
+      });
+      const res = await request(app.getHttpServer())
+        .get(`/avisos/${(pub.body as AvisoBody).data.id}/recibos`)
+        .set('Authorization', `Bearer ${await tokenAlumno()}`);
+      expect(res.status).toBe(403);
+    });
+
+    it('recibos de un aviso de otra sede: 404', async () => {
+      const pub = await postAviso(await tokenAdminMerida(), {
+        titulo: 'x',
+        cuerpo: 'x',
+        alcanceTipo: 'SEDE',
+      });
+      const res = await request(app.getHttpServer())
+        .get(`/avisos/${(pub.body as AvisoBody).data.id}/recibos`)
+        .set('Authorization', `Bearer ${await tokenAdminValladolid()}`);
+      expect(res.status).toBe(404);
+    });
+
+    it('el autor borra su aviso: 200, se van el Aviso y sus Notificacion, audita ELIMINACION', async () => {
+      const pub = await postAviso(await tokenAdminMerida(), {
+        titulo: 'Borrable',
+        cuerpo: 'x',
+        alcanceTipo: 'GRUPO',
+        alcanceId: grupoId,
+      });
+      const avisoId = (pub.body as AvisoBody).data.id;
+      const res = await request(app.getHttpServer())
+        .delete(`/avisos/${avisoId}`)
+        .set('Authorization', `Bearer ${await tokenAdminMerida()}`);
+      expect(res.status).toBe(200);
+      expect((res.body as OkBody).data).toEqual({ ok: true });
+      expect(
+        await prisma.aviso.findUnique({ where: { id: avisoId } }),
+      ).toBeNull();
+      expect(
+        await prisma.notificacion.count({ where: { referenciaId: avisoId } }),
+      ).toBe(0);
+      const audit = await prisma.registroAuditoria.findFirst({
+        where: { entidad: 'Aviso', entidadId: avisoId, accion: 'ELIMINACION' },
+      });
+      expect(audit).not.toBeNull();
+      // quitar de avisoIdsCreados para que el afterAll no falle al re-borrar
+      const i = avisoIdsCreados.indexOf(avisoId);
+      if (i >= 0) avisoIdsCreados.splice(i, 1);
+      avisoIdsBorradosEnTest.push(avisoId);
+    });
+
+    it('un ADMINISTRATIVO de la sede borra un aviso ajeno (de un maestro): 200', async () => {
+      const pub = await postAviso(await tokenMaestro(), {
+        titulo: 'x',
+        cuerpo: 'x',
+        alcanceTipo: 'GRUPO',
+        alcanceId: grupoId,
+      });
+      const res = await request(app.getHttpServer())
+        .delete(`/avisos/${(pub.body as AvisoBody).data.id}`)
+        .set('Authorization', `Bearer ${await tokenAdminMerida()}`);
+      expect(res.status).toBe(200);
+      const i = avisoIdsCreados.indexOf((pub.body as AvisoBody).data.id);
+      if (i >= 0) avisoIdsCreados.splice(i, 1);
+      avisoIdsBorradosEnTest.push((pub.body as AvisoBody).data.id);
+    });
+
+    it('un MAESTRO que no es el autor no puede borrar: 403', async () => {
+      const pub = await postAviso(await tokenAdminMerida(), {
+        titulo: 'x',
+        cuerpo: 'x',
+        alcanceTipo: 'GRUPO',
+        alcanceId: grupoId,
+      });
+      const otroMaestro = await crearMaestro(sedeMeridaId);
+      const res = await request(app.getHttpServer())
+        .delete(`/avisos/${(pub.body as AvisoBody).data.id}`)
+        .set(
+          'Authorization',
+          `Bearer ${await firmarToken(
+            otroMaestro,
+            RolUsuario.MAESTRO,
+            sedeMeridaId,
+          )}`,
+        );
+      expect(res.status).toBe(403);
+    });
+
+    it('DELETE de un aviso de otra sede: 404', async () => {
+      const pub = await postAviso(await tokenAdminMerida(), {
+        titulo: 'x',
+        cuerpo: 'x',
+        alcanceTipo: 'SEDE',
+      });
+      const res = await request(app.getHttpServer())
+        .delete(`/avisos/${(pub.body as AvisoBody).data.id}`)
+        .set('Authorization', `Bearer ${await tokenAdminValladolid()}`);
       expect(res.status).toBe(404);
     });
   });

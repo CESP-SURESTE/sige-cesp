@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   Param,
@@ -67,6 +68,30 @@ export class AvisosController {
   }
 
   /**
+   * `GET /avisos/:id/recibos` — reporte de recibos de lectura. Declarado
+   * ANTES de `GET /avisos/:id` (convención específico→genérico del repo,
+   * ver `GET /eventos/listado` antes de `GET /eventos`). Sin `@Roles`: la
+   * autorización fina (autor o `ADMINISTRATIVO` de la sede del aviso) la
+   * hace `verificarPuedeGestionar` en el service — un ALUMNO/MAESTRO
+   * no-autor sale con 403 `ROL_NO_AUTORIZADO`.
+   */
+  @Get(':id/recibos')
+  async recibos(
+    @Param('id') id: string,
+    @SedeActual() sedeId: string,
+    @ActorUsuarioId() actorUsuarioId: string,
+    @Req() req: Request,
+  ) {
+    const rol = req.jwtClaims?.['rol'] as RolUsuario;
+    const data = await this.avisosService.obtenerRecibos(id, {
+      usuarioId: actorUsuarioId,
+      rol,
+      sedeId,
+    });
+    return { data };
+  }
+
+  /**
    * `GET /avisos/:id` — detalle del aviso + marca la `Notificacion` del
    * actor como leída (recibo). 404 si el actor no era destinatario.
    */
@@ -79,6 +104,28 @@ export class AvisosController {
       id,
       actorUsuarioId,
     );
+    return { data };
+  }
+
+  /**
+   * `DELETE /avisos/:id` — borrado real del `Aviso` + sus `Notificacion`.
+   * `@Roles(ADMINISTRATIVO, MAESTRO)` (un ALUMNO ni entra); el service
+   * exige además autor o `ADMINISTRATIVO` de la sede. Otra sede → 404.
+   */
+  @Delete(':id')
+  @Roles(RolUsuario.ADMINISTRATIVO, RolUsuario.MAESTRO)
+  async eliminar(
+    @Param('id') id: string,
+    @SedeActual() sedeId: string,
+    @ActorUsuarioId() actorUsuarioId: string,
+    @Req() req: Request,
+  ) {
+    const rol = req.jwtClaims?.['rol'] as RolUsuario;
+    const data = await this.avisosService.eliminar(id, {
+      usuarioId: actorUsuarioId,
+      rol,
+      sedeId,
+    });
     return { data };
   }
 }

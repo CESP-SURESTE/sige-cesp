@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { AccionAuditoria, AlcanceDestino, RolUsuario } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
@@ -38,6 +42,18 @@ export interface FeedItem {
   cuerpo: string;
   autor: { nombres: string; apellidoPaterno: string };
   createdAt: Date;
+  leidoEn: Date | null;
+}
+
+/**
+ * Item del reporte de recibos (`GET /avisos/:id/recibos`). El set de
+ * destinatarios es el snapshot de `Notificacion` `tipo: AVISO` fijado al
+ * publicar; `leidoEn` es el recibo de lectura por persona.
+ */
+export interface ReciboItem {
+  usuarioId: string;
+  nombreCompleto: string;
+  rol: RolUsuario;
   leidoEn: Date | null;
 }
 
@@ -256,7 +272,7 @@ export class AvisosService {
         });
       }
 
-      const aviso = await this.prisma.aviso.findUniqueOrThrow({
+      const aviso = await this.prisma.aviso.findFirst({
         where: { id },
         select: {
           id: true,
@@ -266,6 +282,12 @@ export class AvisosService {
           autorUsuarioId: true,
         },
       });
+      if (!aviso) {
+        throw new NotFoundException({
+          error: 'Aviso no encontrado',
+          code: 'NOT_FOUND',
+        });
+      }
 
       let leidoEn = notif.leidoEn;
       if (leidoEn === null) {
@@ -294,6 +316,189 @@ export class AvisosService {
       );
       throw err;
     }
+  }
+
+  /**
+   * Carga el aviso exigiendo que pertenezca a la sede del actor. Aviso
+   * inexistente o de otra sede → 404 (nunca 403 — no se revela existencia,
+   * mismo criterio que el resto de la API).
+   */
+  private async obtenerAvisoEnSede(id: string, sedeId: string) {
+    const aviso = await this.prisma.aviso.findFirst({
+      where: { id, sedeId },
+      select: { id: true, autorUsuarioId: true, sedeId: true },
+    });
+    if (!aviso) {
+      throw new NotFoundException({
+        error: 'Aviso no encontrado',
+        code: 'NOT_FOUND',
+      });
+    }
+    return aviso;
+  }
+
+  /**
+   * Autor del aviso, o cualquier `ADMINISTRATIVO` de la sede del aviso (la
+   * sede ya está garantizada por `obtenerAvisoEnSede`). `MAESTRO`/`ALUMNO`
+   * no-autor → 403 `ROL_NO_AUTORIZADO`.
+   */
+  private verificarPuedeGestionar(
+    aviso: { autorUsuarioId: string },
+    actor: ActorAviso,
+  ): void {
+    const esAutor = aviso.autorUsuarioId === actor.usuarioId;
+    const esAdmin = actor.rol === RolUsuario.ADMINISTRATIVO;
+    if (!esAutor && !esAdmin) {
+      throw new ForbiddenException({
+        error: 'Solo el autor o un administrativo pueden gestionar este aviso',
+        code: 'ROL_NO_AUTORIZADO',
+      });
+    }
+  }
+
+  /**
+   * `GET /avisos/:id/recibos` — solo autor o `ADMINISTRATIVO` de la sede
+   * del aviso. El snapshot de destinatarios es el set de `Notificacion`
+   * `tipo: AVISO` de ese aviso (fijado al publicar). `nombreCompleto` y
+   * `rol` se resuelven del `Usuario` + su perfil. Orden por
+   * `nombreCompleto`.
+   */
+  async obtenerRecibos(
+    id: string,
+    actor: ActorAviso,
+  ): Promise<{
+    total: number;
+    leidos: number;
+    noLeidos: number;
+    destinatarios: ReciboItem[];
+  }> {
+    try {
+      const aviso = await this.obtenerAvisoEnSede(id, actor.sedeId);
+      this.verificarPuedeGestionar(aviso, actor);
+
+      const notifs = await this.prisma.notificacion.findMany({
+        where: { referenciaId: id, tipo: 'AVISO' },
+        select: { usuarioId: true, leidoEn: true },
+      });
+      const usuarioIds = notifs.map((n) => n.usuarioId);
+      const [usuarios, nombres] = await Promise.all([
+        this.prisma.usuario.findMany({
+          where: { id: { in: usuarioIds } },
+          select: { id: true, rol: true },
+        }),
+        this.resolverNombresCompletos(usuarioIds),
+      ]);
+      const rolPorId = new Map(usuarios.map((u) => [u.id, u.rol]));
+
+      const destinatarios: ReciboItem[] = notifs.map((n) => ({
+        usuarioId: n.usuarioId,
+        nombreCompleto: nombres.get(n.usuarioId) ?? '',
+        rol: rolPorId.get(n.usuarioId) ?? RolUsuario.ALUMNO,
+        leidoEn: n.leidoEn,
+      }));
+      destinatarios.sort((a, b) =>
+        a.nombreCompleto.localeCompare(b.nombreCompleto),
+      );
+
+      const leidos = destinatarios.filter((d) => d.leidoEn !== null).length;
+      return {
+        total: destinatarios.length,
+        leidos,
+        noLeidos: destinatarios.length - leidos,
+        destinatarios,
+      };
+    } catch (err) {
+      if (
+        err instanceof NotFoundException ||
+        err instanceof ForbiddenException
+      ) {
+        throw err;
+      }
+      console.error('[AvisosService.obtenerRecibos] error inesperado:', err);
+      throw err;
+    }
+  }
+
+  /**
+   * `DELETE /avisos/:id` — DELETE real (`Aviso` está en "CRUD" de negocio,
+   * no baja lógica — regla 3 es solo para personas). Autor o
+   * `ADMINISTRATIVO` de la sede. En una transacción: audita `ELIMINACION`
+   * ANTES del delete (regla 5 — la fila de auditoría queda aunque el aviso
+   * ya no exista) → borra las `Notificacion` del aviso (`referenciaId`, sin
+   * FK → `deleteMany` a mano) → borra el `Aviso`.
+   */
+  async eliminar(id: string, actor: ActorAviso): Promise<{ ok: true }> {
+    try {
+      const aviso = await this.obtenerAvisoEnSede(id, actor.sedeId);
+      this.verificarPuedeGestionar(aviso, actor);
+
+      await this.prisma.$transaction(async (tx) => {
+        await tx.registroAuditoria.create({
+          data: {
+            usuarioId: actor.usuarioId,
+            sedeId: actor.sedeId,
+            accion: AccionAuditoria.ELIMINACION,
+            entidad: 'Aviso',
+            entidadId: id,
+          },
+        });
+        await tx.notificacion.deleteMany({
+          where: { referenciaId: id, tipo: 'AVISO' },
+        });
+        await tx.aviso.delete({ where: { id } });
+      });
+      return { ok: true };
+    } catch (err) {
+      if (
+        err instanceof NotFoundException ||
+        err instanceof ForbiddenException
+      ) {
+        throw err;
+      }
+      console.error('[AvisosService.eliminar] error inesperado:', err);
+      throw err;
+    }
+  }
+
+  /**
+   * Como `resolverNombresAutores` pero devuelve el nombre completo ya
+   * formateado (`` `${nombres} ${apellidoPaterno} ${apellidoMaterno}`.trim() ``).
+   * Usado por el reporte de recibos, que necesita el nombre legible
+   * completo de cada destinatario (alumno/maestro/administrativo).
+   */
+  private async resolverNombresCompletos(
+    usuarioIds: string[],
+  ): Promise<Map<string, string>> {
+    const map = new Map<string, string>();
+    if (usuarioIds.length === 0) return map;
+
+    const select = {
+      usuarioId: true,
+      nombres: true,
+      apellidoPaterno: true,
+      apellidoMaterno: true,
+    } as const;
+    const [al, ma, ad] = await Promise.all([
+      this.prisma.perfilAlumno.findMany({
+        where: { usuarioId: { in: usuarioIds } },
+        select,
+      }),
+      this.prisma.perfilMaestro.findMany({
+        where: { usuarioId: { in: usuarioIds } },
+        select,
+      }),
+      this.prisma.perfilAdministrativo.findMany({
+        where: { usuarioId: { in: usuarioIds } },
+        select,
+      }),
+    ]);
+    [...al, ...ma, ...ad].forEach((p) =>
+      map.set(
+        p.usuarioId,
+        `${p.nombres} ${p.apellidoPaterno} ${p.apellidoMaterno}`.trim(),
+      ),
+    );
+    return map;
   }
 
   /**
