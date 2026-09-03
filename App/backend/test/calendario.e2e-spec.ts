@@ -338,6 +338,13 @@ describe('CalendarioController (e2e)', () => {
       await prisma.recordatorioEnviado.deleteMany({
         where: { eventoId: { in: eventoIdsCreados } },
       });
+      // `Notificacion.referenciaId` NO tiene FK — cada `POST /eventos` de la
+      // suite abanica una `Notificacion` EVENTO_NUEVO por destinatario del
+      // alcance; sin esta línea quedan huérfanas para siempre al borrar el
+      // evento. Id-scoped a lo creado en esta corrida (regla 14).
+      await prisma.notificacion.deleteMany({
+        where: { referenciaId: { in: eventoIdsCreados } },
+      });
       await prisma.eventoCalendario.deleteMany({
         where: { id: { in: eventoIdsCreados } },
       });
@@ -931,6 +938,42 @@ describe('CalendarioController (e2e)', () => {
     }
   });
 
+  // --- Revisión final Fase 15 polish (2026-09-02): `DELETE /eventos/:id`
+  // debe borrar también las `Notificacion` EVENTO_NUEVO del evento —
+  // `referenciaId` no tiene FK, así que sin borrado explícito quedan
+  // huérfanas apuntando a un evento inexistente. ---
+
+  it('28. DELETE /eventos/:id borra las Notificacion EVENTO_NUEVO del evento', async () => {
+    const token = await tokenAdminMerida();
+    // Evento GRUPO en el grupo con un MAESTRO asignado -> genera al menos 1
+    // notificación (el maestro; el admin autor se excluye).
+    const creado = await postEvento(token, {
+      titulo: 'Evento a borrar con notificaciones E2E',
+      fechaInicio: '2027-09-10',
+      categoria: 'OTRO',
+      alcanceTipo: 'GRUPO',
+      alcanceId: grupoConAsignacionId,
+    });
+    expect(creado.status).toBe(201);
+    const id = (creado.body as EventoBody).data.id;
+
+    const antes = await prisma.notificacion.count({
+      where: { referenciaId: id, tipo: 'EVENTO_NUEVO' },
+    });
+    expect(antes).toBeGreaterThan(0);
+
+    const res = await request(app.getHttpServer())
+      .delete(`/eventos/${id}`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ data: { ok: true } });
+
+    const despues = await prisma.notificacion.count({
+      where: { referenciaId: id },
+    });
+    expect(despues).toBe(0);
+  });
+
   // --- Task 4 (Fase 15 polish, 2026-09-02): notificación in-app
   // `EVENTO_NUEVO` best-effort al crear un evento. Un fallo del efecto NO
   // tumba el `POST /eventos` (mismo criterio que el correo de bienvenida
@@ -1400,6 +1443,61 @@ describe('CalendarioController (e2e)', () => {
       const res = await getListado(await tokenAdminA(), '?limit=999');
       expect(res.status).toBe(400);
       expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+    });
+
+    // Revisión final Fase 15 polish (2026-09-02): una serie recurrente cuyo
+    // `fechaInicio` quedó ANTES de la ventana pero cuyo `recurrenciaHasta`
+    // sigue dentro debe aparecer igual en "Próximos N días". Un evento NO
+    // recurrente pasado NO debe aparecer (el `OR` no puede sobre-matchear).
+    it('H. evento recurrente que arrancó antes de la ventana aparece; uno no-recurrente pasado NO', async () => {
+      const token = await tokenAdminA();
+      const iso = (d: Date) => d.toISOString().slice(0, 10);
+      const hoy = new Date();
+      const menos30 = new Date(hoy.getTime() - 30 * 86_400_000);
+      const menos15 = new Date(hoy.getTime() - 15 * 86_400_000);
+      const mas30 = new Date(hoy.getTime() + 30 * 86_400_000);
+      const mas60 = new Date(hoy.getTime() + 60 * 86_400_000);
+
+      const recurrenteId = await postEventoA(token, {
+        titulo: 'Listado recurrente pasado-activo E2E',
+        fechaInicio: iso(menos30),
+        categoria: 'OTRO',
+        alcanceTipo: 'SEDE',
+        recurrenciaRegla: {
+          frecuencia: 'SEMANAL',
+          intervalo: 1,
+          diasSemana: [1],
+        },
+        recurrenciaHasta: iso(mas60),
+      });
+      const noRecurrentePasadoId = await postEventoA(token, {
+        titulo: 'Listado no-recurrente pasado E2E',
+        fechaInicio: iso(menos15),
+        categoria: 'OTRO',
+        alcanceTipo: 'SEDE',
+      });
+
+      const res = await getListado(
+        token,
+        `?desde=${iso(hoy)}&hasta=${iso(mas30)}`,
+      );
+      expect(res.status).toBe(200);
+      const ids = (res.body as ListadoBody).data.map((e) => e.id);
+      expect(ids).toContain(recurrenteId);
+      expect(ids).not.toContain(noRecurrentePasadoId);
+
+      // Limpieza id-scoped inmediata (regla 14) — evita que estos 2 eventos
+      // "hoy-relativos" alteren el `total` de otros tests si se reordenaran.
+      const creados = [recurrenteId, noRecurrentePasadoId];
+      await prisma.registroAuditoria.deleteMany({
+        where: { entidad: 'EventoCalendario', entidadId: { in: creados } },
+      });
+      await prisma.notificacion.deleteMany({
+        where: { referenciaId: { in: creados } },
+      });
+      await prisma.eventoCalendario.deleteMany({
+        where: { id: { in: creados } },
+      });
     });
   });
 });

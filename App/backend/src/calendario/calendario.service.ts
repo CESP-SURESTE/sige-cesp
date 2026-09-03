@@ -540,10 +540,30 @@ export class CalendarioService {
     if (filtros.alcanceTipo) where.alcanceTipo = filtros.alcanceTipo;
     if (filtros.categoria) where.categoria = filtros.categoria;
     if (filtros.desde || filtros.hasta) {
-      where.fechaInicio = {
-        ...(filtros.desde ? { gte: aFechaUTC(filtros.desde) } : {}),
-        ...(filtros.hasta ? { lte: aFechaUTC(filtros.hasta) } : {}),
-      };
+      const desde = filtros.desde ? aFechaUTC(filtros.desde) : undefined;
+      const hasta = filtros.hasta ? aFechaUTC(filtros.hasta) : undefined;
+      // Un evento entra a la ventana [desde, hasta] si su `fechaInicio` cae
+      // dentro, O si es recurrente y su serie SIGUE activa dentro de la
+      // ventana (`recurrenciaHasta >= desde`) aunque haya arrancado antes de
+      // `desde` — sin este `OR`, una serie semanal que empezó el mes pasado
+      // pero se repite otros 2 meses quedaba invisible en "Próximos 30 días".
+      // Un evento NO recurrente (`recurrenciaHasta === null`) solo entra por
+      // su `fechaInicio` en la ventana.
+      where.OR = [
+        {
+          fechaInicio: {
+            ...(desde ? { gte: desde } : {}),
+            ...(hasta ? { lte: hasta } : {}),
+          },
+        },
+        {
+          recurrenciaHasta: {
+            not: null,
+            ...(desde ? { gte: desde } : {}),
+          },
+          ...(hasta ? { fechaInicio: { lte: hasta } } : {}),
+        },
+      ];
     }
 
     try {
@@ -551,7 +571,9 @@ export class CalendarioService {
         this.prisma.eventoCalendario.count({ where }),
         this.prisma.eventoCalendario.findMany({
           where,
-          orderBy: [{ fechaInicio: 'desc' }, { createdAt: 'desc' }],
+          // `asc` — la vista de gestión rotula sus rangos "Próximos N días":
+          // el evento más próximo va primero.
+          orderBy: [{ fechaInicio: 'asc' }, { createdAt: 'asc' }],
           skip: (page - 1) * limit,
           take: limit,
         }),
@@ -878,7 +900,11 @@ export class CalendarioService {
    * `DELETE /eventos/:id` — Fase 15, Día 41. Solo autor o
    * `ADMINISTRATIVO`. DELETE real (`EventoCalendario` es CRUD completo).
    * `RecordatorioEnviado` se borra en cascada por el FK (Task 1), no hace
-   * falta borrarlo a mano acá.
+   * falta borrarlo a mano acá. `Notificacion` NO tiene FK a `referenciaId`,
+   * así que se borra explícitamente en la misma transacción — si no, los
+   * destinatarios del evento (hasta cientos, si era alcance `SEDE`) se
+   * quedan con una notificación "Nuevo evento: X" apuntando a un evento que
+   * ya no existe.
    */
   async eliminar(id: string, actor: Actor): Promise<{ ok: true }> {
     const evento = await this.obtenerPropioODeSede(id, actor);
@@ -895,6 +921,7 @@ export class CalendarioService {
             detalle: { titulo: evento.titulo },
           },
         });
+        await tx.notificacion.deleteMany({ where: { referenciaId: id } });
         await tx.eventoCalendario.delete({ where: { id } });
       });
       return { ok: true };

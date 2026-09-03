@@ -195,11 +195,11 @@ type RangoEventos = '30' | '60' | '90' | 'todos';
 
 const LIMITE_EVENTOS = 20;
 
-const RANGO_OPTIONS = [
+const RANGO_OPTIONS: { value: RangoEventos; label: string }[] = [
   { value: '30', label: 'Próximos 30 días' },
   { value: '60', label: 'Próximos 60 días' },
   { value: '90', label: 'Próximos 90 días' },
-  { value: 'todos', label: 'Todos (desde hoy)' },
+  { value: 'todos', label: 'Todos' },
 ];
 
 const ALCANCE_LABEL: Record<AlcanceDestino, string> = {
@@ -258,9 +258,12 @@ function SeccionEventosSede() {
   const [page, setPage] = useState(1);
   const [expandidoId, setExpandidoId] = useState<string | null>(null);
 
-  const desde = fechaISOhoy();
-  const hasta =
-    rango === 'todos' ? undefined : sumarDiasISO(desde, Number(rango));
+  // "Todos" = sin límites: ni `desde` ni `hasta`. Cualquier otro rango
+  // acota desde hoy hasta hoy + N días.
+  const esRangoTodos = rango === 'todos';
+  const hoy = fechaISOhoy();
+  const desde = esRangoTodos ? undefined : hoy;
+  const hasta = esRangoTodos ? undefined : sumarDiasISO(hoy, Number(rango));
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['admin', 'eventos-sede', rango, alcanceTipo, categoria, page],
