@@ -5,6 +5,12 @@ código que se despliega, es una tarea de infraestructura fuera del ciclo normal
 review de código. Requiere que el backend ya esté desplegado (dev o prod) con
 `INTERNAL_JOB_SECRET` configurado en las env vars del hosting.
 
+> **Antes de programar el cron:** setear `RECORDATORIOS_HABILITADO=true` en las env
+> vars del backend desplegado. El flag falla CERRADO (apagado) por defecto — mientras
+> siga en `false`/vacío, `POST /internal/recordatorios/ejecutar` responde `200` pero es
+> un no-op (no crea `Notificacion` ni manda correo). Programar el cron sin prender el
+> flag deja el job corriendo en vacío indefinidamente.
+
 ## 1. Habilitar las extensiones (una sola vez por proyecto de Supabase)
 
 ```sql

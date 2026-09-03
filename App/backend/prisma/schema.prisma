@@ -110,6 +110,7 @@ enum AreaPersonalServicios {
 enum TipoNotificacion {
   AVISO
   RECORDATORIO_EVENTO
+  EVENTO_NUEVO
 }
 
 enum CategoriaEvento {

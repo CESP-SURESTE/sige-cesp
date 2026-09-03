@@ -930,4 +930,168 @@ describe('CalendarioController (e2e)', () => {
       expect(o.puedeEditar).toBe(false);
     }
   });
+
+  // --- Task 4 (Fase 15 polish, 2026-09-02): notificación in-app
+  // `EVENTO_NUEVO` best-effort al crear un evento. Un fallo del efecto NO
+  // tumba el `POST /eventos` (mismo criterio que el correo de bienvenida
+  // en `PersonasService`). El shape de la respuesta NO cambia. ---
+  describe('POST /eventos — notificación EVENTO_NUEVO', () => {
+    let grupoNotifId: string;
+    let grupoVacioId: string;
+    let maestroNotifUsuarioId: string;
+    const alumnoNotifUsuarioIds: string[] = [];
+    const alumnoNotifPerfilIds: string[] = [];
+    const eventoIdsNotif: string[] = [];
+
+    async function crearAlumnoMatriculado(
+      grupoId: string,
+      carreraId: string,
+      sedeId: string,
+    ): Promise<{ usuarioId: string; perfilId: string }> {
+      const usuario = await prisma.usuario.create({
+        data: {
+          id: randomUUID(),
+          email: `fixture.cal.alumno.${randomUUID()}@example.com`,
+          rol: RolUsuario.ALUMNO,
+          sedeId,
+        },
+      });
+      usuarioIdsCreados.push(usuario.id);
+      const perfil = await prisma.perfilAlumno.create({
+        data: {
+          usuarioId: usuario.id,
+          nombres: 'Fixture',
+          apellidoPaterno: 'CalAlumno',
+          apellidoMaterno: `Z${randomUUID().slice(0, 4)}`,
+          curp: `FA${randomUUID().slice(0, 16).toUpperCase()}`,
+          fechaNacimiento: new Date('2005-01-01'),
+          matricula: `ACALE2E${randomUUID().slice(0, 8).toUpperCase()}`,
+          correoPersonal: `fixture.cal.alumno.p.${randomUUID()}@example.com`,
+          carreraId,
+          estatusAcademico: 'INSCRITO',
+          periodoIngreso: '2027-1',
+          semestreActual: 1,
+        },
+      });
+      await prisma.grupoAlumno.create({
+        data: { grupoId, alumnoId: perfil.id },
+      });
+      return { usuarioId: usuario.id, perfilId: perfil.id };
+    }
+
+    beforeAll(async () => {
+      grupoNotifId = await crearGrupo({
+        sedeId: sedeMeridaId,
+        carreraId: carreraLaeId,
+        salonId: salonMeridaId,
+        cicloActual: 1,
+      });
+      grupoVacioId = await crearGrupo({
+        sedeId: sedeMeridaId,
+        carreraId: carreraLaeId,
+        salonId: salonMeridaId,
+        cicloActual: 1,
+      });
+
+      // 2 alumnos matriculados en el grupo con notificación.
+      for (let i = 0; i < 2; i++) {
+        const { usuarioId, perfilId } = await crearAlumnoMatriculado(
+          grupoNotifId,
+          carreraLaeId,
+          sedeMeridaId,
+        );
+        alumnoNotifUsuarioIds.push(usuarioId);
+        alumnoNotifPerfilIds.push(perfilId);
+      }
+
+      // 1 maestro asignado (GrupoMateriaMaestro) al mismo grupo.
+      const materiaId = await crearMateria(carreraLaeId, 1);
+      maestroNotifUsuarioId = await crearMaestro(sedeMeridaId);
+      const maestroPerfil = await prisma.perfilMaestro.findUniqueOrThrow({
+        where: { usuarioId: maestroNotifUsuarioId },
+      });
+      await prisma.grupoMateriaMaestro.create({
+        data: {
+          grupoId: grupoNotifId,
+          materiaId,
+          maestroId: maestroPerfil.id,
+        },
+      });
+    }, 30000);
+
+    afterAll(async () => {
+      // Orden FK-safe, acotado a los ids exactos de esta corrida (regla 14):
+      // notificaciones de estos eventos -> GrupoAlumno de estos grupos.
+      // Los `EventoCalendario`/`Grupo`/`Materia`/`PerfilMaestro`/`Usuario`
+      // (con cascade a `PerfilAlumno`) los limpia el `afterAll` externo por
+      // sus arrays compartidos.
+      if (eventoIdsNotif.length > 0) {
+        await prisma.notificacion.deleteMany({
+          where: { referenciaId: { in: eventoIdsNotif } },
+        });
+      }
+      if (alumnoNotifPerfilIds.length > 0) {
+        await prisma.grupoAlumno.deleteMany({
+          where: { alumnoId: { in: alumnoNotifPerfilIds } },
+        });
+      }
+    });
+
+    it('A. POST /eventos GRUPO por ADMINISTRATIVO -> 201 (shape intacto) + 1 Notificacion EVENTO_NUEVO por destinatario, ninguna para el autor', async () => {
+      const token = await tokenAdminMerida();
+      const res = await postEvento(token, {
+        titulo: 'Evento con notificacion E2E',
+        fechaInicio: '2027-08-01',
+        categoria: 'SOCIAL',
+        alcanceTipo: 'GRUPO',
+        alcanceId: grupoNotifId,
+      });
+      expect(res.status).toBe(201);
+      const body = res.body as EventoBody;
+      expect(body.data.id).toEqual(expect.any(String));
+      expect(body.data.titulo).toBe('Evento con notificacion E2E');
+      // El shape de la respuesta NO gana campos nuevos.
+      expect(body.data).not.toHaveProperty('notificacionesCreadas');
+      expect(body.data).not.toHaveProperty('destinatarios');
+
+      const eventoId = body.data.id;
+      eventoIdsNotif.push(eventoId);
+
+      const notifs = await prisma.notificacion.findMany({
+        where: { referenciaId: eventoId, tipo: 'EVENTO_NUEVO' },
+      });
+      expect(notifs).toHaveLength(3);
+
+      const destinatarios = notifs.map((n) => n.usuarioId).sort();
+      expect(destinatarios).toEqual(
+        [...alumnoNotifUsuarioIds, maestroNotifUsuarioId].sort(),
+      );
+      expect(destinatarios).not.toContain(adminMeridaId);
+
+      for (const n of notifs) {
+        expect(n.titulo.startsWith('Nuevo evento: ')).toBe(true);
+        expect(n.cuerpoCorto.length).toBeGreaterThan(0);
+        expect(n.sedeId).toBe(sedeMeridaId);
+      }
+    });
+
+    it('B. POST /eventos GRUPO sin alumnos ni maestros -> 201 y 0 notificaciones, sin fallar', async () => {
+      const token = await tokenAdminMerida();
+      const res = await postEvento(token, {
+        titulo: 'Evento grupo vacio E2E',
+        fechaInicio: '2027-08-02',
+        categoria: 'SOCIAL',
+        alcanceTipo: 'GRUPO',
+        alcanceId: grupoVacioId,
+      });
+      expect(res.status).toBe(201);
+      const eventoId = (res.body as EventoBody).data.id;
+      eventoIdsNotif.push(eventoId);
+
+      const total = await prisma.notificacion.count({
+        where: { referenciaId: eventoId },
+      });
+      expect(total).toBe(0);
+    });
+  });
 });

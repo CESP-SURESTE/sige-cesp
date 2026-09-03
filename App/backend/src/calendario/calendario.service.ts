@@ -266,9 +266,10 @@ export class CalendarioService {
       });
     }
 
+    let evento: EventoCalendario;
     try {
-      return await this.prisma.$transaction(async (tx) => {
-        const evento = await tx.eventoCalendario.create({
+      evento = await this.prisma.$transaction(async (tx) => {
+        const creado = await tx.eventoCalendario.create({
           data: {
             sedeId: actor.sedeId,
             autorUsuarioId: actor.usuarioId,
@@ -295,17 +296,76 @@ export class CalendarioService {
             sedeId: actor.sedeId,
             accion: AccionAuditoria.ALTA,
             entidad: 'EventoCalendario',
-            entidadId: evento.id,
-            detalle: { titulo: evento.titulo, alcanceTipo: evento.alcanceTipo },
+            entidadId: creado.id,
+            detalle: { titulo: creado.titulo, alcanceTipo: creado.alcanceTipo },
           },
         });
 
-        return evento;
+        return creado;
       });
     } catch (err) {
       console.error('[CalendarioService.crear] error inesperado:', err);
       throw err;
     }
+
+    // Efecto best-effort: notificar in-app a los destinatarios del alcance.
+    // Un fallo acá NO tumba el alta (mismo criterio que el correo de
+    // bienvenida en PersonasService). Sin correo — eso es del job de
+    // recordatorios.
+    try {
+      const destinatarios = (
+        await resolverDestinatarios(
+          this.prisma,
+          actor.sedeId,
+          evento.alcanceTipo,
+          evento.alcanceId,
+        )
+      ).filter((usuarioId) => usuarioId !== actor.usuarioId);
+
+      if (destinatarios.length > 0) {
+        const alcanceLegible = await this.describirAlcance(
+          evento.alcanceTipo,
+          evento.alcanceId,
+        );
+        await this.prisma.notificacion.createMany({
+          data: destinatarios.map((usuarioId) => ({
+            usuarioId,
+            sedeId: actor.sedeId,
+            tipo: 'EVENTO_NUEVO' as const,
+            referenciaId: evento.id,
+            titulo: `Nuevo evento: ${evento.titulo}`,
+            cuerpoCorto: `${aISO(evento.fechaInicio)} · ${alcanceLegible}`,
+          })),
+        });
+      }
+    } catch (err) {
+      console.error(
+        `[CalendarioService.crear] fallo al crear notificaciones EVENTO_NUEVO para el evento ${evento.id}:`,
+        err,
+      );
+    }
+
+    return evento;
+  }
+
+  /** Texto legible del alcance para el cuerpo de la notificación. */
+  private async describirAlcance(
+    alcanceTipo: AlcanceDestino,
+    alcanceId: string | null,
+  ): Promise<string> {
+    if (alcanceTipo === 'SEDE' || !alcanceId) return 'Toda la sede';
+    if (alcanceTipo === 'CARRERA') {
+      const c = await this.prisma.carrera.findUnique({
+        where: { id: alcanceId },
+        select: { nombre: true },
+      });
+      return c ? `Carrera: ${c.nombre}` : 'Una carrera';
+    }
+    const g = await this.prisma.grupo.findUnique({
+      where: { id: alcanceId },
+      select: { nombre: true },
+    });
+    return g ? `Grupo: ${g.nombre}` : 'Un grupo';
   }
 
   /**

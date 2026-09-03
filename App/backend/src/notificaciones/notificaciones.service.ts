@@ -7,7 +7,7 @@ import { PrismaService } from '../prisma/prisma.service';
 
 export interface NotificacionItem {
   id: string;
-  tipo: 'AVISO' | 'RECORDATORIO_EVENTO';
+  tipo: 'AVISO' | 'RECORDATORIO_EVENTO' | 'EVENTO_NUEVO';
   referenciaId: string;
   titulo: string;
   cuerpoCorto: string;
