@@ -28,6 +28,23 @@ interface AvisoBody {
     createdAt: string;
   };
 }
+interface FeedItemBody {
+  id: string;
+  titulo: string;
+  cuerpo: string;
+  autor: { nombres: string; apellidoPaterno: string };
+  createdAt: string;
+  leidoEn: string | null;
+}
+interface FeedBody {
+  data: FeedItemBody[];
+  page: number;
+  limit: number;
+  total: number;
+}
+interface DetalleBody {
+  data: FeedItemBody;
+}
 
 /**
  * Suite e2e de `avisos` (Fase 16, Día 46 — Task 2: `POST /avisos`). Calca
@@ -56,6 +73,7 @@ describe('AvisosController (e2e)', () => {
   let grupoId: string;
   let maestroConAsignacionId: string;
   let alumnoMatriculadoId: string;
+  let otroAlumnoMeridaId: string;
 
   let privateKey: CryptoKey;
   let jose: typeof import('jose');
@@ -269,7 +287,12 @@ describe('AvisosController (e2e)', () => {
       sedeMeridaId,
       true,
     );
-    await crearAlumnoMatriculado(grupoId, carreraId, sedeMeridaId, false);
+    otroAlumnoMeridaId = await crearAlumnoMatriculado(
+      grupoId,
+      carreraId,
+      sedeMeridaId,
+      false,
+    );
   }, 30000);
 
   afterAll(async () => {
@@ -469,6 +492,118 @@ describe('AvisosController (e2e)', () => {
         alcanceTipo: 'SEDE',
       });
       expect(res.status).toBe(401);
+    });
+  });
+
+  describe('GET /avisos y GET /avisos/:id', () => {
+    it('el feed del alumno trae solo los avisos que le llegaron, orden createdAt desc', async () => {
+      await postAviso(await tokenAdminMerida(), {
+        titulo: 'Feed A',
+        cuerpo: 'aaa',
+        alcanceTipo: 'GRUPO',
+        alcanceId: grupoId,
+      });
+      await postAviso(await tokenAdminMerida(), {
+        titulo: 'Feed B',
+        cuerpo: 'bbb',
+        alcanceTipo: 'GRUPO',
+        alcanceId: grupoId,
+      });
+      const res = await request(app.getHttpServer())
+        .get('/avisos?page=1&limit=50')
+        .set('Authorization', `Bearer ${await tokenAlumno()}`);
+      expect(res.status).toBe(200);
+      const body = res.body as FeedBody;
+      expect(body.page).toBe(1);
+      expect(body).toHaveProperty('total');
+      const titulos = body.data.map((a) => a.titulo);
+      expect(titulos).toEqual(expect.arrayContaining(['Feed A', 'Feed B']));
+      expect(titulos.indexOf('Feed B')).toBeLessThan(titulos.indexOf('Feed A'));
+      body.data.forEach((a) => {
+        expect(a.autor).toHaveProperty('apellidoPaterno');
+      });
+    });
+
+    it('GET /avisos/:id devuelve el aviso completo y marca leído (leidoEn pasa de null a fecha)', async () => {
+      const pub = await postAviso(await tokenAdminMerida(), {
+        titulo: 'Para leer',
+        cuerpo: 'contenido completo',
+        alcanceTipo: 'GRUPO',
+        alcanceId: grupoId,
+      });
+      const avisoId = (pub.body as AvisoBody).data.id;
+      const antes = await prisma.notificacion.findFirst({
+        where: { referenciaId: avisoId, usuarioId: alumnoMatriculadoId },
+      });
+      expect(antes!.leidoEn).toBeNull();
+
+      const res = await request(app.getHttpServer())
+        .get(`/avisos/${avisoId}`)
+        .set('Authorization', `Bearer ${await tokenAlumno()}`);
+      expect(res.status).toBe(200);
+      const body = res.body as DetalleBody;
+      expect(body.data).toMatchObject({
+        titulo: 'Para leer',
+        cuerpo: 'contenido completo',
+      });
+      expect(body.data.leidoEn).not.toBeNull();
+
+      const despues = await prisma.notificacion.findFirst({
+        where: { referenciaId: avisoId, usuarioId: alumnoMatriculadoId },
+      });
+      expect(despues!.leidoEn).not.toBeNull();
+    });
+
+    it('GET /avisos/:id es idempotente: una segunda lectura no cambia leidoEn', async () => {
+      const pub = await postAviso(await tokenAdminMerida(), {
+        titulo: 'Idem',
+        cuerpo: 'x',
+        alcanceTipo: 'GRUPO',
+        alcanceId: grupoId,
+      });
+      const avisoId = (pub.body as AvisoBody).data.id;
+      await request(app.getHttpServer())
+        .get(`/avisos/${avisoId}`)
+        .set('Authorization', `Bearer ${await tokenAlumno()}`);
+      const primera = await prisma.notificacion.findFirst({
+        where: { referenciaId: avisoId, usuarioId: alumnoMatriculadoId },
+      });
+      await new Promise((r) => setTimeout(r, 10));
+      await request(app.getHttpServer())
+        .get(`/avisos/${avisoId}`)
+        .set('Authorization', `Bearer ${await tokenAlumno()}`);
+      const segunda = await prisma.notificacion.findFirst({
+        where: { referenciaId: avisoId, usuarioId: alumnoMatriculadoId },
+      });
+      expect(segunda!.leidoEn!.getTime()).toBe(primera!.leidoEn!.getTime());
+    });
+
+    it('GET /avisos/:id por alguien que NO era destinatario: 404', async () => {
+      const pub = await postAviso(await tokenAdminMerida(), {
+        titulo: 'No para ti',
+        cuerpo: 'x',
+        alcanceTipo: 'GRUPO',
+        alcanceId: grupoId,
+      });
+      const avisoId = (pub.body as AvisoBody).data.id;
+      const res = await request(app.getHttpServer())
+        .get(`/avisos/${avisoId}`)
+        .set(
+          'Authorization',
+          `Bearer ${await firmarToken(
+            otroAlumnoMeridaId,
+            RolUsuario.ALUMNO,
+            sedeMeridaId,
+          )}`,
+        );
+      expect(res.status).toBe(404);
+    });
+
+    it('GET /avisos/:id inexistente: 404', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/avisos/${randomUUID()}`)
+        .set('Authorization', `Bearer ${await tokenAlumno()}`);
+      expect(res.status).toBe(404);
     });
   });
 });

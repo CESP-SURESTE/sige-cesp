@@ -1,8 +1,11 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
+  Param,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -14,6 +17,7 @@ import { SedeActual } from '../common/decorators/sede-actual.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { SedeGuard } from '../common/guards/sede.guard';
 import { CrearAvisoDto } from './dto/crear-aviso.dto';
+import { ListarAvisosQueryDto } from './dto/listar-avisos.query.dto';
 import { AvisosService } from './avisos.service';
 
 /**
@@ -42,6 +46,39 @@ export class AvisosController {
       rol,
       sedeId,
     });
+    return { data };
+  }
+
+  /**
+   * `GET /avisos` — feed del actor. Sin `@Roles`: los 3 roles leen sus
+   * propios avisos (mismo criterio que `GET /perfil` / `GET /notificaciones`).
+   * `feedDelActor` ya devuelve `{ data, page, limit, total }` — no re-envolver.
+   */
+  @Get()
+  async feed(
+    @Query() query: ListarAvisosQueryDto,
+    @ActorUsuarioId() actorUsuarioId: string,
+  ) {
+    return this.avisosService.feedDelActor(
+      actorUsuarioId,
+      query.page ?? 1,
+      query.limit ?? 20,
+    );
+  }
+
+  /**
+   * `GET /avisos/:id` — detalle del aviso + marca la `Notificacion` del
+   * actor como leída (recibo). 404 si el actor no era destinatario.
+   */
+  @Get(':id')
+  async detalle(
+    @Param('id') id: string,
+    @ActorUsuarioId() actorUsuarioId: string,
+  ) {
+    const data = await this.avisosService.verDetalleYMarcarLeido(
+      id,
+      actorUsuarioId,
+    );
     return { data };
   }
 }
