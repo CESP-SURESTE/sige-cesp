@@ -151,6 +151,7 @@ model Sede {
   registrosAuditoria  RegistroAuditoria[]
   notificaciones      Notificacion[]
   eventosCalendario   EventoCalendario[]
+  avisos              Aviso[]
 
   @@map("sedes")
 }
@@ -324,6 +325,7 @@ model Usuario {
   registrosAuditoria   RegistroAuditoria[]
   notificaciones       Notificacion[]
   eventosCreados       EventoCalendario[]
+  avisosCreados        Aviso[]
 
   @@map("usuarios")
 }
@@ -663,6 +665,28 @@ model RecordatorioEnviado {
 
   @@unique([eventoId, fechaOcurrencia])
   @@map("recordatorio_enviado")
+}
+
+/// Aviso — Fase 16, Día 45. Broadcast de una vía con recibo de lectura.
+/// El recibo NO vive acá: es la fila `Notificacion` (`tipo: AVISO`,
+/// `referenciaId: aviso.id`) de cada destinatario, con su `leidoEn`.
+/// `alcanceId` apunta a `Carrera.id` o `Grupo.id` según `alcanceTipo`, o
+/// es null si `SEDE` — sin FK (el alcance se valida en
+/// `validarAlcancePublicacion`, mismo criterio que `EventoCalendario`).
+model Aviso {
+  id             String         @id @default(uuid())
+  sedeId         String         @map("sede_id")
+  sede           Sede           @relation(fields: [sedeId], references: [id])
+  autorUsuarioId String         @map("autor_usuario_id")
+  autor          Usuario        @relation(fields: [autorUsuarioId], references: [id])
+  titulo         String
+  cuerpo         String
+  alcanceTipo    AlcanceDestino @map("alcance_tipo")
+  alcanceId      String?        @map("alcance_id")
+  createdAt      DateTime       @default(now()) @map("created_at")
+
+  @@index([sedeId, createdAt])
+  @@map("avisos")
 }
 
 model Seccion {
