@@ -10,7 +10,7 @@ import { apiFetchAuth, apiFetchAuthPaginado, type ApiListaPaginada } from './htt
  * `NotificacionesService` (`App/backend/src/notificaciones/`), mantener en
  * sync a mano.
  */
-export type TipoNotificacion = 'AVISO' | 'RECORDATORIO_EVENTO';
+export type TipoNotificacion = 'AVISO' | 'RECORDATORIO_EVENTO' | 'EVENTO_NUEVO';
 
 export interface Notificacion {
   id: string;
