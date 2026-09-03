@@ -21,6 +21,7 @@ import { SedeGuard } from '../common/guards/sede.guard';
 import { CalendarioService } from './calendario.service';
 import { ActualizarEventoDto } from './dto/actualizar-evento.dto';
 import { CrearEventoDto } from './dto/crear-evento.dto';
+import { ListarEventosListadoQueryDto } from './dto/listar-eventos-listado.query.dto';
 import { ListarEventosQueryDto } from './dto/listar-eventos.query.dto';
 
 /**
@@ -65,6 +66,23 @@ export class CalendarioController {
       sedeId,
     });
     return { data };
+  }
+
+  /**
+   * `GET /eventos/listado` — Fase 15 polish (2026-09-02). Declarado ANTES
+   * del `@Get()` raíz a propósito: `listado` como segmento fijo debe
+   * resolverse antes que el handler de la raíz. Solo `ADMINISTRATIVO`
+   * (`@Roles` a nivel de método) — vista de gestión, un row por evento
+   * base. El service ya devuelve la forma final `{ data, page, limit,
+   * total }`, no se re-envuelve.
+   */
+  @Get('listado')
+  @Roles(RolUsuario.ADMINISTRATIVO)
+  async listarParaGestion(
+    @SedeActual() sedeId: string,
+    @Query() query: ListarEventosListadoQueryDto,
+  ) {
+    return this.calendarioService.listarParaGestion(sedeId, query);
   }
 
   @Get()

@@ -1094,4 +1094,312 @@ describe('CalendarioController (e2e)', () => {
       expect(total).toBe(0);
     });
   });
+
+  // --- Task 6 (Fase 15 polish, 2026-09-02): `GET /eventos/listado` —
+  // un row por evento BASE (no ocurrencias, a diferencia de `GET /eventos`),
+  // con filtros `desde`/`hasta`/`alcanceTipo`/`categoria` + paginación, sin
+  // tope de rango. Solo `ADMINISTRATIVO`. `recurrenciaResumen`/`alcanceNombre`/
+  // `autorNombre` derivados por request (regla 1). Fixtures propias en una
+  // sede FRESCA (el resto de la suite ensucia `sedeMeridaId` con decenas de
+  // eventos, incompatible con `total === 3`). ---
+  describe('GET /eventos/listado', () => {
+    interface ListadoBody {
+      data: Array<{
+        id: string;
+        titulo: string;
+        descripcion: string | null;
+        fechaInicio: string;
+        fechaFin: string | null;
+        horaInicio: string | null;
+        categoria: string;
+        alcanceTipo: string;
+        alcanceId: string | null;
+        alcanceNombre: string;
+        esRecurrente: boolean;
+        recurrenciaResumen: string | null;
+        recurrenciaHasta: string | null;
+        autorNombre: string;
+        createdAt: string;
+      }>;
+      page: number;
+      limit: number;
+      total: number;
+    }
+
+    let sedeAId: string;
+    let carreraAId: string;
+    let carreraANombre: string;
+    let salonAId: string;
+    let grupoAId: string;
+    let grupoANombre: string;
+    let adminAUsuarioId: string;
+
+    let eventoSedeId: string;
+    let eventoCarreraId: string;
+    let eventoGrupoId: string;
+    let eventoOtraSedeId: string;
+
+    const listadoSedeIds: string[] = [];
+    const listadoCarreraIds: string[] = [];
+    const listadoSalonIds: string[] = [];
+    const listadoGrupoIds: string[] = [];
+    const listadoUsuarioIds: string[] = [];
+    const listadoEventoIds: string[] = [];
+
+    const tokenAdminA = () =>
+      firmarToken(adminAUsuarioId, RolUsuario.ADMINISTRATIVO, sedeAId);
+
+    function getListado(token: string, qs = ''): Promise<request.Response> {
+      return request(app.getHttpServer())
+        .get(`/eventos/listado${qs}`)
+        .set('Authorization', `Bearer ${token}`);
+    }
+
+    async function postEventoA(
+      token: string,
+      body: Record<string, unknown>,
+    ): Promise<string> {
+      const res = await request(app.getHttpServer())
+        .post('/eventos')
+        .set('Authorization', `Bearer ${token}`)
+        .send(body);
+      if (res.status !== 201) {
+        throw new Error(
+          `No se pudo crear la fixture de evento: ${JSON.stringify(res.body)}`,
+        );
+      }
+      const id = (res.body as EventoBody).data.id;
+      listadoEventoIds.push(id);
+      return id;
+    }
+
+    beforeAll(async () => {
+      const sede = await prisma.sede.create({
+        data: {
+          nombre: `CESP Listado E2E ${randomUUID().slice(0, 8)}`,
+          direccion: 'Calle Fixture 1',
+          ubicacionReferencia: 'Fixture',
+          telefono: '9990000000',
+        },
+      });
+      sedeAId = sede.id;
+      listadoSedeIds.push(sede.id);
+
+      const carrera = await prisma.carrera.create({
+        data: {
+          nombre: `Carrera Listado E2E ${randomUUID().slice(0, 8)}`,
+          clave: `LST-${randomUUID().slice(0, 12).toUpperCase()}`,
+          sedeId: sedeAId,
+          duracion: 8,
+          nivel: 'LICENCIATURA',
+          modalidad: 'PRESENCIAL',
+          rvoe: 'RVOE-TEST',
+          descripcion: 'Fixture de GET /eventos/listado',
+        },
+      });
+      carreraAId = carrera.id;
+      carreraANombre = carrera.nombre;
+      listadoCarreraIds.push(carrera.id);
+
+      const salon = await prisma.salon.create({
+        data: { sedeId: sedeAId, nombre: 'Aula Listado E2E', capacidad: 30 },
+      });
+      salonAId = salon.id;
+      listadoSalonIds.push(salon.id);
+
+      const grupo = await prisma.grupo.create({
+        data: {
+          sedeId: sedeAId,
+          carreraId: carreraAId,
+          salonId: salonAId,
+          nombre: `Grupo Listado E2E ${randomUUID().slice(0, 8)}`,
+          anioInicio: 2027,
+          cicloActual: 1,
+          capacidad: 30,
+        },
+      });
+      grupoAId = grupo.id;
+      grupoANombre = grupo.nombre;
+      listadoGrupoIds.push(grupo.id);
+
+      const admin = await prisma.usuario.create({
+        data: {
+          id: randomUUID(),
+          email: `fixture.cal.listado.admin.${randomUUID()}@example.com`,
+          rol: RolUsuario.ADMINISTRATIVO,
+          sedeId: sedeAId,
+        },
+      });
+      adminAUsuarioId = admin.id;
+      listadoUsuarioIds.push(admin.id);
+
+      const token = await tokenAdminA();
+
+      eventoSedeId = await postEventoA(token, {
+        titulo: 'Listado SEDE E2E',
+        descripcion: 'Evento de alcance sede',
+        fechaInicio: '2027-10-05',
+        categoria: 'SOCIAL',
+        alcanceTipo: 'SEDE',
+      });
+      eventoCarreraId = await postEventoA(token, {
+        titulo: 'Listado CARRERA E2E',
+        fechaInicio: '2027-10-10',
+        categoria: 'EXAMEN',
+        alcanceTipo: 'CARRERA',
+        alcanceId: carreraAId,
+      });
+      eventoGrupoId = await postEventoA(token, {
+        titulo: 'Listado GRUPO recurrente E2E',
+        fechaInicio: '2027-10-04',
+        categoria: 'OTRO',
+        alcanceTipo: 'GRUPO',
+        alcanceId: grupoAId,
+        recurrenciaRegla: {
+          frecuencia: 'SEMANAL',
+          intervalo: 1,
+          diasSemana: [1, 3],
+        },
+        recurrenciaHasta: '2027-12-31',
+      });
+
+      // 2ª sede con su propio admin y 1 evento (aislamiento cross-sede).
+      const tokenValladolid = await tokenAdminValladolid();
+      eventoOtraSedeId = await postEventoA(tokenValladolid, {
+        titulo: 'Listado otra sede E2E',
+        fechaInicio: '2027-10-06',
+        categoria: 'SOCIAL',
+        alcanceTipo: 'SEDE',
+      });
+    }, 30000);
+
+    afterAll(async () => {
+      // Orden FK-safe, acotado a los ids exactos de esta corrida (regla 14).
+      if (listadoEventoIds.length > 0) {
+        await prisma.registroAuditoria.deleteMany({
+          where: {
+            entidad: 'EventoCalendario',
+            entidadId: { in: listadoEventoIds },
+          },
+        });
+        await prisma.notificacion.deleteMany({
+          where: { referenciaId: { in: listadoEventoIds } },
+        });
+        await prisma.recordatorioEnviado.deleteMany({
+          where: { eventoId: { in: listadoEventoIds } },
+        });
+        await prisma.eventoCalendario.deleteMany({
+          where: { id: { in: listadoEventoIds } },
+        });
+      }
+      if (listadoGrupoIds.length > 0) {
+        await prisma.grupo.deleteMany({
+          where: { id: { in: listadoGrupoIds } },
+        });
+      }
+      if (listadoSalonIds.length > 0) {
+        await prisma.salon.deleteMany({
+          where: { id: { in: listadoSalonIds } },
+        });
+      }
+      if (listadoCarreraIds.length > 0) {
+        await prisma.carrera.deleteMany({
+          where: { id: { in: listadoCarreraIds } },
+        });
+      }
+      if (listadoUsuarioIds.length > 0) {
+        await prisma.usuario.deleteMany({
+          where: { id: { in: listadoUsuarioIds } },
+        });
+      }
+      if (listadoSedeIds.length > 0) {
+        await prisma.registroAuditoria.deleteMany({
+          where: { sedeId: { in: listadoSedeIds } },
+        });
+        await prisma.sede.deleteMany({
+          where: { id: { in: listadoSedeIds } },
+        });
+      }
+    });
+
+    it('A. ADMINISTRATIVO lista sin filtros -> los 3 eventos de su sede, no el de la otra; shape { data, page, limit, total }', async () => {
+      const res = await getListado(await tokenAdminA());
+      expect(res.status).toBe(200);
+      const body = res.body as ListadoBody;
+      expect(Array.isArray(body.data)).toBe(true);
+      expect(body).toHaveProperty('page');
+      expect(body).toHaveProperty('limit');
+      expect(body.total).toBe(3);
+      const ids = body.data.map((e) => e.id);
+      expect(ids).toEqual(
+        expect.arrayContaining([eventoSedeId, eventoCarreraId, eventoGrupoId]),
+      );
+      expect(ids).not.toContain(eventoOtraSedeId);
+    });
+
+    it('B. recurrenciaResumen + alcanceNombre derivados', async () => {
+      const res = await getListado(await tokenAdminA());
+      expect(res.status).toBe(200);
+      const body = res.body as ListadoBody;
+
+      const grupo = body.data.find((e) => e.id === eventoGrupoId);
+      expect(grupo).toBeDefined();
+      expect(grupo?.esRecurrente).toBe(true);
+      expect(grupo?.recurrenciaResumen).toContain('semana');
+      expect(grupo?.recurrenciaResumen).toContain('Lun');
+      expect(grupo?.recurrenciaResumen).toContain('Mié');
+      expect(grupo?.recurrenciaHasta).toBe('2027-12-31');
+      expect(grupo?.alcanceNombre).toBe(grupoANombre);
+
+      const carrera = body.data.find((e) => e.id === eventoCarreraId);
+      expect(carrera?.alcanceNombre).toBe(carreraANombre);
+
+      const sedeEvt = body.data.find((e) => e.id === eventoSedeId);
+      expect(sedeEvt?.alcanceNombre).toBe('Toda la sede');
+      expect(sedeEvt?.esRecurrente).toBe(false);
+      expect(sedeEvt?.recurrenciaResumen).toBeNull();
+    });
+
+    it('C. filtro alcanceTipo=CARRERA -> solo el evento CARRERA', async () => {
+      const res = await getListado(await tokenAdminA(), '?alcanceTipo=CARRERA');
+      expect(res.status).toBe(200);
+      const body = res.body as ListadoBody;
+      expect(body.total).toBe(1);
+      expect(body.data.map((e) => e.id)).toEqual([eventoCarreraId]);
+    });
+
+    it('D. filtro categoria=EXAMEN -> solo el evento EXAMEN', async () => {
+      const res = await getListado(await tokenAdminA(), '?categoria=EXAMEN');
+      expect(res.status).toBe(200);
+      const body = res.body as ListadoBody;
+      expect(body.total).toBe(1);
+      expect(body.data.map((e) => e.id)).toEqual([eventoCarreraId]);
+    });
+
+    it('E. paginación ?limit=1&page=2 -> 1 fila, page 2, total 3', async () => {
+      const res = await getListado(await tokenAdminA(), '?limit=1&page=2');
+      expect(res.status).toBe(200);
+      const body = res.body as ListadoBody;
+      expect(body.data).toHaveLength(1);
+      expect(body.page).toBe(2);
+      expect(body.limit).toBe(1);
+      expect(body.total).toBe(3);
+    });
+
+    it('F. un MAESTRO y un ALUMNO -> 403', async () => {
+      const resMaestro = await getListado(await tokenMaestro());
+      expect(resMaestro.status).toBe(403);
+      expect((resMaestro.body as ErrorBody).code).toBe('ROL_NO_AUTORIZADO');
+
+      const resAlumno = await getListado(await tokenAlumno());
+      expect(resAlumno.status).toBe(403);
+      expect((resAlumno.body as ErrorBody).code).toBe('ROL_NO_AUTORIZADO');
+    });
+
+    it('G. query inválida ?limit=999 -> 400 VALIDATION_ERROR', async () => {
+      const res = await getListado(await tokenAdminA(), '?limit=999');
+      expect(res.status).toBe(400);
+      expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+    });
+  });
 });

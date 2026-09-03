@@ -9,6 +9,7 @@ import {
   AlcanceDestino,
   Prisma,
   RolUsuario,
+  type CategoriaEvento,
   type EventoCalendario,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -42,6 +43,30 @@ export interface OcurrenciaEvento {
    * comparten el valor (se calcula una vez por evento y se propaga).
    */
   puedeEditar: boolean;
+}
+
+/**
+ * Fila de `GET /eventos/listado` (Fase 15 polish, 2026-09-02) — un row por
+ * evento BASE, sin expandir ocurrencias (a diferencia de `OcurrenciaEvento`).
+ * `alcanceNombre`, `recurrenciaResumen` y `autorNombre` se derivan por
+ * request (regla 1 de `CLAUDE.md` raíz): no hay columna para ninguno.
+ */
+export interface EventoListadoItem {
+  id: string;
+  titulo: string;
+  descripcion: string | null;
+  fechaInicio: string;
+  fechaFin: string | null;
+  horaInicio: string | null;
+  categoria: CategoriaEvento;
+  alcanceTipo: AlcanceDestino;
+  alcanceId: string | null;
+  alcanceNombre: string;
+  esRecurrente: boolean;
+  recurrenciaResumen: string | null;
+  recurrenciaHasta: string | null;
+  autorNombre: string;
+  createdAt: string;
 }
 
 interface Actor {
@@ -123,6 +148,40 @@ function aFechaUTC(iso: string): Date {
 
 function aISO(fecha: Date): string {
   return fecha.toISOString().slice(0, 10);
+}
+
+const DIAS_ES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+
+/**
+ * Texto legible de una `ReglaRecurrencia` + su `recurrenciaHasta`. Regla 1
+ * de `CLAUDE.md` raíz (derivado al vuelo, nunca persistido) — función pura.
+ * `null` si el evento no es recurrente. Lo consume `GET /eventos/listado`.
+ */
+export function resumirRecurrencia(
+  regla: ReglaRecurrencia | null,
+  recurrenciaHasta: Date | null,
+): string | null {
+  if (!regla) return null;
+  const cada = regla.intervalo > 1 ? `Cada ${regla.intervalo} ` : 'Cada ';
+  let base: string;
+  if (regla.frecuencia === 'DIARIA') {
+    base = regla.intervalo > 1 ? `${cada}días` : 'Todos los días';
+  } else if (regla.frecuencia === 'SEMANAL') {
+    const dias = (regla.diasSemana ?? [])
+      .slice()
+      .sort((a, b) => a - b)
+      .map((d) => DIAS_ES[d])
+      .join(', ');
+    base = `${cada}semana${regla.intervalo > 1 ? 's' : ''}${
+      dias ? `: ${dias}` : ''
+    }`;
+  } else {
+    base =
+      regla.diaMes === -1
+        ? `${cada}mes${regla.intervalo > 1 ? 'es' : ''}: último día`
+        : `${cada}mes${regla.intervalo > 1 ? 'es' : ''}: día ${regla.diaMes}`;
+  }
+  return recurrenciaHasta ? `${base} — hasta ${aISO(recurrenciaHasta)}` : base;
 }
 
 /**
@@ -445,6 +504,149 @@ export class CalendarioService {
       return ocurrencias;
     } catch (err) {
       console.error('[CalendarioService.listar] error inesperado:', err);
+      throw err;
+    }
+  }
+
+  /**
+   * `GET /eventos/listado` — Fase 15 polish (2026-09-02). Un row por evento
+   * BASE (NO expande ocurrencias, a diferencia de `listar`), para la vista
+   * de gestión del `ADMINISTRATIVO`. Sin tope de rango en `desde`/`hasta`
+   * (filtran `fechaInicio` del evento base). `sedeId` SIEMPRE de
+   * `@SedeActual()` (regla 2). `alcanceNombre`/`recurrenciaResumen`/
+   * `autorNombre` se derivan por request (regla 1), resueltos en batch para
+   * no hacer N+1.
+   */
+  async listarParaGestion(
+    sedeId: string,
+    filtros: {
+      desde?: string;
+      hasta?: string;
+      alcanceTipo?: AlcanceDestino;
+      categoria?: CategoriaEvento;
+      page?: number;
+      limit?: number;
+    },
+  ): Promise<{
+    data: EventoListadoItem[];
+    page: number;
+    limit: number;
+    total: number;
+  }> {
+    const page = filtros.page ?? 1;
+    const limit = filtros.limit ?? 20;
+
+    const where: Prisma.EventoCalendarioWhereInput = { sedeId };
+    if (filtros.alcanceTipo) where.alcanceTipo = filtros.alcanceTipo;
+    if (filtros.categoria) where.categoria = filtros.categoria;
+    if (filtros.desde || filtros.hasta) {
+      where.fechaInicio = {
+        ...(filtros.desde ? { gte: aFechaUTC(filtros.desde) } : {}),
+        ...(filtros.hasta ? { lte: aFechaUTC(filtros.hasta) } : {}),
+      };
+    }
+
+    try {
+      const [total, eventos] = await this.prisma.$transaction([
+        this.prisma.eventoCalendario.count({ where }),
+        this.prisma.eventoCalendario.findMany({
+          where,
+          orderBy: [{ fechaInicio: 'desc' }, { createdAt: 'desc' }],
+          skip: (page - 1) * limit,
+          take: limit,
+        }),
+      ]);
+
+      // Resolver alcanceNombre y autorNombre en batch (sin N+1).
+      const carreraIds = [
+        ...new Set(
+          eventos
+            .filter((e) => e.alcanceTipo === 'CARRERA' && e.alcanceId)
+            .map((e) => e.alcanceId!),
+        ),
+      ];
+      const grupoIds = [
+        ...new Set(
+          eventos
+            .filter((e) => e.alcanceTipo === 'GRUPO' && e.alcanceId)
+            .map((e) => e.alcanceId!),
+        ),
+      ];
+      const autorIds = [...new Set(eventos.map((e) => e.autorUsuarioId))];
+
+      const carreras = carreraIds.length
+        ? await this.prisma.carrera.findMany({
+            where: { id: { in: carreraIds } },
+            select: { id: true, nombre: true },
+          })
+        : [];
+      const grupos = grupoIds.length
+        ? await this.prisma.grupo.findMany({
+            where: { id: { in: grupoIds } },
+            select: { id: true, nombre: true },
+          })
+        : [];
+      const autores = autorIds.length
+        ? await this.prisma.usuario.findMany({
+            where: { id: { in: autorIds } },
+            select: {
+              id: true,
+              perfilAlumno: {
+                select: { nombres: true, apellidoPaterno: true },
+              },
+              perfilMaestro: {
+                select: { nombres: true, apellidoPaterno: true },
+              },
+              perfilAdministrativo: {
+                select: { nombres: true, apellidoPaterno: true },
+              },
+            },
+          })
+        : [];
+
+      const carreraNombre = new Map(
+        carreras.map((c) => [c.id, c.nombre] as const),
+      );
+      const grupoNombre = new Map(grupos.map((g) => [g.id, g.nombre] as const));
+      const autorNombre = new Map(
+        autores.map((u) => {
+          const p = u.perfilAlumno ?? u.perfilMaestro ?? u.perfilAdministrativo;
+          return [u.id, p ? `${p.nombres} ${p.apellidoPaterno}` : '—'] as const;
+        }),
+      );
+
+      const data: EventoListadoItem[] = eventos.map((e) => ({
+        id: e.id,
+        titulo: e.titulo,
+        descripcion: e.descripcion,
+        fechaInicio: aISO(e.fechaInicio),
+        fechaFin: e.fechaFin ? aISO(e.fechaFin) : null,
+        horaInicio: e.horaInicio ?? null,
+        categoria: e.categoria,
+        alcanceTipo: e.alcanceTipo,
+        alcanceId: e.alcanceId,
+        alcanceNombre:
+          e.alcanceTipo === 'SEDE' || !e.alcanceId
+            ? 'Toda la sede'
+            : e.alcanceTipo === 'CARRERA'
+              ? (carreraNombre.get(e.alcanceId) ?? 'Una carrera')
+              : (grupoNombre.get(e.alcanceId) ?? 'Un grupo'),
+        esRecurrente: e.recurrenciaRegla !== null,
+        recurrenciaResumen: resumirRecurrencia(
+          e.recurrenciaRegla as ReglaRecurrencia | null,
+          e.recurrenciaHasta,
+        ),
+        recurrenciaHasta: e.recurrenciaHasta ? aISO(e.recurrenciaHasta) : null,
+        autorNombre: autorNombre.get(e.autorUsuarioId) ?? '—',
+        createdAt: e.createdAt.toISOString(),
+      }));
+
+      return { data, page, limit, total };
+    } catch (err) {
+      console.error(
+        '[CalendarioService.listarParaGestion] error inesperado:',
+        err,
+      );
       throw err;
     }
   }
