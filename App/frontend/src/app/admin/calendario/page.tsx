@@ -17,7 +17,8 @@ import {
   type CrearEventoInput,
   type OcurrenciaEvento,
 } from '@/lib/api/calendario';
-import { COLOR_POR_CATEGORIA, EventoModal } from './EventoModal';
+import { EventoModal } from './EventoModal';
+import { COLOR_POR_CATEGORIA } from './colores';
 import { ConfirmarEliminarEventoModal } from './ConfirmarEliminarEventoModal';
 import { generarGridMensual, rangoDelGrid } from './mes-grid.util';
 

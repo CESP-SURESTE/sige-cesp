@@ -1,4 +1,8 @@
-import { apiFetchAuth } from './http';
+import {
+  apiFetchAuth,
+  apiFetchAuthPaginado,
+  type ApiListaPaginada,
+} from './http';
 
 /**
  * `POST/GET/PATCH/DELETE /eventos` — Fase 15, Días 41-44. Cliente
@@ -97,4 +101,55 @@ export function eliminarEvento(id: string): Promise<{ ok: true }> {
   return apiFetchAuth<{ ok: true }>(`/eventos/${encodeURIComponent(id)}`, {
     method: 'DELETE',
   });
+}
+
+/**
+ * `GET /eventos/listado` — Fase 15 polish (2026-09-02). Lista de GESTIÓN de
+ * los eventos de la sede: un row por evento BASE (no expande ocurrencias, a
+ * diferencia de `GET /eventos` / `listarEventos`), sin tope de rango de 62
+ * días, paginada. `ADMINISTRATIVO`-only en el backend — la consume solo la
+ * sección «Eventos de la sede» del dashboard de admin (`app/admin/page.tsx`).
+ * Shape espejo de `EventoListadoItem` (`CalendarioService`,
+ * `App/backend/src/calendario/`), mantener en sync a mano.
+ */
+export interface EventoListadoItem {
+  id: string;
+  titulo: string;
+  descripcion: string | null;
+  fechaInicio: string;
+  fechaFin: string | null;
+  horaInicio: string | null;
+  categoria: CategoriaEvento;
+  alcanceTipo: AlcanceDestino;
+  alcanceId: string | null;
+  alcanceNombre: string;
+  esRecurrente: boolean;
+  recurrenciaResumen: string | null;
+  recurrenciaHasta: string | null;
+  autorNombre: string;
+  createdAt: string;
+}
+
+export interface FiltrosEventosListado {
+  desde?: string;
+  hasta?: string;
+  alcanceTipo?: AlcanceDestino;
+  categoria?: CategoriaEvento;
+  page?: number;
+  limit?: number;
+}
+
+export function listarEventosSede(
+  filtros: FiltrosEventosListado,
+): Promise<ApiListaPaginada<EventoListadoItem>> {
+  const qs = new URLSearchParams();
+  if (filtros.desde) qs.set('desde', filtros.desde);
+  if (filtros.hasta) qs.set('hasta', filtros.hasta);
+  if (filtros.alcanceTipo) qs.set('alcanceTipo', filtros.alcanceTipo);
+  if (filtros.categoria) qs.set('categoria', filtros.categoria);
+  qs.set('page', String(filtros.page ?? 1));
+  qs.set('limit', String(filtros.limit ?? 20));
+  return apiFetchAuthPaginado<EventoListadoItem>(
+    `/eventos/listado?${qs.toString()}`,
+  );
 }

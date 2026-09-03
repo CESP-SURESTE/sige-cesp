@@ -7,6 +7,7 @@ import { LABEL_CLASS, INPUT_CLASS } from '@/components/admin/ui/persona-alta/est
 import { Select } from '@/components/admin/ui/persona-alta/Select';
 import { listarCarreras } from '@/lib/api/carreras';
 import { listarGrupos } from '@/lib/api/grupos';
+import { CATEGORIA_LABEL } from './colores';
 import type {
   ActualizarEventoInput,
   AlcanceDestino,
@@ -77,25 +78,9 @@ import type {
  * espuria.
  */
 
-const CATEGORIA_LABEL: Record<CategoriaEvento, string> = {
-  EXAMEN: 'Examen',
-  SOCIAL: 'Social',
-  ADMINISTRATIVO: 'Administrativo',
-  SUSPENSION_CLASES: 'Suspensión de clases',
-  OTRO: 'Otro',
-};
-
-/** Paleta de color por categoría — reutilizada también por `page.tsx` para
- * pintar los chips del grid mensual (mismo criterio de color en ambos
- * lugares). Tokens de `globals.css` (paleta institucional CESP + derivados
- * semánticos, ver ese archivo). */
-export const COLOR_POR_CATEGORIA: Record<CategoriaEvento, string> = {
-  EXAMEN: 'bg-crimson/10 text-crimson',
-  SOCIAL: 'bg-success/10 text-success',
-  ADMINISTRATIVO: 'bg-navy/10 text-navy',
-  SUSPENSION_CLASES: 'bg-warning/10 text-warning',
-  OTRO: 'bg-slate/10 text-slate',
-};
+// `CATEGORIA_LABEL` y `COLOR_POR_CATEGORIA` viven ahora en `./colores` (sin
+// JSX) para que el dashboard (`app/admin/page.tsx`) los comparta sin importar
+// desde este componente `'use client'`. Ver `colores.ts`.
 
 const ALCANCE_LABEL: Record<AlcanceDestino, string> = {
   SEDE: 'Toda la sede',
