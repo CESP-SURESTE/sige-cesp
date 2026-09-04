@@ -77,7 +77,7 @@ function SkeletonBlock({ className }: { className?: string }) {
 }
 
 export function SkeletonTableRows({ columns, rows = 5 }: { columns: number; rows?: number }) { /* ... */ }
-export function SkeletonProfileCard({ lines = 5 }: { lines?: number }) { /* ... */ }
+export function SkeletonProfileCard({ sections = 2, fieldsPerSection = 4 }: { sections?: number; fieldsPerSection?: number }) { /* ... */ }
 export function SkeletonStatTiles({ count = 3 }: { count?: number }) { /* ... */ }
 export function SkeletonCalendarGrid() { /* ... */ }
 export function SkeletonLines({ count = 3 }: { count?: number }) { /* ... */ }
@@ -106,7 +106,7 @@ este cambio la deja siempre visible, ajuste menor de consistencia de paso.
 | `app/admin/carreras/page.tsx` | `SkeletonTableRows` (3 cols) |
 | `app/admin/grupos/page.tsx` | `SkeletonTableRows` (6 cols) |
 | `app/admin/salones/page.tsx` | `SkeletonTableRows` (3 cols) |
-| `app/admin/grupos/[id]/page.tsx` (header del grupo) | `SkeletonProfileCard` |
+| `app/admin/grupos/[id]/page.tsx` (header del grupo) | `SkeletonLines` (count={2}) |
 | `app/admin/grupos/[id]/page.tsx` (tabla de matriculados) | `SkeletonTableRows` |
 | `app/admin/grupos/[id]/SeccionAsignaciones.tsx` | `SkeletonLines` |
 | `app/admin/perfil/page.tsx` | `SkeletonProfileCard` |

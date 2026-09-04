@@ -12,10 +12,9 @@ function SkeletonBlock({ className = '' }: { className?: string }) {
 }
 
 /** Card de perfil con `sections` bloques, cada uno con un título y
- * `fieldsPerSection` pares etiqueta/valor en grid. Aproximación deliberada
- * del layout real de app/alumno/page.tsx (encabezado + sidebar + panel,
- * rediseño 2026-08-21) — el skeleton no clona el DOM final pixel a pixel,
- * solo comunica "aquí va contenido de perfil" mientras carga. */
+ * `fieldsPerSection` pares etiqueta/valor en grid — mismo patrón visual que
+ * las secciones apiladas reales de app/maestro/page.tsx (Datos personales,
+ * Sede, Contactos). */
 export function SkeletonProfileCard({
   sections = 2,
   fieldsPerSection = 4,

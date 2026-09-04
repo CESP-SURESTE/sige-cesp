@@ -17,7 +17,7 @@ function SkeletonBlock({ className = '' }: { className?: string }) {
 /** Fila de tiles de KPI (dashboard global). */
 export function SkeletonStatTiles({ count = 3 }: { count?: number }) {
   return (
-    <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+    <div className="grid grid-cols-4 gap-4">
       {Array.from({ length: count }).map((_, i) => (
         <div key={i} className="rounded-lg border-l-4 border-mist bg-white p-4 shadow-sm">
           <SkeletonBlock className="h-7 w-12" />
@@ -31,7 +31,7 @@ export function SkeletonStatTiles({ count = 3 }: { count?: number }) {
 /** Barras simples sueltas — para listas cortas (ej. "alumnos por sede"). */
 export function SkeletonLines({ count = 3 }: { count?: number }) {
   return (
-    <div className="mt-4 space-y-3">
+    <div className="mt-3 space-y-3">
       {Array.from({ length: count }).map((_, i) => (
         <SkeletonBlock key={i} className="h-4 w-full max-w-sm" />
       ))}
