@@ -7,6 +7,7 @@ import { useEffect } from 'react';
 import { ApiError } from '@/lib/api/http';
 import { getPlatformToken, clearPlatformToken } from '@/lib/api/platform-http';
 import { obtenerResumenGlobal } from '@/lib/api/sedes';
+import { SkeletonLines, SkeletonStatTiles } from './Skeleton';
 
 export default function PlataformaDashboardPage() {
   const router = useRouter();
@@ -66,7 +67,12 @@ export default function PlataformaDashboardPage() {
       </div>
 
       {resumenQuery.isLoading && (
-        <p className="mt-8 text-center text-slate/60">Cargando…</p>
+        <div className="mt-6 space-y-6">
+          <SkeletonStatTiles count={4} />
+          <div className="rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm">
+            <SkeletonLines count={4} />
+          </div>
+        </div>
       )}
 
       {resumenQuery.isError && (

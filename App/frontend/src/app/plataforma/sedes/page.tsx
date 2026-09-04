@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { ApiError } from '@/lib/api/http';
 import { getPlatformToken, clearPlatformToken } from '@/lib/api/platform-http';
 import { listarSedes, crearSede, actualizarSede, eliminarSede, type Sede, type SedeInput } from '@/lib/api/sedes';
+import { SkeletonTableRows } from '../Skeleton';
 import { ConfirmarEliminarSedeModal } from './ConfirmarEliminarSedeModal';
 import { SedeModal } from './SedeModal';
 
@@ -152,13 +153,7 @@ export default function PlataformaSedesPage() {
             </tr>
           </thead>
           <tbody>
-            {sedesQuery.isLoading && (
-              <tr>
-                <td colSpan={4} className="px-4 py-6 text-center text-slate/60">
-                  Cargando…
-                </td>
-              </tr>
-            )}
+            {sedesQuery.isLoading && <SkeletonTableRows columns={4} />}
             {sedesQuery.isError && (
               <tr>
                 <td colSpan={4} className="px-4 py-6 text-center text-crimson">
