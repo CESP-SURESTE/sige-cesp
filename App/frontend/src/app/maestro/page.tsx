@@ -10,6 +10,10 @@ import {
   type Perfil,
   type PerfilMaestro,
 } from '@/lib/api/perfil';
+import {
+  SkeletonLines,
+  SkeletonProfileCard,
+} from '@/components/maestro/ui/Skeleton';
 
 /**
  * Perfil de maestro — Fase 5, Día 17.
@@ -55,7 +59,7 @@ export default function MaestroPerfilPage() {
     return (
       <div className="max-w-3xl rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm">
         <h1 className="font-display text-2xl font-semibold text-navy">Mi perfil</h1>
-        <p className="mt-4 text-sm text-slate/60">Cargando…</p>
+        <SkeletonProfileCard sections={3} fieldsPerSection={4} />
       </div>
     );
   }
@@ -245,7 +249,7 @@ function SeccionAsignaciones() {
     <section className="rounded-lg border border-mist p-5">
       <h2 className="text-sm font-semibold text-navy">Mis grupos y materias</h2>
 
-      {isLoading && <p className="mt-3 text-sm text-slate/60">Cargando…</p>}
+      {isLoading && <SkeletonLines count={3} />}
 
       {isError && (
         <p className="mt-3 rounded-lg border border-error-border bg-error-bg px-4 py-3 text-sm text-crimson">

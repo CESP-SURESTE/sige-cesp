@@ -4,6 +4,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { ApiError } from '@/lib/api/http';
 import { listarEventos, type OcurrenciaEvento } from '@/lib/api/calendario';
+import { SkeletonCalendarGrid } from '@/components/alumno/ui/Skeleton';
 import { COLOR_POR_CATEGORIA, DetalleEventoModal } from './DetalleEventoModal';
 import { generarGridMensual, rangoDelGrid } from './mes-grid.util';
 
@@ -129,9 +130,7 @@ export default function AlumnoCalendarioPage() {
           </button>
         </div>
 
-        {eventosQuery.isLoading && (
-          <p className="mt-6 py-6 text-center text-sm text-slate/60">Cargando…</p>
-        )}
+        {eventosQuery.isLoading && <SkeletonCalendarGrid />}
         {eventosQuery.isError && (
           <p className="mt-6 py-6 text-center text-sm text-crimson">
             {eventosQuery.error instanceof ApiError

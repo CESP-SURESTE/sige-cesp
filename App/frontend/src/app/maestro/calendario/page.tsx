@@ -13,6 +13,7 @@ import {
   type CrearEventoInput,
   type OcurrenciaEvento,
 } from '@/lib/api/calendario';
+import { SkeletonCalendarGrid } from '@/components/maestro/ui/Skeleton';
 import { COLOR_POR_CATEGORIA, EventoModal } from './EventoModal';
 import { ConfirmarEliminarEventoModal } from './ConfirmarEliminarEventoModal';
 import { generarGridMensual, rangoDelGrid } from './mes-grid.util';
@@ -240,9 +241,7 @@ export default function MaestroCalendarioPage() {
           </button>
         </div>
 
-        {eventosQuery.isLoading && (
-          <p className="mt-6 py-6 text-center text-sm text-slate/60">Cargando…</p>
-        )}
+        {eventosQuery.isLoading && <SkeletonCalendarGrid />}
         {eventosQuery.isError && (
           <p className="mt-6 py-6 text-center text-sm text-crimson">
             {eventosQuery.error instanceof ApiError

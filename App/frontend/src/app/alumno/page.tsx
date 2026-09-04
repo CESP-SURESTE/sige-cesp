@@ -15,6 +15,10 @@ import {
   type PerfilAlumno,
 } from '@/lib/api/perfil';
 import { IconCandado, IconPerfil } from '@/components/alumno/ui/shell/icons';
+import {
+  SkeletonLines,
+  SkeletonProfileCard,
+} from '@/components/alumno/ui/Skeleton';
 
 /**
  * Perfil de alumno — Fase 5, Día 16.
@@ -67,7 +71,7 @@ export default function AlumnoPerfilPage() {
     return (
       <div className="mx-auto max-w-6xl rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm">
         <h1 className="font-display text-2xl font-semibold text-navy">Mi perfil</h1>
-        <p className="mt-4 text-sm text-slate/60">Cargando…</p>
+        <SkeletonProfileCard sections={1} fieldsPerSection={6} />
       </div>
     );
   }
@@ -509,7 +513,7 @@ function SeccionCompaneros() {
     <section className="rounded-lg border border-mist p-5">
       <h2 className="text-sm font-semibold text-navy">Compañeros de salón</h2>
 
-      {isLoading && <p className="mt-3 text-sm text-slate/60">Cargando…</p>}
+      {isLoading && <SkeletonLines count={3} />}
 
       {isError && (
         <p className="mt-3 rounded-lg border border-error-border bg-error-bg px-4 py-3 text-sm text-crimson">
