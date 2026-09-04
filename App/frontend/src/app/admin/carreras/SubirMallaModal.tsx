@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ChangeEvent, type DragEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { SkeletonLines } from '@/components/admin/ui/Skeleton';
 import { ApiError } from '@/lib/api/http';
 import {
   obtenerMallaCurricular,
@@ -186,9 +187,7 @@ export function SubirMallaModal({
           </div>
         ) : (
           <>
-            {mallaQuery.isLoading && (
-              <p className="mt-4 text-sm text-slate/60">Cargando…</p>
-            )}
+            {mallaQuery.isLoading && <SkeletonLines count={1} />}
             {mallaQuery.data && (
               <p className="mt-4 rounded-lg border border-mist bg-bone/60 px-3 py-2 text-xs text-slate/70">
                 Subida por {mallaQuery.data.subidaPor.nombres}{' '}

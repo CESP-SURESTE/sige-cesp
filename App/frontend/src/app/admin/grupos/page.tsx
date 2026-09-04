@@ -13,6 +13,7 @@ import { Select } from '@/components/admin/ui/persona-alta/Select';
 import { Paginacion } from '@/components/admin/ui/personas-listado/Paginacion';
 import { NuevoGrupoModal } from './NuevoGrupoModal';
 import { ConfirmarEliminarGrupoModal } from './ConfirmarEliminarGrupoModal';
+import { SkeletonTableRows } from '@/components/admin/ui/Skeleton';
 import { ApiError } from '@/lib/api/http';
 import { listarCarreras } from '@/lib/api/carreras';
 import { listarSalones } from '@/lib/api/salones';
@@ -321,13 +322,7 @@ export default function AdminGruposPage() {
               </tr>
             </thead>
             <tbody>
-              {gruposQuery.isLoading && (
-                <tr>
-                  <td colSpan={6} className="px-4 py-6 text-center text-slate/60">
-                    Cargando…
-                  </td>
-                </tr>
-              )}
+              {gruposQuery.isLoading && <SkeletonTableRows columns={6} />}
               {gruposQuery.isError && (
                 <tr>
                   <td colSpan={6} className="px-4 py-6 text-center text-crimson">

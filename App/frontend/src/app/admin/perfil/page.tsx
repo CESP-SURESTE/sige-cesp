@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { SkeletonProfileCard } from '@/components/admin/ui/Skeleton';
 import { ApiError } from '@/lib/api/http';
 import {
   obtenerPerfil,
@@ -56,7 +57,7 @@ export default function AdminPerfilPage() {
     return (
       <div className="max-w-3xl rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm">
         <h1 className="font-display text-2xl font-semibold text-navy">Mi perfil</h1>
-        <p className="mt-4 text-sm text-slate/60">Cargando…</p>
+        <SkeletonProfileCard sections={3} fieldsPerSection={4} />
       </div>
     );
   }

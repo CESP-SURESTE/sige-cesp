@@ -7,6 +7,7 @@ import {
   MENSAJE_ERROR_GENERICO,
   resolverMensajeError,
 } from '@/components/admin/ui/persona-alta/mensajes-error';
+import { SkeletonTableRows } from '@/components/admin/ui/Skeleton';
 import { ApiError } from '@/lib/api/http';
 import {
   actualizarSalon,
@@ -145,13 +146,7 @@ export default function AdminSalonesPage() {
             </tr>
           </thead>
           <tbody>
-            {salonesQuery.isLoading && (
-              <tr>
-                <td colSpan={3} className="px-4 py-6 text-center text-slate/60">
-                  Cargando…
-                </td>
-              </tr>
-            )}
+            {salonesQuery.isLoading && <SkeletonTableRows columns={3} />}
             {salonesQuery.isError && (
               <tr>
                 <td colSpan={3} className="px-4 py-6 text-center text-crimson">

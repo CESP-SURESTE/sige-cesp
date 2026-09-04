@@ -9,6 +9,7 @@ import {
 } from '@tanstack/react-query';
 import { useState } from 'react';
 import { toast } from 'sonner';
+import { SkeletonTableRows } from '@/components/admin/ui/Skeleton';
 import { ApiError } from '@/lib/api/http';
 import {
   cambiarEstatusPersona,
@@ -129,7 +130,22 @@ export default function AdminMaestrosPage() {
 
       <div className="mt-6">
         {isLoading ? (
-          <p className="text-sm text-slate/60">Cargando…</p>
+          <div className="overflow-x-auto rounded-lg border border-mist">
+            <table className="min-w-full divide-y divide-mist text-sm">
+              <thead className="bg-bone">
+                <tr>
+                  <Th>Nombre completo</Th>
+                  <Th>Cédula profesional</Th>
+                  <Th>Estatus</Th>
+                  <Th>Cuenta</Th>
+                  <Th>Acciones</Th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-mist">
+                <SkeletonTableRows columns={5} />
+              </tbody>
+            </table>
+          </div>
         ) : isError ? (
           <p className="rounded-lg border border-error-border bg-error-bg px-4 py-3 text-sm text-crimson">
             {error instanceof ApiError

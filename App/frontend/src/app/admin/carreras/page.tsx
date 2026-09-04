@@ -9,6 +9,7 @@ import {
 } from '@/components/admin/ui/persona-alta/mensajes-error';
 import { SubirMallaModal } from './SubirMallaModal';
 import { CarreraModal } from './CarreraModal';
+import { SkeletonTableRows } from '@/components/admin/ui/Skeleton';
 import { ApiError } from '@/lib/api/http';
 import {
   actualizarCarrera,
@@ -138,13 +139,7 @@ export default function AdminCarrerasPage() {
             </tr>
           </thead>
           <tbody>
-            {carrerasQuery.isLoading && (
-              <tr>
-                <td colSpan={3} className="px-4 py-6 text-center text-slate/60">
-                  Cargando…
-                </td>
-              </tr>
-            )}
+            {carrerasQuery.isLoading && <SkeletonTableRows columns={3} />}
             {carrerasQuery.isError && (
               <tr>
                 <td colSpan={3} className="px-4 py-6 text-center text-crimson">

@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { SkeletonTableRows } from '@/components/admin/ui/Skeleton';
 import { ApiError } from '@/lib/api/http';
 import {
   listarAlumnos,
@@ -88,7 +89,23 @@ export default function AdminAlumnosPage() {
 
       <div className="mt-6">
         {isLoading ? (
-          <p className="text-sm text-slate/60">Cargando…</p>
+          <div className="overflow-x-auto rounded-lg border border-mist">
+            <table className="min-w-full divide-y divide-mist text-sm">
+              <thead className="bg-bone">
+                <tr>
+                  <Th>Nombre completo</Th>
+                  <Th>Matrícula</Th>
+                  <Th>Carrera</Th>
+                  <Th>Semestre</Th>
+                  <Th>Estatus académico</Th>
+                  <Th>Cuenta</Th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-mist">
+                <SkeletonTableRows columns={6} />
+              </tbody>
+            </table>
+          </div>
         ) : isError ? (
           <p className="rounded-lg border border-error-border bg-error-bg px-4 py-3 text-sm text-crimson">
             {error instanceof ApiError

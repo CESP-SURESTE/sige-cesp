@@ -7,6 +7,7 @@ import {
   MENSAJE_ERROR_GENERICO,
   resolverMensajeError,
 } from '@/components/admin/ui/persona-alta/mensajes-error';
+import { SkeletonCalendarGrid } from '@/components/admin/ui/Skeleton';
 import { ApiError } from '@/lib/api/http';
 import {
   actualizarEvento,
@@ -220,9 +221,7 @@ export default function AdminCalendarioPage() {
           </button>
         </div>
 
-        {eventosQuery.isLoading && (
-          <p className="mt-6 py-6 text-center text-sm text-slate/60">Cargando…</p>
-        )}
+        {eventosQuery.isLoading && <SkeletonCalendarGrid />}
         {eventosQuery.isError && (
           <p className="mt-6 py-6 text-center text-sm text-crimson">
             {eventosQuery.error instanceof ApiError

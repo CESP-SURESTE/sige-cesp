@@ -16,6 +16,7 @@ import {
   MENSAJE_ERROR_GENERICO,
   resolverMensajeError,
 } from '@/components/admin/ui/persona-alta/mensajes-error';
+import { SkeletonLines, SkeletonTableRows } from '@/components/admin/ui/Skeleton';
 import {
   INPUT_CLASS,
   LABEL_CLASS,
@@ -209,7 +210,9 @@ export default function AdminGrupoDetallePage() {
           ← Volver a grupos
         </Link>
         {grupoQuery.isLoading || !grupo ? (
-          <p className="mt-2 text-sm text-slate/60">Cargando…</p>
+          <div className="mt-2">
+            <SkeletonLines count={2} />
+          </div>
         ) : (
           <>
             <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
@@ -323,16 +326,7 @@ export default function AdminGrupoDetallePage() {
               </tr>
             </thead>
             <tbody>
-              {alumnosQuery.isLoading && (
-                <tr>
-                  <td
-                    colSpan={5}
-                    className="px-4 py-6 text-center text-slate/60"
-                  >
-                    Cargando…
-                  </td>
-                </tr>
-              )}
+              {alumnosQuery.isLoading && <SkeletonTableRows columns={5} />}
               {alumnosQuery.isError && (
                 <tr>
                   <td

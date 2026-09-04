@@ -2,6 +2,10 @@
 
 import { useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import {
+  SkeletonLines,
+  SkeletonStatTiles,
+} from '@/components/admin/ui/Skeleton';
 import { ApiError } from '@/lib/api/http';
 import { obtenerResumenAdmin, type ResumenAdmin } from '@/lib/api/dashboard';
 import {
@@ -56,7 +60,17 @@ export default function AdminHomePage() {
       </h1>
 
       {isLoading ? (
-        <p className="text-sm text-slate/60">Cargando…</p>
+        <div className="space-y-6">
+          <SkeletonStatTiles count={4} />
+          <div className="grid gap-6 lg:grid-cols-2">
+            <div className="rounded-lg border-l-4 border-navy bg-white p-4 shadow-sm">
+              <SkeletonLines count={4} />
+            </div>
+            <div className="rounded-lg border-l-4 border-navy bg-white p-4 shadow-sm">
+              <SkeletonLines count={4} />
+            </div>
+          </div>
+        </div>
       ) : isError ? (
         <p className="rounded-lg border border-error-border bg-error-bg px-4 py-3 text-sm text-crimson">
           {error instanceof ApiError
@@ -334,7 +348,7 @@ function SeccionEventosSede() {
 
       <div className="mt-4">
         {isLoading ? (
-          <p className="text-sm text-slate/60">Cargando…</p>
+          <SkeletonLines count={5} />
         ) : isError ? (
           <p className="rounded-lg border border-error-border bg-error-bg px-4 py-3 text-sm text-crimson">
             {error instanceof ApiError

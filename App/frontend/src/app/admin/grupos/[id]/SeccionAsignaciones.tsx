@@ -7,6 +7,7 @@ import {
   MENSAJE_ERROR_GENERICO,
   resolverMensajeError,
 } from '@/components/admin/ui/persona-alta/mensajes-error';
+import { SkeletonLines } from '@/components/admin/ui/Skeleton';
 import { ApiError } from '@/lib/api/http';
 import {
   asignarMaestro,
@@ -200,9 +201,7 @@ export function SeccionAsignaciones({ grupo }: { grupo: GrupoListItem }) {
 
       {(materiasQuery.isLoading ||
         asignacionesQuery.isLoading ||
-        maestrosQuery.isLoading) && (
-        <p className="mt-4 text-sm text-slate/60">Cargando…</p>
-      )}
+        maestrosQuery.isLoading) && <SkeletonLines count={3} />}
 
       {(materiasQuery.isError ||
         asignacionesQuery.isError ||
