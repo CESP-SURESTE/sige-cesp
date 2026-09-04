@@ -102,24 +102,24 @@ export function ProfileDropdown({ email }: { email: string | null }) {
             transition={SPRING}
             className="absolute top-0 right-0 z-30 w-64 overflow-hidden rounded-lg border border-mist bg-white shadow-lg"
           >
+            <div className="flex items-center gap-2.5 border-b border-mist px-4 py-3">
+              <motion.span
+                layoutId="profile-avatar"
+                transition={SPRING}
+                aria-hidden="true"
+                className="flex size-8 shrink-0 items-center justify-center rounded-full bg-navy text-sm font-semibold text-bone"
+              >
+                {inicial}
+              </motion.span>
+              {email && (
+                <p className="truncate text-sm font-medium text-slate">{email}</p>
+              )}
+            </div>
             <motion.div
               initial={contentAnimations.initial}
               animate={contentAnimations.animate}
               exit={contentAnimations.exit}
             >
-              <div className="flex items-center gap-2.5 border-b border-mist px-4 py-3">
-                <motion.span
-                  layoutId="profile-avatar"
-                  transition={SPRING}
-                  aria-hidden="true"
-                  className="flex size-8 shrink-0 items-center justify-center rounded-full bg-navy text-sm font-semibold text-bone"
-                >
-                  {inicial}
-                </motion.span>
-                {email && (
-                  <p className="truncate text-sm font-medium text-slate">{email}</p>
-                )}
-              </div>
               <div className="py-1">
                 <ItemMenu href="/maestro" Icon={User} onClick={() => setAbierto(false)}>
                   Mi perfil
