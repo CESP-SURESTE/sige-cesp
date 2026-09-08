@@ -79,6 +79,7 @@ enum AccionAuditoria {
   CAMBIO_PERMISO
   CAMBIO_ESTATUS
   ELIMINACION
+  CONSULTA_EMERGENCIA
 }
 
 enum NivelCarrera {
@@ -166,16 +167,17 @@ model Sede {
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
 
-  carreras           Carrera[]
-  salones            Salon[]
-  usuarios           Usuario[]
-  personalServicios  PersonalServicios[]
-  grupos             Grupo[]
-  responsables       SedeResponsable[]
-  registrosAuditoria RegistroAuditoria[]
-  notificaciones     Notificacion[]
-  eventosCalendario  EventoCalendario[]
-  avisos             Aviso[]
+  carreras            Carrera[]
+  salones             Salon[]
+  usuarios            Usuario[]
+  personalServicios   PersonalServicios[]
+  grupos              Grupo[]
+  responsables        SedeResponsable[]
+  registrosAuditoria  RegistroAuditoria[]
+  notificaciones      Notificacion[]
+  eventosCalendario   EventoCalendario[]
+  avisos              Aviso[]
+  telefonosEmergencia TelefonoEmergenciaSede[]
 
   @@map("sedes")
 }
@@ -219,6 +221,20 @@ model Salon {
 
   @@unique([sedeId, nombre])
   @@map("salones")
+}
+
+model TelefonoEmergenciaSede {
+  id        String   @id @default(uuid())
+  sedeId    String   @map("sede_id")
+  sede      Sede     @relation(fields: [sedeId], references: [id], onDelete: Cascade)
+  etiqueta  String
+  telefono  String
+  orden     Int
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([sedeId])
+  @@map("telefonos_emergencia_sede")
 }
 
 // ============================
