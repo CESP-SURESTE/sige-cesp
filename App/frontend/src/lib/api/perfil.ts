@@ -93,6 +93,10 @@ export interface ContactoAlumno {
  * `administrativo`. */
 export type EstatusEmpleado = 'ACTIVO' | 'BAJA' | 'LICENCIA';
 
+/** Espejo de `TipoContratacion` (`schema.prisma`) — solo `maestro`.
+ * `null` para maestros dados de alta antes de 2026-09-07. */
+export type TipoContratacion = 'BASE' | 'TEMPORAL' | 'CONTRATO';
+
 /** Igual que `ContactoAlumno` pero sin `tipo` — `ContactoMaestro` no
  * distingue tutor/emergencia, es un contacto genérico. */
 export interface ContactoMaestro {
@@ -145,7 +149,12 @@ export interface PerfilCarrera {
   nivel: NivelCarrera;
   modalidad: ModalidadCarrera;
   estatus: EstatusCarrera;
-  rvoe: string;
+  /** Opcional desde 2026-09-07 (`Carrera.rvoe` pasó a `String?`) — no todas
+   * las carreras tienen RVOE emitido. */
+  rvoe: string | null;
+  /** Nuevo 2026-09-07 — estado de procedencia del RVOE cuando fue emitido
+   * en otro estado distinto a Yucatán (texto libre, sin catálogo cerrado). */
+  procedenciaRvoe: string | null;
   descripcion: string;
 }
 
@@ -161,7 +170,7 @@ export interface PerfilAlumno {
   correoPersonal: string;
   estatusAcademico: EstatusAcademico;
   periodoIngreso: string;
-  semestreActual: number;
+  cuatrimestreActual: number;
   telefono: string | null;
   carrera: PerfilCarrera;
   /** Derivado al vuelo por el backend desde `fechaNacimiento` — nunca
@@ -185,6 +194,16 @@ export interface PerfilMaestro {
   /** ISO 8601 (`Date` de Prisma serializado por Express). */
   fechaContratacion: string;
   estatus: EstatusEmpleado;
+  /** `null` para maestros dados de alta antes de 2026-09-07 (columna
+   * nullable, sin backfill — mismo criterio que `tipoLicencia`/`motivoBaja`). */
+  tipoContratacion: TipoContratacion | null;
+  /** Solo relevante cuando `tipoContratacion === 'TEMPORAL'` — días del
+   * contrato por tiempo determinado. `null` en cualquier otro caso. */
+  diasTemporal: number | null;
+  /** ISO 8601. Solo relevante cuando `tipoContratacion === 'CONTRATO'`. */
+  contratoFechaInicio: string | null;
+  /** ISO 8601. Solo relevante cuando `tipoContratacion === 'CONTRATO'`. */
+  contratoFechaFin: string | null;
   /** Ordenados por `orden` ascendente. Sin rango 1-3 documentado a
    * propósito distinto al de alumno — el alta de maestro también exige
    * 1 a 3, pero no hay un tipo obligatorio como el tutor de un menor. */
@@ -269,7 +288,7 @@ export interface CompaneroItem {
   apellidoPaterno: string;
   apellidoMaterno: string | null;
   matricula: string;
-  semestreActual: number;
+  cuatrimestreActual: number;
 }
 
 export interface GrupoConCompaneros {
