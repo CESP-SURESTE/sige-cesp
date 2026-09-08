@@ -8,6 +8,7 @@ import {
   IconAlumnos,
   IconCalendario,
   IconCarreras,
+  IconEmergencia,
   IconGrupos,
   IconMaestros,
   IconPanel,
@@ -42,6 +43,12 @@ const NAV_PRINCIPAL: NavItem[] = [
     href: '/admin/administrativos',
     label: 'Administrativos',
     Icon: IconAdministrativos,
+    match: 'prefijo',
+  },
+  {
+    href: '/admin/emergencia',
+    label: 'Emergencia',
+    Icon: IconEmergencia,
     match: 'prefijo',
   },
 ];
