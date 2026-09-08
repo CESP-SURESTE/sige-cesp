@@ -5,6 +5,7 @@ import type { CrearTelefonoDto } from './dto/crear-telefono.dto';
 import type { ActualizarTelefonoDto } from './dto/actualizar-telefono.dto';
 import {
   calcularEdad,
+  compararPorApellidos,
   hayCambiosRealesTelefono,
   nombreCompleto,
 } from './emergencia.util';
@@ -20,11 +21,20 @@ export type TipoExpediente =
   | 'ADMINISTRATIVO'
   | 'PERSONAL_SERVICIOS';
 
-/** Fila del buscador cross-rol (`GET /emergencia/buscar`). */
+/**
+ * Fila del buscador cross-rol (`GET /emergencia/buscar`). Los 3 campos de
+ * apellido/nombres se incluyen en el shape (además del `nombreCompleto` ya
+ * armado) para que el merge de los 4 arrays por rol se ordene con una única
+ * clave — `compararPorApellidos` — coherente con el `orderBy` por-rol y con
+ * el `take: limit` que recorta cada query.
+ */
 export interface ResultadoBusqueda {
   tipo: TipoExpediente;
   perfilId: string;
   nombreCompleto: string;
+  nombres: string;
+  apellidoPaterno: string;
+  apellidoMaterno: string | null;
   referencia: string;
   activo: boolean;
 }
@@ -267,9 +277,11 @@ export class EmergenciaService {
    * de persona de la sede del actor, además de por matrícula (ALUMNO) o
    * cédula profesional (MAESTRO). `sedeId` viene de `@SedeActual()` (regla 2).
    * Cada query trae hasta `limit` filas ya ordenadas por
-   * `[apellidoPaterno, apellidoMaterno, nombres]`; el merge final de los 4
-   * arrays se ordena por `nombreCompleto` (nombre visible, es-MX) — orden
-   * global aproximado: esto es un lookup rápido, no un listado formal.
+   * `[apellidoPaterno, apellidoMaterno, nombres]`; el merge de los 4 arrays se
+   * re-ordena con esa MISMA clave (`compararPorApellidos`) antes de recortar a
+   * `limit` total — así el `take: limit` por rol nunca descarta una fila que el
+   * orden final sí conservaría. Orden por apellido paterno, luego materno,
+   * luego nombres (es-MX).
    */
   async buscar(
     sedeId: string,
@@ -361,6 +373,9 @@ export class EmergenciaService {
           tipo: 'ALUMNO' as const,
           perfilId: a.id,
           nombreCompleto: nombreCompleto(a),
+          nombres: a.nombres,
+          apellidoPaterno: a.apellidoPaterno,
+          apellidoMaterno: a.apellidoMaterno,
           referencia: a.matricula,
           activo: a.usuario.activo,
         })),
@@ -368,6 +383,9 @@ export class EmergenciaService {
           tipo: 'MAESTRO' as const,
           perfilId: m.id,
           nombreCompleto: nombreCompleto(m),
+          nombres: m.nombres,
+          apellidoPaterno: m.apellidoPaterno,
+          apellidoMaterno: m.apellidoMaterno,
           referencia: m.cedulaProfesional ?? 'Sin cédula',
           activo: m.usuario.activo,
         })),
@@ -375,6 +393,9 @@ export class EmergenciaService {
           tipo: 'ADMINISTRATIVO' as const,
           perfilId: ad.id,
           nombreCompleto: nombreCompleto(ad),
+          nombres: ad.nombres,
+          apellidoPaterno: ad.apellidoPaterno,
+          apellidoMaterno: ad.apellidoMaterno,
           referencia: ad.puesto,
           activo: ad.usuario.activo,
         })),
@@ -382,16 +403,15 @@ export class EmergenciaService {
           tipo: 'PERSONAL_SERVICIOS' as const,
           perfilId: p.id,
           nombreCompleto: nombreCompleto(p),
+          nombres: p.nombres,
+          apellidoPaterno: p.apellidoPaterno,
+          apellidoMaterno: p.apellidoMaterno,
           referencia: p.area,
           activo: p.estatus === 'ACTIVO',
         })),
       ];
 
-      resultados.sort((a, b) =>
-        a.nombreCompleto
-          .toLocaleLowerCase('es')
-          .localeCompare(b.nombreCompleto.toLocaleLowerCase('es'), 'es'),
-      );
+      resultados.sort(compararPorApellidos);
       return resultados.slice(0, limit);
     } catch (err) {
       console.error('[EmergenciaService.buscar] error inesperado:', err);

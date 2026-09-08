@@ -29,6 +29,11 @@ export interface ResultadoBusquedaEmergencia {
   tipo: TipoExpediente;
   perfilId: string;
   nombreCompleto: string;
+  /** Campos internos del orden por apellidos (espejo del backend). La UI no
+   * está obligada a usarlos — muestra `nombreCompleto`. */
+  nombres: string;
+  apellidoPaterno: string;
+  apellidoMaterno: string | null;
   referencia: string;
   activo: boolean;
 }

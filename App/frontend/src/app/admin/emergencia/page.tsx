@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import {
   MENSAJE_ERROR_GENERICO,
@@ -23,14 +23,8 @@ import {
 } from '@/lib/api/emergencia';
 import { ConfirmarEliminarTelefonoModal } from './ConfirmarEliminarTelefonoModal';
 import { ExpedientePanel } from './ExpedientePanel';
+import { humanizarReferencia, TIPO_ROL_LABEL } from './labels';
 import { TelefonoModal } from './TelefonoModal';
-
-const TIPO_CHIP: Record<string, string> = {
-  ALUMNO: 'Alumno',
-  MAESTRO: 'Maestro',
-  ADMINISTRATIVO: 'Administrativo',
-  PERSONAL_SERVICIOS: 'Personal de servicios',
-};
 
 /** Misma key que `PanicoButton` (`components/admin/ui/shell/`) — caché e
  * invalidación compartidas: crear/editar/borrar acá refresca el botón de pánico. */
@@ -47,23 +41,31 @@ const MODAL_CERRADO: EstadoModalTelefono = { abierto: false, telefono: null };
 export default function AdminEmergenciaPage() {
   const queryClient = useQueryClient();
   const [texto, setTexto] = useState('');
+  const [terminoBusqueda, setTerminoBusqueda] = useState('');
   const [seleccion, setSeleccion] = useState<ResultadoBusquedaEmergencia | null>(null);
   const [modalTelefono, setModalTelefono] = useState<EstadoModalTelefono>(MODAL_CERRADO);
   const [telefonoAEliminar, setTelefonoAEliminar] = useState<TelefonoEmergencia | null>(null);
 
   const termino = texto.trim();
 
+  // Debounce ~300 ms (spec §Frontend/Zona 1): `terminoBusqueda` es lo único que
+  // dispara `GET /emergencia/buscar`; `termino` (crudo) sólo alimenta el hint.
+  useEffect(() => {
+    const id = setTimeout(() => setTerminoBusqueda(termino), 300);
+    return () => clearTimeout(id);
+  }, [termino]);
+
   const busquedaQuery = useQuery({
-    queryKey: ['admin', 'emergencia', 'buscar', termino],
+    queryKey: ['admin', 'emergencia', 'buscar', terminoBusqueda],
     queryFn: async () => {
       try {
-        return await buscarEmergencia(termino);
+        return await buscarEmergencia(terminoBusqueda);
       } catch (err) {
         console.error('[AdminEmergenciaPage] Error al buscar:', err);
         throw err;
       }
     },
-    enabled: termino.length >= 2,
+    enabled: terminoBusqueda.length >= 2,
   });
 
   const expedienteQuery = useQuery({
@@ -78,6 +80,12 @@ export default function AdminEmergenciaPage() {
       }
     },
     enabled: seleccion !== null,
+    // `GET /emergencia/expediente/...` es el único GET del sistema que ESCRIBE
+    // (una fila `RegistroAuditoria CONSULTA_EMERGENCIA` por llamada). Sin estas
+    // 3 opciones, cada vuelta de foco a la pestaña duplicaría la auditoría.
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    retry: false,
   });
 
   const telefonosQuery = useQuery({
@@ -140,7 +148,7 @@ export default function AdminEmergenciaPage() {
         <h1 className="font-display text-2xl font-semibold text-crimson">Emergencia</h1>
         <p className="mt-1 text-sm text-slate/60">
           Busca a cualquier integrante de tu sede y consulta sus datos médicos y
-          contactos de emergencia. Cada consulta queda registrada.
+          contactos de emergencia. Abrir un expediente queda registrado.
         </p>
       </div>
 
@@ -149,8 +157,15 @@ export default function AdminEmergenciaPage() {
         <div className="space-y-3">
           <input
             type="search"
+            aria-label="Buscar integrante"
             value={texto}
-            onChange={(e) => setTexto(e.target.value)}
+            onChange={(e) => {
+              setTexto(e.target.value);
+              // Al cambiar la búsqueda, limpia la selección: el panel médico de
+              // la persona anterior no debe quedar junto a resultados que ya no
+              // la incluyen (seguridad de lectura).
+              setSeleccion(null);
+            }}
             placeholder="Nombre, apellido, matrícula o cédula…"
             className="w-full rounded-lg border border-mist px-3 py-2 text-sm text-slate focus:border-navy focus:ring-2 focus:ring-navy/20 focus:outline-none"
           />
@@ -191,10 +206,12 @@ export default function AdminEmergenciaPage() {
                       <span className="ml-2 text-xs font-normal text-slate/50">Inactivo</span>
                     )}
                   </span>
-                  <span className="block truncate text-xs text-slate/60">{r.referencia}</span>
+                  <span className="block truncate text-xs text-slate/60">
+                    {humanizarReferencia(r.tipo, r.referencia)}
+                  </span>
                 </span>
                 <span className="ml-2 shrink-0 rounded-full bg-mist/60 px-2 py-0.5 text-xs text-slate/70">
-                  {TIPO_CHIP[r.tipo]}
+                  {TIPO_ROL_LABEL[r.tipo]}
                 </span>
               </button>
             ))}

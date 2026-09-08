@@ -1,7 +1,8 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import Link from 'next/link';
+import { useEffect, useState } from 'react';
 import { listarTelefonosEmergencia } from '@/lib/api/emergencia';
 import { IconEmergencia } from './icons';
 
@@ -19,6 +20,17 @@ import { IconEmergencia } from './icons';
  */
 export function PanicoButton() {
   const [abierto, setAbierto] = useState(false);
+
+  // Cerrar con Escape mientras el modal está abierto (sin focus-trap — ningún
+  // modal del repo lo tiene, es un gap transversal).
+  useEffect(() => {
+    if (!abierto) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') setAbierto(false);
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [abierto]);
 
   const telefonosQuery = useQuery({
     queryKey: ['admin', 'emergencia', 'telefonos'],
@@ -54,6 +66,10 @@ export function PanicoButton() {
           role="dialog"
           aria-modal="true"
           aria-label="Teléfonos de emergencia de la sede"
+          onClick={(e) => {
+            // Cerrar al clickear el backdrop, no al clickear dentro del panel.
+            if (e.target === e.currentTarget) setAbierto(false);
+          }}
         >
           <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg">
             <div className="flex items-center justify-between">
@@ -81,8 +97,15 @@ export function PanicoButton() {
               )}
               {telefonosQuery.data?.length === 0 && (
                 <p className="text-sm text-slate/70">
-                  No hay teléfonos de emergencia configurados. Agrégalos en la
-                  sección Emergencia.
+                  No hay teléfonos de emergencia configurados. Agrégalos en la{' '}
+                  <Link
+                    href="/admin/emergencia"
+                    onClick={() => setAbierto(false)}
+                    className="text-navy underline hover:text-navy-deep"
+                  >
+                    sección Emergencia
+                  </Link>
+                  .
                 </p>
               )}
               {telefonosQuery.data?.map((t) => (

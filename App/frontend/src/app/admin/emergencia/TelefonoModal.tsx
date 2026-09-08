@@ -29,18 +29,19 @@ export function TelefonoModal({
     e.preventDefault();
     const et = etiqueta.trim();
     const nu = numero.trim();
+    // Ambos campos son obligatorios también al editar: dejar uno en blanco NO
+    // es "sin cambio". Sin este guard, el PATCH parcial omitiría el campo
+    // vaciado, el backend respondería 200 y saldría "actualizado" sin cambio
+    // real (M2 del review final de rama).
+    if (!et || !nu) {
+      toast.error('Completa la etiqueta y el teléfono.');
+      return;
+    }
     if (esAlta) {
-      if (!et || !nu) {
-        toast.error('Completa la etiqueta y el teléfono.');
-        return;
-      }
       onCrear({ etiqueta: et, telefono: nu });
       return;
     }
-    const payload: ActualizarTelefonoInput = {};
-    if (et) payload.etiqueta = et;
-    if (nu) payload.telefono = nu;
-    onEditar(payload);
+    onEditar({ etiqueta: et, telefono: nu });
   }
 
   return (

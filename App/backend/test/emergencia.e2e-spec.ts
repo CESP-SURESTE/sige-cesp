@@ -41,6 +41,9 @@ interface BusquedaBody {
     tipo: string;
     perfilId: string;
     nombreCompleto: string;
+    nombres: string;
+    apellidoPaterno: string;
+    apellidoMaterno: string | null;
     referencia: string;
     activo: boolean;
   }>;
@@ -508,8 +511,12 @@ describe('EmergenciaController — GET /emergencia/buscar (e2e)', () => {
   let sedeValladolidId: string;
   let actorUsuarioId: string;
 
-  let alumnoMerida: { id: string; apellidoPaterno: string };
-  let maestroMerida: { id: string; apellidoPaterno: string };
+  let alumnoMerida: { id: string; apellidoPaterno: string; matricula: string };
+  let maestroMerida: {
+    id: string;
+    apellidoPaterno: string;
+    cedulaProfesional: string | null;
+  };
   let administrativoMerida: { id: string; apellidoPaterno: string };
   let personalMerida: { id: string; apellidoPaterno: string };
   let administrativoValladolid: { id: string; apellidoPaterno: string };
@@ -546,11 +553,11 @@ describe('EmergenciaController — GET /emergencia/buscar (e2e)', () => {
 
     alumnoMerida = await prisma.perfilAlumno.findFirstOrThrow({
       where: { usuario: { email: 'luis.chan@cesp-merida.edu.mx' } },
-      select: { id: true, apellidoPaterno: true },
+      select: { id: true, apellidoPaterno: true, matricula: true },
     });
     maestroMerida = await prisma.perfilMaestro.findFirstOrThrow({
       where: { usuario: { email: 'mario.loeza@cesp-merida.edu.mx' } },
-      select: { id: true, apellidoPaterno: true },
+      select: { id: true, apellidoPaterno: true, cedulaProfesional: true },
     });
     administrativoMerida = await prisma.perfilAdministrativo.findFirstOrThrow({
       where: { usuario: { email: 'ana.canul@cesp-merida.edu.mx' } },
@@ -600,6 +607,79 @@ describe('EmergenciaController — GET /emergencia/buscar (e2e)', () => {
       expect(typeof item?.nombreCompleto).toBe('string');
       expect(typeof item?.referencia).toBe('string');
       expect(typeof item?.activo).toBe('boolean');
+    }
+  });
+
+  it('encuentra alumno por matrícula', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+
+    const res = await request(app.getHttpServer())
+      .get('/emergencia/buscar')
+      .query({ q: alumnoMerida.matricula })
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    const item = (res.body as BusquedaBody).data.find(
+      (r) => r.perfilId === alumnoMerida.id,
+    );
+    expect(item).toBeDefined();
+    expect(item?.tipo).toBe('ALUMNO');
+    expect(item?.referencia).toBe(alumnoMerida.matricula);
+  });
+
+  it('encuentra maestro por cédula', async () => {
+    expect(maestroMerida.cedulaProfesional).toBeTruthy();
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+
+    const res = await request(app.getHttpServer())
+      .get('/emergencia/buscar')
+      .query({ q: maestroMerida.cedulaProfesional as string })
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    const item = (res.body as BusquedaBody).data.find(
+      (r) => r.perfilId === maestroMerida.id,
+    );
+    expect(item).toBeDefined();
+    expect(item?.tipo).toBe('MAESTRO');
+    expect(item?.referencia).toBe(maestroMerida.cedulaProfesional);
+  });
+
+  it('devuelve los resultados ordenados por apellido paterno (merge de los 4 roles)', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+
+    // 'a' matchea a gente de varios roles en Mérida — el merge debe salir en
+    // orden apellido paterno → materno → nombres, no por nombre visible ni
+    // por el orden de concatenación de los 4 arrays (test que habría cazado I2).
+    const res = await request(app.getHttpServer())
+      .get('/emergencia/buscar')
+      .query({ q: 'an', limit: 50 })
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    const data = (res.body as BusquedaBody).data;
+    expect(data.length).toBeGreaterThan(2);
+
+    const clave = (r: BusquedaBody['data'][number]) =>
+      `${r.apellidoPaterno} ${r.apellidoMaterno ?? ''} ${r.nombres}`.toLocaleLowerCase(
+        'es',
+      );
+    for (let i = 1; i < data.length; i++) {
+      expect(
+        clave(data[i - 1]).localeCompare(clave(data[i]), 'es'),
+      ).toBeLessThanOrEqual(0);
     }
   });
 

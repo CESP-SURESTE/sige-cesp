@@ -1,19 +1,13 @@
 'use client';
 
-import type { ExpedienteEmergencia, TipoExpediente } from '@/lib/api/emergencia';
+import type { ExpedienteEmergencia } from '@/lib/api/emergencia';
+import { humanizarReferencia, TIPO_ROL_LABEL } from './labels';
 
 const TIPO_SANGRE_LABEL: Record<string, string> = {
   A_POSITIVO: 'A+', A_NEGATIVO: 'A−',
   B_POSITIVO: 'B+', B_NEGATIVO: 'B−',
   AB_POSITIVO: 'AB+', AB_NEGATIVO: 'AB−',
   O_POSITIVO: 'O+', O_NEGATIVO: 'O−',
-};
-
-const TIPO_ROL_LABEL: Record<TipoExpediente, string> = {
-  ALUMNO: 'Alumno',
-  MAESTRO: 'Maestro',
-  ADMINISTRATIVO: 'Administrativo',
-  PERSONAL_SERVICIOS: 'Personal de servicios',
 };
 
 export function ExpedientePanel({ expediente }: { expediente: ExpedienteEmergencia }) {
@@ -35,9 +29,11 @@ export function ExpedientePanel({ expediente }: { expediente: ExpedienteEmergenc
           )}
         </div>
         <p className="mt-1 text-sm text-slate/70">
-          {TIPO_ROL_LABEL[expediente.tipo]} · {identidad.referencia}
+          {TIPO_ROL_LABEL[expediente.tipo]} ·{' '}
+          {humanizarReferencia(expediente.tipo, identidad.referencia)}
           {identidad.edad !== null && ` · ${identidad.edad} años`}
         </p>
+        <p className="mt-1 text-sm text-slate/70">CURP: {identidad.curp ?? '—'}</p>
         {identidad.telefono && (
           <p className="mt-1 text-sm text-slate/70">
             Tel. propio:{' '}

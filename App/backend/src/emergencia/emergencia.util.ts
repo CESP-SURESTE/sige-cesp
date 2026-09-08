@@ -36,10 +36,10 @@ export function nombreCompleto(p: PersonaNombre): string {
 
 /**
  * Orden estable por apellido paterno, luego materno, luego nombres (es-MX).
- * Se exporta y se testea como función pura; el buscador NO la usa sobre
- * `ResultadoBusqueda` (ese shape no lleva los 3 campos de apellido) — el
- * orden global del lookup es aproximado por nombre visible, ver
- * `EmergenciaService.buscar`.
+ * Función pura, testeada aparte. La usa `EmergenciaService.buscar` para
+ * re-ordenar el merge de los 4 arrays por rol con la misma clave que el
+ * `orderBy` por-rol — así el `take: limit` de cada query no descarta filas
+ * que el orden final sí conservaría.
  */
 export function compararPorApellidos(a: PersonaNombre, b: PersonaNombre): number {
   const clave = (p: PersonaNombre) =>

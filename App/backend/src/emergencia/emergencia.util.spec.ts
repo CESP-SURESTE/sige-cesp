@@ -79,6 +79,20 @@ describe('compararPorApellidos', () => {
     lista.sort(compararPorApellidos);
     expect(lista[0].nombres).toBe('B');
   });
+
+  it('ordena un merge cross-rol con campos extra (uso real de EmergenciaService.buscar)', () => {
+    // Estructura similar a `ResultadoBusqueda`: lleva `tipo`/`referencia`
+    // además de los 3 campos de nombre. `compararPorApellidos` sólo mira los 3
+    // de nombre; el `.sort` debe salir por apellido sin importar de qué rol
+    // venga cada fila ni en qué orden se concatenaron los 4 arrays.
+    const merge = [
+      { tipo: 'MAESTRO', referencia: '123', nombres: 'Beto', apellidoPaterno: 'Uc', apellidoMaterno: 'Poot' },
+      { tipo: 'ALUMNO', referencia: 'MID-1', nombres: 'Ana', apellidoPaterno: 'Canul', apellidoMaterno: 'Ávila' },
+      { tipo: 'PERSONAL_SERVICIOS', referencia: 'INTENDENCIA', nombres: 'Zoe', apellidoPaterno: 'Canul', apellidoMaterno: null },
+    ];
+    merge.sort(compararPorApellidos);
+    expect(merge.map((r) => r.nombres)).toEqual(['Zoe', 'Ana', 'Beto']);
+  });
 });
 
 describe('calcularEdad', () => {
