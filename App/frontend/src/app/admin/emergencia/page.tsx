@@ -26,8 +26,8 @@ import { ExpedientePanel } from './ExpedientePanel';
 import { humanizarReferencia, TIPO_ROL_LABEL } from './labels';
 import { TelefonoModal } from './TelefonoModal';
 
-/** Misma key que `PanicoButton` (`components/admin/ui/shell/`) — caché e
- * invalidación compartidas: crear/editar/borrar acá refresca el botón de pánico. */
+/** Key del listado de teléfonos de emergencia de la sede — crear/editar/borrar
+ * invalida esta query para refrescar la tabla. */
 const TELEFONOS_QUERY_KEY = ['admin', 'emergencia', 'telefonos'] as const;
 
 /** Estado del modal único de alta/edición — `telefono: null` es modo alta explícito. */
@@ -247,7 +247,8 @@ export default function AdminEmergenciaPage() {
               Teléfonos de emergencia de la sede
             </h2>
             <p className="mt-1 text-sm text-slate/60">
-              Estos números aparecen en el botón de pánico del menú superior.
+              Números de contacto para emergencias en tu sede (911, Cruz Roja,
+              bomberos, protección civil, hospital).
             </p>
           </div>
           <button

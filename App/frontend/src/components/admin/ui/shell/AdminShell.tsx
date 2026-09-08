@@ -8,7 +8,6 @@ import { obtenerPerfil } from '@/lib/api/perfil';
 import { Sidebar } from './Sidebar';
 import { ProfileDropdown } from './ProfileDropdown';
 import { NotificacionesBell } from './NotificacionesBell';
-import { PanicoButton } from './PanicoButton';
 import { useSidebarState } from './useSidebarState';
 import { IconChevronDoble, IconCerrar, IconMenu, IconUbicacion } from './icons';
 
@@ -177,7 +176,6 @@ function Topbar({
         <SedeBadge />
       </div>
       <div className="flex shrink-0 items-center gap-1 justify-self-end">
-        <PanicoButton />
         <NotificacionesBell />
         <ProfileDropdown email={email} />
       </div>

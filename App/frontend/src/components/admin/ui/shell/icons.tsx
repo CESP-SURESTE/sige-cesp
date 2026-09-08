@@ -195,7 +195,7 @@ export function IconCampana({ className }: IconProps) {
   );
 }
 
-/** Escudo con cruz médica — botón de pánico del topbar (módulo de emergencia, 2026-09-08). */
+/** Escudo con cruz médica — ítem "Emergencia" del sidebar (módulo de emergencia, 2026-09-08). */
 export function IconEmergencia({ className }: IconProps) {
   return (
     <svg {...BASE} className={className} aria-hidden="true">
