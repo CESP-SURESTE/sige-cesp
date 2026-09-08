@@ -194,3 +194,13 @@ export function IconCampana({ className }: IconProps) {
     </svg>
   );
 }
+
+/** Escudo con cruz médica — botón de pánico del topbar (módulo de emergencia, 2026-09-08). */
+export function IconEmergencia({ className }: IconProps) {
+  return (
+    <svg {...BASE} className={className} aria-hidden="true">
+      <path d="M12 2 3 7v6c0 5 3.8 8.5 9 9 5.2-.5 9-4 9-9V7l-9-5Z" />
+      <path d="M12 8v6M9 11h6" />
+    </svg>
+  );
+}
