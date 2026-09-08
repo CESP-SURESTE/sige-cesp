@@ -135,7 +135,7 @@ export interface GrupoAlumnoListItem {
   apellidoPaterno: string;
   apellidoMaterno: string | null;
   matricula: string;
-  semestreActual: number;
+  cuatrimestreActual: number;
   estatusAcademico: EstatusAcademico;
   fechaInscripcion: string;
 }

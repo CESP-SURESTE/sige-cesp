@@ -17,6 +17,7 @@ import {
   type EstatusEmpleado,
   type MotivoBaja,
   type PersonaListItemMaestro,
+  type TipoContratacion,
   type TipoLicencia,
 } from '@/lib/api/personas';
 import { BuscadorFiltro } from '@/components/admin/ui/personas-listado/BuscadorFiltro';
@@ -136,13 +137,14 @@ export default function AdminMaestrosPage() {
                 <tr>
                   <Th>Nombre completo</Th>
                   <Th>Cédula profesional</Th>
+                  <Th>Contratación</Th>
                   <Th>Estatus</Th>
                   <Th>Cuenta</Th>
                   <Th>Acciones</Th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-mist">
-                <SkeletonTableRows columns={5} />
+                <SkeletonTableRows columns={6} />
               </tbody>
             </table>
           </div>
@@ -206,6 +208,7 @@ function TablaMaestros({
           <tr>
             <Th>Nombre completo</Th>
             <Th>Cédula profesional</Th>
+            <Th>Contratación</Th>
             <Th>Estatus</Th>
             <Th>Cuenta</Th>
             <Th>Acciones</Th>
@@ -220,6 +223,7 @@ function TablaMaestros({
                   .join(' ')}
               </Td>
               <Td>{maestro.cedulaProfesional || '—'}</Td>
+              <Td>{formatearContratacion(maestro)}</Td>
               <Td>
                 <EstatusEmpleadoBadge
                   estatus={maestro.estatus}
@@ -256,6 +260,31 @@ function Th({ children }: { children: React.ReactNode }) {
 
 function Td({ children }: { children: React.ReactNode }) {
   return <td className="px-4 py-3 text-slate">{children}</td>;
+}
+
+const TIPO_CONTRATACION_LABEL: Record<TipoContratacion, string> = {
+  BASE: 'Base',
+  TEMPORAL: 'Temporal',
+  CONTRATO: 'Por contrato',
+};
+
+/**
+ * Texto de la columna "Contratación" del listado — resumen plano, sin
+ * date-formatter (las fechas ISO `YYYY-MM-DD` del backend se muestran tal
+ * cual). `null`/altas previas al 2026-09-07 → `'—'`.
+ */
+function formatearContratacion(m: PersonaListItemMaestro): string {
+  if (!m.tipoContratacion) return '—';
+  const label = TIPO_CONTRATACION_LABEL[m.tipoContratacion];
+  if (m.tipoContratacion === 'TEMPORAL') {
+    return m.diasTemporal == null ? label : `${label} · ${m.diasTemporal} días`;
+  }
+  if (m.tipoContratacion === 'CONTRATO') {
+    return m.contratoFechaInicio && m.contratoFechaFin
+      ? `${label} · ${m.contratoFechaInicio} – ${m.contratoFechaFin}`
+      : label;
+  }
+  return label;
 }
 
 const ESTATUS_EMPLEADO_LABEL: Record<EstatusEmpleado, string> = {

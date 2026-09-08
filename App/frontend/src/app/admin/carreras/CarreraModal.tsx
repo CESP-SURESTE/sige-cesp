@@ -61,6 +61,7 @@ interface FormCarrera {
   nivel: NivelCarrera | '';
   modalidad: ModalidadCarrera | '';
   rvoe: string;
+  procedenciaRvoe: string;
   descripcion: string;
   estatus: EstatusCarrera | '';
 }
@@ -72,6 +73,7 @@ const FORM_VACIO: FormCarrera = {
   nivel: '',
   modalidad: '',
   rvoe: '',
+  procedenciaRvoe: '',
   descripcion: '',
   estatus: '',
 };
@@ -83,13 +85,18 @@ function formDesdeCarrera(carrera: Carrera): FormCarrera {
     duracion: String(carrera.duracion),
     nivel: carrera.nivel,
     modalidad: carrera.modalidad,
-    rvoe: carrera.rvoe,
+    rvoe: carrera.rvoe ?? '',
+    procedenciaRvoe: carrera.procedenciaRvoe ?? '',
     descripcion: carrera.descripcion,
     estatus: carrera.estatus,
   };
 }
 
-/** Modo alta — todos los campos son obligatorios, arma el payload completo de `POST /carreras`. */
+/**
+ * Modo alta — `rvoe`/`procedenciaRvoe` son opcionales desde 2026-09-07 (antes
+ * `rvoe` era obligatorio); el resto de campos sigue siendo requerido para
+ * armar el payload completo de `POST /carreras`.
+ */
 function construirPayloadAlta(form: FormCarrera): CrearCarreraInput | null {
   if (
     !form.nombre.trim() ||
@@ -97,7 +104,6 @@ function construirPayloadAlta(form: FormCarrera): CrearCarreraInput | null {
     !form.duracion.trim() ||
     !form.nivel ||
     !form.modalidad ||
-    !form.rvoe.trim() ||
     !form.descripcion.trim()
   ) {
     return null;
@@ -111,12 +117,21 @@ function construirPayloadAlta(form: FormCarrera): CrearCarreraInput | null {
     duracion,
     nivel: form.nivel,
     modalidad: form.modalidad,
-    rvoe: form.rvoe.trim(),
+    rvoe: form.rvoe.trim() || undefined,
+    procedenciaRvoe: form.procedenciaRvoe.trim() || undefined,
     descripcion: form.descripcion.trim(),
   };
 }
 
-/** Modo edición — solo incluye en el `PATCH` los campos que el admin sí llenó; en blanco = sin cambio. */
+/**
+ * Modo edición — solo incluye en el `PATCH` los campos que el admin sí
+ * llenó; en blanco = sin cambio (mismo criterio que el resto de campos
+ * opcionales de edición). `procedenciaRvoe` sigue el mismo patrón, aunque acá
+ * "en blanco" es ambiguo — un admin que ya tenía procedencia capturada y
+ * quiere borrarla no puede hacerlo desde este modal (gap conocido, sin
+ * pedido explícito de resolverlo, YAGNI — ver nota del plan
+ * `2026-09-07-perfil-maestro-tiposangre-rvoe.md`, Task 2).
+ */
 function construirPayloadEdicion(form: FormCarrera): ActualizarCarreraInput {
   const payload: ActualizarCarreraInput = {};
 
@@ -129,6 +144,7 @@ function construirPayloadEdicion(form: FormCarrera): ActualizarCarreraInput {
   if (form.nivel) payload.nivel = form.nivel;
   if (form.modalidad) payload.modalidad = form.modalidad;
   if (form.rvoe.trim()) payload.rvoe = form.rvoe.trim();
+  if (form.procedenciaRvoe.trim()) payload.procedenciaRvoe = form.procedenciaRvoe.trim();
   if (form.descripcion.trim()) payload.descripcion = form.descripcion.trim();
   if (form.estatus) payload.estatus = form.estatus;
 
@@ -209,7 +225,7 @@ export function CarreraModal({
             </div>
             <div>
               <label htmlFor="carrera-modal-duracion" className={LABEL_CLASS}>
-                Duración (semestres)
+                Duración (cuatrimestres)
               </label>
               <input
                 id="carrera-modal-duracion"
@@ -225,17 +241,32 @@ export function CarreraModal({
             </div>
             <div>
               <label htmlFor="carrera-modal-rvoe" className={LABEL_CLASS}>
-                RVOE
+                RVOE (opcional)
               </label>
               <input
                 id="carrera-modal-rvoe"
                 type="text"
-                required={esAlta}
                 disabled={guardando}
                 className={INPUT_CLASS}
                 value={form.rvoe}
                 onChange={(e) => setForm((f) => ({ ...f, rvoe: e.target.value }))}
               />
+            </div>
+            <div>
+              <label htmlFor="carrera-modal-procedenciaRvoe" className={LABEL_CLASS}>
+                Procedencia del RVOE (opcional)
+              </label>
+              <input
+                id="carrera-modal-procedenciaRvoe"
+                type="text"
+                disabled={guardando}
+                className={INPUT_CLASS}
+                value={form.procedenciaRvoe}
+                onChange={(e) => setForm((f) => ({ ...f, procedenciaRvoe: e.target.value }))}
+              />
+              <p className="mt-1 text-xs text-slate/60">
+                Solo si el RVOE fue emitido en otro estado.
+              </p>
             </div>
             <div>
               <label htmlFor="carrera-modal-nivel" className={LABEL_CLASS}>

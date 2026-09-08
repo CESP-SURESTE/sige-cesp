@@ -1,7 +1,16 @@
-import type { FieldErrors, FieldValues, Path, UseFormRegister } from 'react-hook-form';
+import { Controller } from 'react-hook-form';
+import type {
+  Control,
+  FieldErrors,
+  FieldValues,
+  Path,
+  UseFormRegister,
+} from 'react-hook-form';
 import { FieldError } from './FieldError';
+import { Select } from './Select';
 import { INPUT_CLASS, LABEL_CLASS } from './estilos';
 import type { PerfilPrefix } from './DatosPersonalesFieldset';
+import type { TipoSangre } from './schemas';
 
 /**
  * Datos de salud — extensión de `POST /personas`, espejo de `InfoMedicaDto`
@@ -19,9 +28,18 @@ import type { PerfilPrefix } from './DatosPersonalesFieldset';
  * componente haga su propio `watch` interno, para mantenerlo consistente con
  * `DatosPersonalesFieldset`/`ContactosFieldset` (reciben todo por props, no
  * tienen acceso directo al form más allá de `register`/`errors`).
+ *
+ * `tipoSangre` (2026-09-07, espejo de `InfoMedicaDto.tipoSangre` requerido en
+ * el backend) es un campo independiente de `tieneCondicionMedica` — el tipo
+ * de sangre no es una condición médica, así que el `<select>` está SIEMPRE
+ * visible, no depende del checkbox. Usa el componente `Select` (Headless UI)
+ * ya establecido en este árbol para dropdowns (mismo patrón que `puesto`/
+ * `nivelPermiso`/`tipo` de contacto), vía `Controller` — requiere `control`,
+ * que este fieldset no recibía hasta ahora.
  */
 interface InfoMedicaFormValues {
   tieneCondicionMedica: boolean;
+  tipoSangre: TipoSangre | '';
   padecimiento?: string;
   medicamentos?: string;
   alergias?: string;
@@ -32,10 +50,22 @@ interface PerfilConInfoMedica {
   infoMedica: InfoMedicaFormValues;
 }
 
+const TIPO_SANGRE_LABEL: Record<TipoSangre, string> = {
+  A_POSITIVO: 'A+',
+  A_NEGATIVO: 'A-',
+  B_POSITIVO: 'B+',
+  B_NEGATIVO: 'B-',
+  AB_POSITIVO: 'AB+',
+  AB_NEGATIVO: 'AB-',
+  O_POSITIVO: 'O+',
+  O_NEGATIVO: 'O-',
+};
+
 interface InfoMedicaFieldsetProps<
   TPrefix extends PerfilPrefix,
   TInput extends FieldValues & Record<TPrefix, PerfilConInfoMedica>,
 > {
+  control: Control<TInput>;
   register: UseFormRegister<TInput>;
   errors: FieldErrors<TInput>;
   disabled: boolean;
@@ -47,6 +77,7 @@ export function InfoMedicaFieldset<
   TPrefix extends PerfilPrefix,
   TInput extends FieldValues & Record<TPrefix, PerfilConInfoMedica>,
 >({
+  control,
   register,
   errors,
   disabled,
@@ -65,6 +96,30 @@ export function InfoMedicaFieldset<
   return (
     <fieldset className="space-y-3 rounded-lg border border-mist bg-bone/50 p-4">
       <legend className="text-sm font-semibold text-slate">Datos de salud</legend>
+
+      <div>
+        <label htmlFor={`${prefix}-tipoSangre`} className={LABEL_CLASS}>
+          Tipo de sangre
+        </label>
+        <Controller
+          control={control}
+          name={path('tipoSangre')}
+          render={({ field }) => (
+            <Select
+              id={`${prefix}-tipoSangre`}
+              value={(field.value as string | undefined) ?? ''}
+              onChange={field.onChange}
+              onBlur={field.onBlur}
+              disabled={disabled}
+              placeholder="Selecciona un tipo de sangre"
+              options={(Object.entries(TIPO_SANGRE_LABEL) as [TipoSangre, string][]).map(
+                ([value, label]) => ({ value, label }),
+              )}
+            />
+          )}
+        />
+        <FieldError message={infoMedicaErrors?.tipoSangre?.message} />
+      </div>
 
       <div>
         <label

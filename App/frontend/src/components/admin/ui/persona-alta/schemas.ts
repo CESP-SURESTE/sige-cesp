@@ -34,8 +34,29 @@ export const contactosAlumnoSchema = z
   .min(1, 'Agrega al menos 1 contacto de emergencia')
   .max(3, 'Máximo 3 contactos de emergencia');
 
+/**
+ * Espejo del enum `TipoSangre` (backend, `schema.prisma` — Prisma no permite
+ * `+`/`-` en nombres de enum). El label legible (`A+`, `O-`, etc.) vive en
+ * `InfoMedicaFieldset.tsx`, no acá.
+ */
+export const TIPO_SANGRE_VALORES = [
+  'A_POSITIVO',
+  'A_NEGATIVO',
+  'B_POSITIVO',
+  'B_NEGATIVO',
+  'AB_POSITIVO',
+  'AB_NEGATIVO',
+  'O_POSITIVO',
+  'O_NEGATIVO',
+] as const;
+
+export type TipoSangre = (typeof TIPO_SANGRE_VALORES)[number];
+
 export const infoMedicaSchema = z.object({
   tieneCondicionMedica: z.boolean(),
+  tipoSangre: z.enum(TIPO_SANGRE_VALORES, {
+    message: 'Selecciona el tipo de sangre',
+  }),
   padecimiento: z.string().optional(),
   medicamentos: z.string().optional(),
   alergias: z.string().optional(),

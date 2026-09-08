@@ -96,7 +96,7 @@ export default function AdminAlumnosPage() {
                   <Th>Nombre completo</Th>
                   <Th>Matrícula</Th>
                   <Th>Carrera</Th>
-                  <Th>Semestre</Th>
+                  <Th>Cuatrimestre</Th>
                   <Th>Estatus académico</Th>
                   <Th>Cuenta</Th>
                 </tr>
@@ -143,7 +143,7 @@ function TablaAlumnos({ alumnos }: { alumnos: PersonaListItemAlumno[] }) {
             <Th>Nombre completo</Th>
             <Th>Matrícula</Th>
             <Th>Carrera</Th>
-            <Th>Semestre</Th>
+            <Th>Cuatrimestre</Th>
             <Th>Estatus académico</Th>
             <Th>Cuenta</Th>
           </tr>
@@ -158,7 +158,7 @@ function TablaAlumnos({ alumnos }: { alumnos: PersonaListItemAlumno[] }) {
               </Td>
               <Td>{alumno.matricula}</Td>
               <Td>{alumno.carrera.nombre}</Td>
-              <Td>{alumno.semestreActual}</Td>
+              <Td>{alumno.cuatrimestreActual}</Td>
               <Td>{ESTATUS_ACADEMICO_LABEL[alumno.estatusAcademico]}</Td>
               <Td>
                 <EstadoActivoBadge activo={alumno.activo} />

@@ -62,7 +62,7 @@ const MENSAJES_ERROR_GRUPO: Record<string, string> = {
 };
 
 function formatearPeriodo(anioInicio: number, cicloActual: number): string {
-  return `${anioInicio} · Semestre ${cicloActual}`;
+  return `${anioInicio} · Cuatrimestre ${cicloActual}`;
 }
 
 export default function AdminGruposPage() {
@@ -252,7 +252,7 @@ export default function AdminGruposPage() {
           </div>
           <div>
             <label htmlFor="filtroCicloActual" className={LABEL_CLASS}>
-              Ciclo actual (semestre)
+              Ciclo actual (cuatrimestre)
             </label>
             <input
               id="filtroCicloActual"

@@ -54,21 +54,29 @@ export interface CarreraCompleta {
   nivel: NivelCarrera;
   modalidad: ModalidadCarrera;
   estatus: EstatusCarrera;
-  rvoe: string;
+  /** Opcional desde 2026-09-07 — `Carrera.rvoe` pasó a `String?` en el schema. */
+  rvoe: string | null;
+  /** Nuevo 2026-09-07 — texto libre (ej. "Yucatán"), siempre opcional. */
+  procedenciaRvoe: string | null;
   descripcion: string;
   createdAt: string;
   updatedAt: string;
   tieneMalla: boolean;
 }
 
-/** Body de `POST /carreras` — los 6 campos son requeridos (`sedeId`/`estatus` nunca van acá, ver `CrearCarreraDto` del backend). */
+/**
+ * Body de `POST /carreras` — `rvoe`/`procedenciaRvoe` opcionales desde
+ * 2026-09-07 (antes `rvoe` era requerido); el resto sigue requerido
+ * (`sedeId`/`estatus` nunca van acá, ver `CrearCarreraDto` del backend).
+ */
 export interface CrearCarreraInput {
   nombre: string;
   clave: string;
   duracion: number;
   nivel: NivelCarrera;
   modalidad: ModalidadCarrera;
-  rvoe: string;
+  rvoe?: string;
+  procedenciaRvoe?: string;
   descripcion: string;
 }
 

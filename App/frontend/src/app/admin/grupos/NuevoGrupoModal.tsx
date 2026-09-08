@@ -256,7 +256,7 @@ export function NuevoGrupoModal({
             </div>
             <div>
               <label htmlFor="grupo-modal-cicloActual" className={LABEL_CLASS}>
-                Ciclo actual (semestre)
+                Ciclo actual (cuatrimestre)
               </label>
               <input
                 id="grupo-modal-cicloActual"
@@ -272,7 +272,7 @@ export function NuevoGrupoModal({
               />
               {carreraSeleccionada && (
                 <p className="mt-1 text-xs text-slate/60">
-                  Esta carrera tiene {carreraSeleccionada.duracion} semestre
+                  Esta carrera tiene {carreraSeleccionada.duracion} cuatrimestre
                   {carreraSeleccionada.duracion === 1 ? '' : 's'}.
                 </p>
               )}

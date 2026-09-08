@@ -51,7 +51,7 @@ export function ConfirmarMatricularAlumnoModal({
     { etiqueta: 'Nombre', valor: nombreCompleto },
     { etiqueta: 'Matrícula', valor: alumno.matricula },
     { etiqueta: 'Carrera', valor: alumno.carrera.nombre },
-    { etiqueta: 'Semestre actual', valor: String(alumno.semestreActual) },
+    { etiqueta: 'Cuatrimestre actual', valor: String(alumno.cuatrimestreActual) },
     {
       etiqueta: 'Estatus académico',
       valor: ESTATUS_ACADEMICO_LABEL[alumno.estatusAcademico],

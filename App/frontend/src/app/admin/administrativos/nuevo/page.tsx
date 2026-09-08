@@ -118,6 +118,8 @@ const DEFAULT_VALUES: AdministrativoFormValues = {
     contactos: [{ nombre: '', telefono: '', correo: '', parentesco: '' }],
     infoMedica: {
       tieneCondicionMedica: false,
+      tipoSangre:
+        '' as AdministrativoFormValues['perfilAdministrativo']['infoMedica']['tipoSangre'],
       padecimiento: '',
       medicamentos: '',
       alergias: '',
@@ -157,18 +159,21 @@ export default function NuevoAdministrativoPage() {
             ...contacto,
             correo: contacto.correo || undefined,
           })),
-          infoMedica: values.perfilAdministrativo.infoMedica.tieneCondicionMedica
-            ? {
-                tieneCondicionMedica: true,
-                padecimiento:
-                  values.perfilAdministrativo.infoMedica.padecimiento || undefined,
-                medicamentos:
-                  values.perfilAdministrativo.infoMedica.medicamentos || undefined,
-                alergias: values.perfilAdministrativo.infoMedica.alergias || undefined,
-                tratamientoAdicional:
-                  values.perfilAdministrativo.infoMedica.tratamientoAdicional || undefined,
-              }
-            : { tieneCondicionMedica: false },
+          infoMedica: {
+            tipoSangre: values.perfilAdministrativo.infoMedica.tipoSangre,
+            ...(values.perfilAdministrativo.infoMedica.tieneCondicionMedica
+              ? {
+                  tieneCondicionMedica: true,
+                  padecimiento:
+                    values.perfilAdministrativo.infoMedica.padecimiento || undefined,
+                  medicamentos:
+                    values.perfilAdministrativo.infoMedica.medicamentos || undefined,
+                  alergias: values.perfilAdministrativo.infoMedica.alergias || undefined,
+                  tratamientoAdicional:
+                    values.perfilAdministrativo.infoMedica.tratamientoAdicional || undefined,
+                }
+              : { tieneCondicionMedica: false }),
+          },
         },
       }),
     onSuccess: (data) => {
@@ -210,6 +215,7 @@ export default function NuevoAdministrativoPage() {
           <CuentaFieldset register={register} errors={errors} disabled={mutation.isPending} />
 
           <InfoMedicaFieldset
+            control={control}
             register={register}
             errors={errors}
             disabled={mutation.isPending}

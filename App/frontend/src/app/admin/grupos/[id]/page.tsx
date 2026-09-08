@@ -232,7 +232,7 @@ export default function AdminGrupoDetallePage() {
             </div>
             <p className="mt-1 text-sm text-slate/60">
               {grupo.carrera.nombre} · {grupo.salon.nombre} · {grupo.anioInicio}{' '}
-              · Semestre {grupo.cicloActual}
+              · Cuatrimestre {grupo.cicloActual}
             </p>
           </>
         )}
@@ -320,7 +320,7 @@ export default function AdminGrupoDetallePage() {
               <tr className="border-b border-mist text-left text-slate/60">
                 <th className="px-4 py-3 font-medium">Alumno</th>
                 <th className="px-4 py-3 font-medium">Matrícula</th>
-                <th className="px-4 py-3 font-medium">Semestre</th>
+                <th className="px-4 py-3 font-medium">Cuatrimestre</th>
                 <th className="px-4 py-3 font-medium">Estatus</th>
                 <th className="px-4 py-3 font-medium">Acciones</th>
               </tr>
@@ -358,7 +358,7 @@ export default function AdminGrupoDetallePage() {
                   <td className="px-4 py-3 text-slate">{nombreAlumno(a)}</td>
                   <td className="px-4 py-3 text-slate/80">{a.matricula}</td>
                   <td className="px-4 py-3 text-slate/80">
-                    {a.semestreActual}
+                    {a.cuatrimestreActual}
                   </td>
                   <td className="px-4 py-3 text-slate/80">
                     {ESTATUS_ACADEMICO_LABEL[a.estatusAcademico]}
