@@ -161,6 +161,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
   function infoMedicaValida(overrides: Record<string, unknown> = {}) {
     return {
       tieneCondicionMedica: false,
+      tipoSangre: 'O_POSITIVO',
       ...overrides,
     };
   }
@@ -188,7 +189,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
       correoPersonal: `alumno.personal.${randomUUID()}@example.com`,
       carreraId: carreraMeridaId,
       periodoIngreso: '2026-1',
-      semestreActual: 1,
+      cuatrimestreActual: 1,
       contactos: [contactoAlumnoValido()],
       infoMedica: infoMedicaValida(),
       ...overrides,
@@ -203,6 +204,10 @@ describe('PersonasController — POST /personas (e2e)', () => {
       correoPersonal: `maestro.personal.${randomUUID()}@example.com`,
       telefono: '9990005555',
       fechaContratacion: '2026-01-01',
+      // `tipoContratacion` es requerido desde 2026-09-07 — default BASE para
+      // que los payloads existentes no se rompan (mismo patrón que
+      // `tipoSangre` en `infoMedicaValida`).
+      tipoContratacion: 'BASE',
       contactos: [contactoValido()],
       infoMedica: infoMedicaValida(),
       ...overrides,
@@ -412,7 +417,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
           correoPersonal: 'prueba.alumno.personal@example.com',
           carreraId: carreraMeridaId,
           periodoIngreso: '2026-1',
-          semestreActual: 1,
+          cuatrimestreActual: 1,
           contactos: [contactoAlumnoValido()],
           infoMedica: infoMedicaValida(),
         },
@@ -548,7 +553,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
           correoPersonal: 'x@example.com',
           carreraId: carreraMeridaId,
           periodoIngreso: '2026-1',
-          semestreActual: 1,
+          cuatrimestreActual: 1,
           contactos: [contactoAlumnoValido()],
           infoMedica: infoMedicaValida(),
         },
@@ -629,7 +634,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
           correoPersonal: 'rollback@example.com',
           carreraId: carreraMeridaId,
           periodoIngreso: '2026-1',
-          semestreActual: 1,
+          cuatrimestreActual: 1,
           contactos: [contactoAlumnoValido()],
           infoMedica: infoMedicaValida(),
         },
@@ -679,7 +684,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
             correoPersonal: 'rollback.reject@example.com',
             carreraId: carreraMeridaId,
             periodoIngreso: '2026-1',
-            semestreActual: 1,
+            cuatrimestreActual: 1,
             contactos: [contactoAlumnoValido()],
             infoMedica: infoMedicaValida(),
           },
@@ -997,6 +1002,29 @@ describe('PersonasController — POST /personas (e2e)', () => {
       expect(createUser).not.toHaveBeenCalled();
     });
 
+    it('alta sin tipoSangre en infoMedica -> 400 VALIDATION_ERROR (2026-09-07, requerido)', async () => {
+      const perfil = perfilAlumnoValido();
+      const infoMedicaSinTipoSangre = infoMedicaValida() as Record<
+        string,
+        unknown
+      >;
+      delete infoMedicaSinTipoSangre.tipoSangre;
+      (perfil as Record<string, unknown>).infoMedica =
+        infoMedicaSinTipoSangre;
+
+      const res = await request(app.getHttpServer())
+        .post('/personas')
+        .set('Authorization', `Bearer ${await tokenAdmin()}`)
+        .send({
+          rol: RolUsuario.ALUMNO,
+          perfilAlumno: perfil,
+        });
+
+      expect(res.status).toBe(400);
+      expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+      expect(createUser).not.toHaveBeenCalled();
+    });
+
     it('datos de salud (infoMedica) guardados correctamente -> ALUMNO', async () => {
       mockCreateUserExitoso();
 
@@ -1012,6 +1040,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
               medicamentos: 'Salbutamol',
               alergias: 'Polen',
               tratamientoAdicional: 'Ninguno',
+              tipoSangre: 'AB_NEGATIVO',
             }),
           }),
         });
@@ -1029,6 +1058,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
       expect(perfilAlumno.infoMedica?.medicamentos).toBe('Salbutamol');
       expect(perfilAlumno.infoMedica?.alergias).toBe('Polen');
       expect(perfilAlumno.infoMedica?.tratamientoAdicional).toBe('Ninguno');
+      expect(perfilAlumno.infoMedica?.tipoSangre).toBe('AB_NEGATIVO');
     });
 
     it('datos de salud (infoMedica) + contactos guardados correctamente -> MAESTRO', async () => {
@@ -1096,6 +1126,163 @@ describe('PersonasController — POST /personas (e2e)', () => {
         'Contacto Administrativo',
       );
       expect(perfilAdministrativo.infoMedica?.tieneCondicionMedica).toBe(false);
+    });
+  });
+
+  /**
+   * Tipo de contratación del maestro (2026-09-07, sin día de roadmap
+   * asignado) — `tipoContratacion` requerido en toda alta de MAESTRO
+   * (`@IsEnum` sin `@IsOptional`, mismo patrón que `tipoSangre`); campos
+   * condicionales `diasTemporal` (TEMPORAL) / `contratoFecha*` (CONTRATO) con
+   * `@ValidateIf` en el DTO y la regla cruzada de fechas en
+   * `PersonasService`. Columnas NULLABLE en DB, sin backfill.
+   */
+  describe('tipoContratacion del maestro (2026-09-07)', () => {
+    it('alta de MAESTRO sin tipoContratacion -> 400 VALIDATION_ERROR', async () => {
+      const perfil = perfilMaestroValido() as Record<string, unknown>;
+      delete perfil.tipoContratacion;
+
+      const res = await request(app.getHttpServer())
+        .post('/personas')
+        .set('Authorization', `Bearer ${await tokenAdmin()}`)
+        .send({ rol: RolUsuario.MAESTRO, perfilMaestro: perfil });
+
+      expect(res.status).toBe(400);
+      expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+      expect(createUser).not.toHaveBeenCalled();
+    });
+
+    it('alta TEMPORAL sin diasTemporal -> 400 VALIDATION_ERROR', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/personas')
+        .set('Authorization', `Bearer ${await tokenAdmin()}`)
+        .send({
+          rol: RolUsuario.MAESTRO,
+          perfilMaestro: perfilMaestroValido({ tipoContratacion: 'TEMPORAL' }),
+        });
+
+      expect(res.status).toBe(400);
+      expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+      expect(createUser).not.toHaveBeenCalled();
+    });
+
+    it('alta CONTRATO con contratoFechaFin anterior a contratoFechaInicio -> 400 VALIDATION_ERROR', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/personas')
+        .set('Authorization', `Bearer ${await tokenAdmin()}`)
+        .send({
+          rol: RolUsuario.MAESTRO,
+          perfilMaestro: perfilMaestroValido({
+            tipoContratacion: 'CONTRATO',
+            contratoFechaInicio: '2026-06-01',
+            contratoFechaFin: '2026-01-01',
+          }),
+        });
+
+      expect(res.status).toBe(400);
+      expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+      expect(createUser).not.toHaveBeenCalled();
+    });
+
+    it('alta CONTRATO con contratoFechaFin igual a contratoFechaInicio -> 400 VALIDATION_ERROR (anterior o igual)', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/personas')
+        .set('Authorization', `Bearer ${await tokenAdmin()}`)
+        .send({
+          rol: RolUsuario.MAESTRO,
+          perfilMaestro: perfilMaestroValido({
+            tipoContratacion: 'CONTRATO',
+            contratoFechaInicio: '2026-01-01',
+            contratoFechaFin: '2026-01-01',
+          }),
+        });
+
+      expect(res.status).toBe(400);
+      expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+      expect(createUser).not.toHaveBeenCalled();
+    });
+
+    it('alta CONTRATO válida -> 201, persiste tipoContratacion + ambas fechas, diasTemporal null', async () => {
+      mockCreateUserExitoso();
+
+      const res = await request(app.getHttpServer())
+        .post('/personas')
+        .set('Authorization', `Bearer ${await tokenAdmin()}`)
+        .send({
+          rol: RolUsuario.MAESTRO,
+          perfilMaestro: perfilMaestroValido({
+            tipoContratacion: 'CONTRATO',
+            contratoFechaInicio: '2026-01-01',
+            contratoFechaFin: '2026-12-31',
+          }),
+        });
+
+      expect(res.status).toBe(201);
+      const body = res.body as AltaPersonaBody;
+      usuarioIdsCreados.push(body.data.usuario.id);
+
+      const perfilMaestro = await prisma.perfilMaestro.findUniqueOrThrow({
+        where: { usuarioId: body.data.usuario.id },
+      });
+      expect(perfilMaestro.tipoContratacion).toBe('CONTRATO');
+      expect(perfilMaestro.diasTemporal).toBeNull();
+      expect(perfilMaestro.contratoFechaInicio?.toISOString()).toBe(
+        new Date('2026-01-01').toISOString(),
+      );
+      expect(perfilMaestro.contratoFechaFin?.toISOString()).toBe(
+        new Date('2026-12-31').toISOString(),
+      );
+    });
+
+    it('alta TEMPORAL válida -> 201, persiste diasTemporal, contratoFecha* null', async () => {
+      mockCreateUserExitoso();
+
+      const res = await request(app.getHttpServer())
+        .post('/personas')
+        .set('Authorization', `Bearer ${await tokenAdmin()}`)
+        .send({
+          rol: RolUsuario.MAESTRO,
+          perfilMaestro: perfilMaestroValido({
+            tipoContratacion: 'TEMPORAL',
+            diasTemporal: 90,
+          }),
+        });
+
+      expect(res.status).toBe(201);
+      const body = res.body as AltaPersonaBody;
+      usuarioIdsCreados.push(body.data.usuario.id);
+
+      const perfilMaestro = await prisma.perfilMaestro.findUniqueOrThrow({
+        where: { usuarioId: body.data.usuario.id },
+      });
+      expect(perfilMaestro.tipoContratacion).toBe('TEMPORAL');
+      expect(perfilMaestro.diasTemporal).toBe(90);
+      expect(perfilMaestro.contratoFechaInicio).toBeNull();
+      expect(perfilMaestro.contratoFechaFin).toBeNull();
+    });
+
+    it('alta BASE válida -> 201, campos condicionales quedan null', async () => {
+      mockCreateUserExitoso();
+
+      const res = await request(app.getHttpServer())
+        .post('/personas')
+        .set('Authorization', `Bearer ${await tokenAdmin()}`)
+        .send({
+          rol: RolUsuario.MAESTRO,
+          perfilMaestro: perfilMaestroValido({ tipoContratacion: 'BASE' }),
+        });
+
+      expect(res.status).toBe(201);
+      const body = res.body as AltaPersonaBody;
+      usuarioIdsCreados.push(body.data.usuario.id);
+
+      const perfilMaestro = await prisma.perfilMaestro.findUniqueOrThrow({
+        where: { usuarioId: body.data.usuario.id },
+      });
+      expect(perfilMaestro.tipoContratacion).toBe('BASE');
+      expect(perfilMaestro.diasTemporal).toBeNull();
+      expect(perfilMaestro.contratoFechaInicio).toBeNull();
+      expect(perfilMaestro.contratoFechaFin).toBeNull();
     });
   });
 });

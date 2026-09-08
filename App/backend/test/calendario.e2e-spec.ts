@@ -1013,7 +1013,7 @@ describe('CalendarioController (e2e)', () => {
           carreraId,
           estatusAcademico: 'INSCRITO',
           periodoIngreso: '2027-1',
-          semestreActual: 1,
+          cuatrimestreActual: 1,
         },
       });
       await prisma.grupoAlumno.create({

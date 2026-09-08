@@ -16,11 +16,16 @@ import {
   NivelPermiso,
   Prisma,
   RolUsuario,
+  TipoContratacion,
   TipoLicencia,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
-import { CrearPersonaDto, InfoMedicaDto } from './dto/crear-persona.dto';
+import {
+  CrearPersonaDto,
+  InfoMedicaDto,
+  PerfilMaestroDto,
+} from './dto/crear-persona.dto';
 import { ListarPersonasQueryDto } from './dto/listar-personas.query.dto';
 import { generateTemporaryPassword } from './temporary-password';
 
@@ -32,7 +37,7 @@ export interface PersonaListItemAlumno {
   matricula: string;
   carrera: { id: string; nombre: string };
   estatusAcademico: EstatusAcademico;
-  semestreActual: number;
+  cuatrimestreActual: number;
   activo: boolean;
 }
 
@@ -50,6 +55,16 @@ export interface PersonaListItemMaestro {
    * limpia al reactivar, ver Contrato de API de `PATCH /personas/:id/estatus`)
    * — el frontend solo lo muestra cuando el estatus actual es LICENCIA. */
   tipoLicencia: TipoLicencia | null;
+  /** Tipo de contratación y sus campos condicionales (2026-09-07 — paridad
+   * con `GET /perfil` y `POST /personas`, ahora también en el listado del
+   * admin). `null` para maestros de altas anteriores al 2026-09-07 (columnas
+   * nullable, sin backfill). `diasTemporal` solo tiene valor si
+   * `tipoContratacion === 'TEMPORAL'`; `contratoFechaInicio`/`contratoFechaFin`
+   * solo si `=== 'CONTRATO'` (fechas ISO `YYYY-MM-DD`). */
+  tipoContratacion: TipoContratacion | null;
+  diasTemporal: number | null;
+  contratoFechaInicio: string | null;
+  contratoFechaFin: string | null;
   activo: boolean;
 }
 
@@ -303,6 +318,33 @@ export class PersonasService {
       medicamentos: infoMedica.medicamentos,
       alergias: infoMedica.alergias,
       tratamientoAdicional: infoMedica.tratamientoAdicional,
+      tipoSangre: infoMedica.tipoSangre,
+    };
+  }
+
+  /**
+   * Tipo de contratación del maestro (2026-09-07) — `tipoContratacion` es
+   * siempre requerido; los 3 campos condicionales solo traen valor según el
+   * tipo (`diasTemporal` si TEMPORAL, `contratoFecha*` si CONTRATO), en
+   * cualquier otro caso quedan `null`. El DTO ya validó forma/tipo
+   * (`@ValidateIf`) y `PersonasService.altaPersona` la regla cruzada de
+   * fechas antes de llegar acá. `contratoFecha*` son `string` ISO en el DTO
+   * y `DateTime?` en el schema — se convierten con `new Date(...)`.
+   */
+  private datosContratacionMaestro(perfil: PerfilMaestroDto) {
+    const esTemporal = perfil.tipoContratacion === TipoContratacion.TEMPORAL;
+    const esContrato = perfil.tipoContratacion === TipoContratacion.CONTRATO;
+    return {
+      tipoContratacion: perfil.tipoContratacion,
+      diasTemporal: esTemporal ? (perfil.diasTemporal ?? null) : null,
+      contratoFechaInicio:
+        esContrato && perfil.contratoFechaInicio
+          ? new Date(perfil.contratoFechaInicio)
+          : null,
+      contratoFechaFin:
+        esContrato && perfil.contratoFechaFin
+          ? new Date(perfil.contratoFechaFin)
+          : null,
     };
   }
 
@@ -639,11 +681,34 @@ export class PersonasService {
       // `PerfilAlumno.matricula` queda como defensa mínima contra un bug
       // futuro en el generador, no como camino esperado (ver catch de
       // `P2002` más abajo).
-    } else if (dto.rol === RolUsuario.MAESTRO && !dto.perfilMaestro) {
-      throw new BadRequestException({
-        error: 'perfilMaestro es requerido para rol MAESTRO',
-        code: 'VALIDATION_ERROR',
-      });
+    } else if (dto.rol === RolUsuario.MAESTRO) {
+      if (!dto.perfilMaestro) {
+        throw new BadRequestException({
+          error: 'perfilMaestro es requerido para rol MAESTRO',
+          code: 'VALIDATION_ERROR',
+        });
+      }
+
+      // Regla cruzada de `tipoContratacion === CONTRATO` (2026-09-07) — el
+      // DTO (`@ValidateIf` + `@IsDateString`) ya garantiza que ambas fechas
+      // vienen y tienen formato ISO válido cuando el tipo es CONTRATO; acá
+      // se valida solo la relación ENTRE ellas, mismo criterio que
+      // Calendario valida `fechaFin`/`recurrenciaHasta` contra `fechaInicio`
+      // en el service (no en el DTO). Reutiliza `VALIDATION_ERROR`, sin
+      // código nuevo.
+      if (
+        dto.perfilMaestro.tipoContratacion === TipoContratacion.CONTRATO &&
+        dto.perfilMaestro.contratoFechaInicio &&
+        dto.perfilMaestro.contratoFechaFin &&
+        new Date(dto.perfilMaestro.contratoFechaFin).getTime() <=
+          new Date(dto.perfilMaestro.contratoFechaInicio).getTime()
+      ) {
+        throw new BadRequestException({
+          error:
+            'contratoFechaFin no puede ser anterior o igual a contratoFechaInicio',
+          code: 'VALIDATION_ERROR',
+        });
+      }
     } else if (dto.rol === RolUsuario.ADMINISTRATIVO) {
       // El propio DTO ya garantiza que `perfilAdministrativo` viene si `rol`
       // es ADMINISTRATIVO — este chequeo es defensivo, mismo criterio que el
@@ -788,7 +853,7 @@ export class PersonasService {
               // de esta operación de alta).
               estatusAcademico: 'INSCRITO',
               periodoIngreso: dto.perfilAlumno.periodoIngreso,
-              semestreActual: dto.perfilAlumno.semestreActual,
+              cuatrimestreActual: dto.perfilAlumno.cuatrimestreActual,
               telefono: dto.perfilAlumno.telefono,
             },
           });
@@ -831,6 +896,11 @@ export class PersonasService {
               // alguien ya en BAJA/LICENCIA (corrección QA manual,
               // 2026-08-12). El DTO ya no acepta `estatus` en la creación.
               estatus: EstatusEmpleado.ACTIVO,
+              // Tipo de contratación (2026-09-07) — ver
+              // `datosContratacionMaestro`. `tipoContratacion` siempre
+              // presente (requerido en el DTO); los condicionales quedan
+              // `null` salvo el caso que aplique.
+              ...this.datosContratacionMaestro(dto.perfilMaestro),
             },
           });
 
@@ -1121,7 +1191,7 @@ export class PersonasService {
             apellidoMaterno: true,
             matricula: true,
             estatusAcademico: true,
-            semestreActual: true,
+            cuatrimestreActual: true,
             carrera: { select: { id: true, nombre: true } },
             usuario: { select: { activo: true } },
           },
@@ -1144,7 +1214,7 @@ export class PersonasService {
           matricula: alumno.matricula,
           carrera: alumno.carrera,
           estatusAcademico: alumno.estatusAcademico,
-          semestreActual: alumno.semestreActual,
+          cuatrimestreActual: alumno.cuatrimestreActual,
           activo: alumno.usuario.activo,
         })),
         page,
@@ -1212,6 +1282,10 @@ export class PersonasService {
           cedulaProfesional: true,
           estatus: true,
           tipoLicencia: true,
+          tipoContratacion: true,
+          diasTemporal: true,
+          contratoFechaInicio: true,
+          contratoFechaFin: true,
           usuario: { select: { activo: true } },
         },
         orderBy: [
@@ -1233,6 +1307,14 @@ export class PersonasService {
         cedulaProfesional: maestro.cedulaProfesional,
         estatus: maestro.estatus,
         tipoLicencia: maestro.tipoLicencia,
+        tipoContratacion: maestro.tipoContratacion,
+        diasTemporal: maestro.diasTemporal,
+        contratoFechaInicio: maestro.contratoFechaInicio
+          ? maestro.contratoFechaInicio.toISOString().slice(0, 10)
+          : null,
+        contratoFechaFin: maestro.contratoFechaFin
+          ? maestro.contratoFechaFin.toISOString().slice(0, 10)
+          : null,
         activo: maestro.usuario.activo,
       })),
       page,

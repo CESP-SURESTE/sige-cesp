@@ -41,7 +41,7 @@ export interface GrupoAlumnoListItem {
   apellidoPaterno: string;
   apellidoMaterno: string | null;
   matricula: string;
-  semestreActual: number;
+  cuatrimestreActual: number;
   estatusAcademico: EstatusAcademico;
   fechaInscripcion: string;
 }
@@ -561,7 +561,7 @@ export class GruposService {
               apellidoPaterno: true,
               apellidoMaterno: true,
               matricula: true,
-              semestreActual: true,
+              cuatrimestreActual: true,
               estatusAcademico: true,
             },
           },
@@ -574,7 +574,7 @@ export class GruposService {
         apellidoPaterno: f.alumno.apellidoPaterno,
         apellidoMaterno: f.alumno.apellidoMaterno,
         matricula: f.alumno.matricula,
-        semestreActual: f.alumno.semestreActual,
+        cuatrimestreActual: f.alumno.cuatrimestreActual,
         estatusAcademico: f.alumno.estatusAcademico,
         fechaInscripcion: f.fechaInscripcion.toISOString(),
       }));

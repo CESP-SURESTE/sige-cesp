@@ -21,6 +21,8 @@ import {
   PuestoAdministrativo,
   RolUsuario,
   TipoContacto,
+  TipoContratacion,
+  TipoSangre,
 } from '@prisma/client';
 
 /**
@@ -71,6 +73,12 @@ export class ContactoAlumnoDto extends ContactoDto {
  * roles (1-a-1 con el perfil, mismo espíritu que `MallaCurricular` es
  * 1-a-1 con `Carrera`, aunque acá es `create` directo dentro de la
  * transacción de alta, no un `upsert` posterior).
+ *
+ * `tipoSangre` (2026-09-07) es NOT NULL a nivel de aplicación (`@IsEnum` sin
+ * `@IsOptional`, requerido en toda alta nueva) pero NULLABLE a nivel de DB
+ * (`InfoMedica*.tipoSangre TipoSangre?`) — las filas ya existentes no tienen
+ * este dato médico y no se inventa un valor de retro-llenado (mismo criterio
+ * de "rastro histórico, no se retro-completa" que `tipoLicencia`/`motivoBaja`).
  */
 export class InfoMedicaDto {
   @IsBoolean({ message: 'tieneCondicionMedica debe ser booleano' })
@@ -91,6 +99,11 @@ export class InfoMedicaDto {
   @IsOptional()
   @IsString()
   tratamientoAdicional?: string;
+
+  @IsEnum(TipoSangre, {
+    message: 'tipoSangre debe ser un tipo de sangre válido',
+  })
+  tipoSangre!: TipoSangre;
 }
 
 /**
@@ -172,9 +185,9 @@ export class PerfilAlumnoDto {
   @IsNotEmpty({ message: 'periodoIngreso es requerido' })
   periodoIngreso!: string;
 
-  @IsInt({ message: 'semestreActual debe ser un entero' })
-  @Min(1, { message: 'semestreActual debe ser al menos 1' })
-  semestreActual!: number;
+  @IsInt({ message: 'cuatrimestreActual debe ser un entero' })
+  @Min(1, { message: 'cuatrimestreActual debe ser al menos 1' })
+  cuatrimestreActual!: number;
 
   @IsOptional()
   @IsString()
@@ -225,6 +238,64 @@ export class PerfilMaestroDto {
     { message: 'fechaContratacion debe ser una fecha ISO 8601 válida' },
   )
   fechaContratacion!: string;
+
+  /**
+   * Tipo de contratación (2026-09-07) — NOT NULL a nivel de aplicación
+   * (`@IsEnum` sin `@IsOptional`, requerido en toda alta nueva de MAESTRO)
+   * pero NULLABLE a nivel de DB (`PerfilMaestro.tipoContratacion
+   * TipoContratacion?`) — las filas ya existentes no tienen este dato y no
+   * se inventa un valor de retro-llenado (mismo criterio de "rastro
+   * histórico, no se retro-completa" que `tipoSangre`/`tipoLicencia`/
+   * `motivoBaja`).
+   */
+  @IsEnum(TipoContratacion, {
+    message: 'tipoContratacion debe ser BASE, TEMPORAL o CONTRATO',
+  })
+  tipoContratacion!: TipoContratacion;
+
+  /**
+   * Solo aplica (y es requerido) cuando `tipoContratacion === TEMPORAL` —
+   * duración del contrato temporal en días. `@ValidateIf` para forma/tipo
+   * (mismo patrón que `tipoLicencia`/`motivoBaja` en `PATCH
+   * /personas/:id/estatus`); si `tipoContratacion` no es TEMPORAL el campo
+   * se ignora aunque venga.
+   */
+  @ValidateIf(
+    (dto: PerfilMaestroDto) =>
+      dto.tipoContratacion === TipoContratacion.TEMPORAL,
+  )
+  @IsInt({ message: 'diasTemporal debe ser un entero' })
+  @Min(1, { message: 'diasTemporal debe ser al menos 1' })
+  diasTemporal?: number;
+
+  /**
+   * `contratoFechaInicio`/`contratoFechaFin` solo aplican (y son requeridas)
+   * cuando `tipoContratacion === CONTRATO`. Son `string` ISO 8601 en el DTO;
+   * `PersonasService.altaPersona` las convierte a `Date` para el `create`
+   * (`DateTime?` en el schema). La regla cruzada (`contratoFechaFin` no puede
+   * ser anterior o igual a `contratoFechaInicio`) se valida en
+   * `PersonasService`, no acá — mismo criterio que Calendario valida
+   * `fechaFin`/`recurrenciaHasta` contra `fechaInicio` en el service.
+   */
+  @ValidateIf(
+    (dto: PerfilMaestroDto) =>
+      dto.tipoContratacion === TipoContratacion.CONTRATO,
+  )
+  @IsDateString(
+    {},
+    { message: 'contratoFechaInicio debe ser una fecha ISO 8601 válida' },
+  )
+  contratoFechaInicio?: string;
+
+  @ValidateIf(
+    (dto: PerfilMaestroDto) =>
+      dto.tipoContratacion === TipoContratacion.CONTRATO,
+  )
+  @IsDateString(
+    {},
+    { message: 'contratoFechaFin debe ser una fecha ISO 8601 válida' },
+  )
+  contratoFechaFin?: string;
 
   @ArrayMinSize(1, { message: 'contactos debe tener al menos 1 elemento' })
   @ArrayMaxSize(3, { message: 'contactos debe tener máximo 3 elementos' })

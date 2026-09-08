@@ -8,6 +8,7 @@ import {
   NivelPermiso,
   PuestoAdministrativo,
   RolUsuario,
+  TipoContratacion,
 } from '@prisma/client';
 import { AppModule } from '../src/app.module';
 import { SEDE_GUARD_ENV_OVERRIDE } from '../src/common/guards/sede.guard';
@@ -30,7 +31,7 @@ interface AlumnoListItem {
   matricula: string;
   carrera: { id: string; nombre: string };
   estatusAcademico: string;
-  semestreActual: number;
+  cuatrimestreActual: number;
   activo: boolean;
 }
 
@@ -41,6 +42,11 @@ interface MaestroListItem {
   apellidoMaterno: string | null;
   cedulaProfesional: string | null;
   estatus: string;
+  tipoLicencia: string | null;
+  tipoContratacion: string | null;
+  diasTemporal: number | null;
+  contratoFechaInicio: string | null;
+  contratoFechaFin: string | null;
   activo: boolean;
 }
 
@@ -200,6 +206,10 @@ describe('PersonasController — GET /personas (e2e)', () => {
       nombres: string;
       estatus: EstatusEmpleado;
       cedulaProfesional?: string;
+      tipoContratacion?: TipoContratacion;
+      diasTemporal?: number;
+      contratoFechaInicio?: Date;
+      contratoFechaFin?: Date;
     }) {
       const usuario = await prisma.usuario.create({
         data: {
@@ -220,6 +230,10 @@ describe('PersonasController — GET /personas (e2e)', () => {
           telefono: '9990009999',
           fechaContratacion: new Date('2024-01-01'),
           estatus: params.estatus,
+          tipoContratacion: params.tipoContratacion,
+          diasTemporal: params.diasTemporal,
+          contratoFechaInicio: params.contratoFechaInicio,
+          contratoFechaFin: params.contratoFechaFin,
         },
       });
       usuarioIdsCreados.push(usuario.id);
@@ -379,7 +393,7 @@ describe('PersonasController — GET /personas (e2e)', () => {
       nombre: 'Licenciatura en Administración',
     });
     expect(luis?.estatusAcademico).toBe('INSCRITO');
-    expect(luis?.semestreActual).toBe(1);
+    expect(luis?.cuatrimestreActual).toBe(1);
     expect(luis?.activo).toBe(true);
     expect(Object.keys(luis!).sort()).toEqual(
       [
@@ -390,7 +404,7 @@ describe('PersonasController — GET /personas (e2e)', () => {
         'matricula',
         'carrera',
         'estatusAcademico',
-        'semestreActual',
+        'cuatrimestreActual',
         'activo',
       ].sort(),
     );
@@ -434,6 +448,10 @@ describe('PersonasController — GET /personas (e2e)', () => {
           'cedulaProfesional',
           'estatus',
           'tipoLicencia',
+          'tipoContratacion',
+          'diasTemporal',
+          'contratoFechaInicio',
+          'contratoFechaFin',
           'activo',
         ].sort(),
       );
@@ -454,6 +472,111 @@ describe('PersonasController — GET /personas (e2e)', () => {
     expect(body.total).toBe(1);
     expect(body.data[0].apellidoPaterno).toBe('Zeta');
     expect(body.data[0].cedulaProfesional).toBe(`CED-${markerMerida}`);
+  });
+
+  it('rol=MAESTRO -> el listado expone tipoContratacion + campos de contrato (CONTRATO con fechas, BASE en null)', async () => {
+    // Fixtures propios para este caso (2026-09-07 — `tipoContratacion` en el
+    // listado del admin). Se limpian vía `usuarioIdsCreados` en `afterAll`.
+    const markerContrat = `QACONTR${randomUUID().slice(0, 8)}`;
+
+    const usuarioContrato = await prisma.usuario.create({
+      data: {
+        id: randomUUID(),
+        email: `fixture.listado.${randomUUID()}@example.com`,
+        rol: RolUsuario.MAESTRO,
+        sedeId: sedeMeridaId,
+      },
+    });
+    usuarioIdsCreados.push(usuarioContrato.id);
+    await prisma.perfilMaestro.create({
+      data: {
+        usuarioId: usuarioContrato.id,
+        nombres: `Fixture ${markerContrat}`,
+        apellidoPaterno: 'Aaa',
+        curp: `FX${randomUUID().slice(0, 16).toUpperCase()}`,
+        correoPersonal: `fixture.listado.personal.${randomUUID()}@example.com`,
+        telefono: '9990009999',
+        fechaContratacion: new Date('2024-01-01'),
+        estatus: EstatusEmpleado.ACTIVO,
+        tipoContratacion: TipoContratacion.CONTRATO,
+        contratoFechaInicio: new Date('2026-02-01T00:00:00.000Z'),
+        contratoFechaFin: new Date('2026-11-30T00:00:00.000Z'),
+      },
+    });
+
+    const usuarioBase = await prisma.usuario.create({
+      data: {
+        id: randomUUID(),
+        email: `fixture.listado.${randomUUID()}@example.com`,
+        rol: RolUsuario.MAESTRO,
+        sedeId: sedeMeridaId,
+      },
+    });
+    usuarioIdsCreados.push(usuarioBase.id);
+    await prisma.perfilMaestro.create({
+      data: {
+        usuarioId: usuarioBase.id,
+        nombres: `Fixture ${markerContrat}`,
+        apellidoPaterno: 'Bbb',
+        curp: `FX${randomUUID().slice(0, 16).toUpperCase()}`,
+        correoPersonal: `fixture.listado.personal.${randomUUID()}@example.com`,
+        telefono: '9990009999',
+        fechaContratacion: new Date('2024-01-01'),
+        estatus: EstatusEmpleado.ACTIVO,
+        tipoContratacion: TipoContratacion.BASE,
+      },
+    });
+
+    const res = await request(app.getHttpServer())
+      .get('/personas')
+      .query({ rol: 'MAESTRO', buscar: markerContrat, limit: 100 })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(adminMeridaId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+
+    expect(res.status).toBe(200);
+    const body = res.body as ListadoBody<MaestroListItem>;
+    expect(body.total).toBe(2);
+
+    const contrato = body.data.find((m) => m.apellidoPaterno === 'Aaa');
+    expect(contrato).toMatchObject({
+      tipoContratacion: 'CONTRATO',
+      diasTemporal: null,
+      contratoFechaInicio: '2026-02-01',
+      contratoFechaFin: '2026-11-30',
+    });
+
+    const base = body.data.find((m) => m.apellidoPaterno === 'Bbb');
+    expect(base).toMatchObject({
+      tipoContratacion: 'BASE',
+      diasTemporal: null,
+      contratoFechaInicio: null,
+      contratoFechaFin: null,
+    });
+  });
+
+  it('rol=MAESTRO -> maestro de alta anterior al cambio (sin tipoContratacion) trae los 4 campos en null', async () => {
+    // Los fixtures del `beforeAll` se crean sin `tipoContratacion` — replican
+    // a un maestro dado de alta antes del 2026-09-07 (columnas nullable, sin
+    // backfill).
+    const res = await request(app.getHttpServer())
+      .get('/personas')
+      .query({ rol: 'MAESTRO', buscar: markerMerida, limit: 100 })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(adminMeridaId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+
+    expect(res.status).toBe(200);
+    const body = res.body as ListadoBody<MaestroListItem>;
+    expect(body.data.length).toBeGreaterThan(0);
+    for (const maestro of body.data) {
+      expect(maestro.tipoContratacion).toBeNull();
+      expect(maestro.diasTemporal).toBeNull();
+      expect(maestro.contratoFechaInicio).toBeNull();
+      expect(maestro.contratoFechaFin).toBeNull();
+    }
   });
 
   it('filtro estatus válido (rol=MAESTRO) -> 200, solo el maestro con ese estatus', async () => {

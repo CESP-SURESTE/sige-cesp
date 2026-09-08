@@ -31,7 +31,7 @@ interface ListaBody {
     apellidoPaterno: string;
     apellidoMaterno: string | null;
     matricula: string;
-    semestreActual: number;
+    cuatrimestreActual: number;
     estatusAcademico: string;
     fechaInscripcion: string;
   }>;
@@ -110,7 +110,7 @@ describe('GruposController — matrícula de alumnos (e2e)', () => {
         carreraId: opts.carreraId,
         estatusAcademico: 'INSCRITO',
         periodoIngreso: '2026-1',
-        semestreActual: 1,
+        cuatrimestreActual: 1,
         telefono: '9990000000',
       },
     });
@@ -574,7 +574,7 @@ describe('GruposController — matrícula de alumnos (e2e)', () => {
         'fechaInscripcion',
         'matricula',
         'nombres',
-        'semestreActual',
+        'cuatrimestreActual',
         'usuarioId',
       ].sort(),
     );

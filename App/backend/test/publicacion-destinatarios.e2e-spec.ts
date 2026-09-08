@@ -146,7 +146,7 @@ describe('resolverDestinatarios — ramas CARRERA y GRUPO (e2e)', () => {
         carreraId: opts.carreraId,
         estatusAcademico: 'INSCRITO',
         periodoIngreso: '2027-1',
-        semestreActual: 1,
+        cuatrimestreActual: 1,
       },
     });
     return { usuarioId: usuario.id, perfilId: perfil.id };

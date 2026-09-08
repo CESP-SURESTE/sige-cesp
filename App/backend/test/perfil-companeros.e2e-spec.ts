@@ -30,7 +30,7 @@ interface CompanerosBody {
       apellidoPaterno: string;
       apellidoMaterno: string | null;
       matricula: string;
-      semestreActual: number;
+      cuatrimestreActual: number;
     }>;
   }>;
 }
@@ -72,7 +72,7 @@ describe('PerfilController — GET /perfil/grupo/companeros (e2e)', () => {
     apellidoPaterno?: string;
     apellidoMaterno?: string;
     nombres?: string;
-    semestreActual?: number;
+    cuatrimestreActual?: number;
   }): Promise<{ usuarioId: string; perfilId: string; matricula: string }> {
     const usuario = await prisma.usuario.create({
       data: {
@@ -97,7 +97,7 @@ describe('PerfilController — GET /perfil/grupo/companeros (e2e)', () => {
         carreraId: opts.carreraId,
         estatusAcademico: 'INSCRITO',
         periodoIngreso: '2026-1',
-        semestreActual: opts.semestreActual ?? 1,
+        cuatrimestreActual: opts.cuatrimestreActual ?? 1,
         telefono: '9990000000',
       },
     });
@@ -255,7 +255,7 @@ describe('PerfilController — GET /perfil/grupo/companeros (e2e)', () => {
     expect(data[0].companeros[0]).toMatchObject({
       matricula: compaA.matricula,
       apellidoPaterno: 'Aguilar',
-      semestreActual: 1,
+      cuatrimestreActual: 1,
     });
   });
 

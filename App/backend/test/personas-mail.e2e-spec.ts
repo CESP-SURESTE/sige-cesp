@@ -97,7 +97,7 @@ describe('PersonasController — POST /personas + correo de bienvenida (e2e)', (
   }
 
   function infoMedicaValida() {
-    return { tieneCondicionMedica: false };
+    return { tieneCondicionMedica: false, tipoSangre: 'O_POSITIVO' };
   }
 
   function mockCreateUserExitoso() {
@@ -148,7 +148,7 @@ describe('PersonasController — POST /personas + correo de bienvenida (e2e)', (
         correoPersonal: `alumno.personal.${randomUUID()}@example.com`,
         carreraId: carreraMeridaId,
         periodoIngreso: '2026-1',
-        semestreActual: 1,
+        cuatrimestreActual: 1,
         contactos: [contactoAlumnoValido()],
         infoMedica: infoMedicaValida(),
         ...overrides,

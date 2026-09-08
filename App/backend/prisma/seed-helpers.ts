@@ -180,7 +180,7 @@ export async function seedAlumno(params: {
       carreraId: params.carreraId,
       estatusAcademico: params.estatusAcademico ?? EstatusAcademico.INSCRITO,
       periodoIngreso: '2026-1',
-      semestreActual: 1,
+      cuatrimestreActual: 1,
       contactos: {
         create: [
           {

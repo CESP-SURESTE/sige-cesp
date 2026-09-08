@@ -220,7 +220,7 @@ describe('PersonasController — PATCH /personas/:id/estatus (e2e)', () => {
         carreraId: carreraMeridaId,
         estatusAcademico: 'INSCRITO',
         periodoIngreso: '2026-1',
-        semestreActual: 1,
+        cuatrimestreActual: 1,
         telefono: '9990009999',
       },
     });

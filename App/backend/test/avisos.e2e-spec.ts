@@ -200,7 +200,7 @@ describe('AvisosController (e2e)', () => {
         carreraId: carreraDestinoId,
         estatusAcademico: 'INSCRITO',
         periodoIngreso: '2027-1',
-        semestreActual: 1,
+        cuatrimestreActual: 1,
       },
     });
     perfilAlumnoIdsCreados.push(perfil.id);

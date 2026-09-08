@@ -9,6 +9,7 @@ import {
   EstatusEmpleado,
   NivelPermiso,
   PuestoAdministrativo,
+  TipoContratacion,
 } from '@prisma/client';
 import { AppModule } from '../src/app.module';
 import { SEDE_GUARD_ENV_OVERRIDE } from '../src/common/guards/sede.guard';
@@ -51,7 +52,7 @@ interface PerfilBody {
       correoPersonal: string;
       estatusAcademico: string;
       periodoIngreso: string;
-      semestreActual: number;
+      cuatrimestreActual: number;
       telefono: string | null;
       esMenorDeEdad: boolean;
       contactos: {
@@ -86,6 +87,10 @@ interface PerfilBody {
       telefono: string;
       fechaContratacion: string;
       estatus: string;
+      tipoContratacion: 'BASE' | 'TEMPORAL' | 'CONTRATO' | null;
+      diasTemporal: number | null;
+      contratoFechaInicio: string | null;
+      contratoFechaFin: string | null;
       contactos: {
         id: string;
         nombre: string;
@@ -212,7 +217,7 @@ describe('PerfilController — GET /perfil (e2e)', () => {
         carreraId: carreraMerida.id,
         estatusAcademico: 'INSCRITO',
         periodoIngreso: '2026-1',
-        semestreActual: 1,
+        cuatrimestreActual: 1,
       },
     });
     alumnoMenorId = alumnoMenor.id;
@@ -269,6 +274,12 @@ describe('PerfilController — GET /perfil (e2e)', () => {
         telefono: '9990003333',
         fechaContratacion: new Date('2024-08-01'),
         estatus: EstatusEmpleado.ACTIVO,
+        // Tipo de contratación (2026-09-07) — CONTRATO con fechas para
+        // ejercitar que `GET /perfil` devuelve `contratoFecha*` (Día 17
+        // extendido).
+        tipoContratacion: TipoContratacion.CONTRATO,
+        contratoFechaInicio: new Date('2024-08-01'),
+        contratoFechaFin: new Date('2025-07-31'),
       },
     });
     await prisma.contactoMaestro.createMany({
@@ -382,7 +393,7 @@ describe('PerfilController — GET /perfil (e2e)', () => {
     expect(body.alumno?.correoPersonal).toBe('luis.chan.personal@example.com');
     expect(body.alumno?.estatusAcademico).toBe('INSCRITO');
     expect(body.alumno?.periodoIngreso).toBe('2026-1');
-    expect(body.alumno?.semestreActual).toBe(1);
+    expect(body.alumno?.cuatrimestreActual).toBe(1);
 
     // `esMenorDeEdad` — calculado al vuelo, nunca persistido (regla 1 de
     // CLAUDE.md raíz). `luis.chan` nació el 2007-03-12 (prisma/seed.ts) —
@@ -459,6 +470,17 @@ describe('PerfilController — GET /perfil (e2e)', () => {
     expect(body.maestro?.estatus).toBe('ACTIVO');
     expect(body.maestro).not.toHaveProperty('usuarioId');
     expect(body.maestro).not.toHaveProperty('infoMedica');
+
+    // Tipo de contratación (2026-09-07) — fixture es CONTRATO, devuelve las
+    // 2 fechas (ISO 8601), `diasTemporal` null (solo aplica a TEMPORAL).
+    expect(body.maestro?.tipoContratacion).toBe('CONTRATO');
+    expect(body.maestro?.diasTemporal).toBeNull();
+    expect(body.maestro?.contratoFechaInicio).toBe(
+      new Date('2024-08-01').toISOString(),
+    );
+    expect(body.maestro?.contratoFechaFin).toBe(
+      new Date('2025-07-31').toISOString(),
+    );
 
     // `contactos` — ordenados ascendente por `orden`, sin campo `tipo`
     // (exclusivo de `ContactoAlumno`).

@@ -1,4 +1,11 @@
-import { IsEnum, IsInt, IsNotEmpty, IsString, Min } from 'class-validator';
+import {
+  IsEnum,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Min,
+} from 'class-validator';
 import { ModalidadCarrera, NivelCarrera } from '@prisma/client';
 
 /**
@@ -10,12 +17,24 @@ import { ModalidadCarrera, NivelCarrera } from '@prisma/client';
  * fuerzan `estatus: ACTIVO` en vez de aceptarlo en el body).
  *
  * `duracion` — SUPUESTO documentado (el roadmap no aclara meses vs.
- * semestres): se asume SEMESTRES. Consistente con `PerfilAlumno.semestreActual`
- * (el campo por el que un alumno avanza en el sistema, mismo dominio de
- * "duración académica") y con el dato real ya sembrado en `prisma/seed.ts`
- * (`duracion: 8` para las 4 carreras `LICENCIATURA` del seed — 4 años x 2
- * semestres/año, la duración estándar de una licenciatura mexicana; en
- * meses habría sido 48, un valor que no aparece en ningún lado del sistema).
+ * cuatrimestres): se asume CUATRIMESTRES. Consistente con
+ * `PerfilAlumno.cuatrimestreActual` (el campo por el que un alumno avanza en
+ * el sistema, mismo dominio de "duración académica").
+ *
+ * NOTA (2026-09-07, rename semestre→cuatrimestre): `duracion` sigue contando
+ * exactamente lo mismo que contaba antes de este rename — una unidad de
+ * avance académico —, solo cambió la ETIQUETA de esa unidad, por decisión
+ * explícita del usuario, SIN recalcular ningún valor ya sembrado. El dato
+ * real de `prisma/seed-helpers.ts` (`duracion: 8` para las 4 carreras
+ * `LICENCIATURA`) se originó como "4 años x 2 semestres/año" y se dejó intacto: en
+ * cuatrimestres reales, 4 años serían 12 (4 x 3), no 8. Esta inconsistencia
+ * aritmética es conocida y aceptada — no se "corrige" inventando un
+ * recálculo que nadie pidió.
+ *
+ * `rvoe`/`procedenciaRvoe` (2026-09-07) pasan a opcionales — `Carrera.rvoe`
+ * ahora es `String?` en el schema (no toda carrera tiene RVOE al momento del
+ * alta), `procedenciaRvoe` es texto libre siempre opcional (ej. "Yucatán",
+ * "Campeche" — sin catálogo cerrado de estados, no se pidió).
  */
 export class CrearCarreraDto {
   @IsString()
@@ -40,9 +59,15 @@ export class CrearCarreraDto {
   })
   modalidad!: ModalidadCarrera;
 
+  @IsOptional()
   @IsString()
-  @IsNotEmpty({ message: 'rvoe es requerido' })
-  rvoe!: string;
+  @IsNotEmpty({ message: 'rvoe no puede ser vacío si se envía' })
+  rvoe?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty({ message: 'procedenciaRvoe no puede ser vacío si se envía' })
+  procedenciaRvoe?: string;
 
   @IsString()
   @IsNotEmpty({ message: 'descripcion es requerida' })

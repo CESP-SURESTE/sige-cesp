@@ -138,7 +138,7 @@ export class PerfilService {
             correoPersonal: true,
             estatusAcademico: true,
             periodoIngreso: true,
-            semestreActual: true,
+            cuatrimestreActual: true,
             telefono: true,
             carrera: {
               select: {
@@ -150,6 +150,7 @@ export class PerfilService {
                 modalidad: true,
                 estatus: true,
                 rvoe: true,
+                procedenciaRvoe: true,
                 descripcion: true,
               },
             },
@@ -184,6 +185,14 @@ export class PerfilService {
             telefono: true,
             fechaContratacion: true,
             estatus: true,
+            // Tipo de contratación (2026-09-07) — mismo nivel que
+            // `cedulaProfesional`/`fechaContratacion`. Los 3 campos
+            // condicionales son `null` salvo cuando el tipo lo amerita
+            // (TEMPORAL -> `diasTemporal`; CONTRATO -> `contratoFecha*`).
+            tipoContratacion: true,
+            diasTemporal: true,
+            contratoFechaInicio: true,
+            contratoFechaFin: true,
             contactos: {
               select: {
                 id: true,
@@ -427,7 +436,7 @@ export class PerfilService {
                     apellidoPaterno: true,
                     apellidoMaterno: true,
                     matricula: true,
-                    semestreActual: true,
+                    cuatrimestreActual: true,
                   },
                 },
               },
