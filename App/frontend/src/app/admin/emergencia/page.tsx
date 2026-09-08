@@ -1,14 +1,29 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { toast } from 'sonner';
+import {
+  MENSAJE_ERROR_GENERICO,
+  resolverMensajeError,
+} from '@/components/admin/ui/persona-alta/mensajes-error';
+import { SkeletonTableRows } from '@/components/admin/ui/Skeleton';
 import { ApiError } from '@/lib/api/http';
 import {
+  actualizarTelefonoEmergencia,
   buscarEmergencia,
+  crearTelefonoEmergencia,
+  eliminarTelefonoEmergencia,
+  listarTelefonosEmergencia,
   obtenerExpedienteEmergencia,
+  type ActualizarTelefonoInput,
+  type CrearTelefonoInput,
   type ResultadoBusquedaEmergencia,
+  type TelefonoEmergencia,
 } from '@/lib/api/emergencia';
+import { ConfirmarEliminarTelefonoModal } from './ConfirmarEliminarTelefonoModal';
 import { ExpedientePanel } from './ExpedientePanel';
+import { TelefonoModal } from './TelefonoModal';
 
 const TIPO_CHIP: Record<string, string> = {
   ALUMNO: 'Alumno',
@@ -17,9 +32,24 @@ const TIPO_CHIP: Record<string, string> = {
   PERSONAL_SERVICIOS: 'Personal de servicios',
 };
 
+/** Misma key que `PanicoButton` (`components/admin/ui/shell/`) — caché e
+ * invalidación compartidas: crear/editar/borrar acá refresca el botón de pánico. */
+const TELEFONOS_QUERY_KEY = ['admin', 'emergencia', 'telefonos'] as const;
+
+/** Estado del modal único de alta/edición — `telefono: null` es modo alta explícito. */
+interface EstadoModalTelefono {
+  abierto: boolean;
+  telefono: TelefonoEmergencia | null;
+}
+
+const MODAL_CERRADO: EstadoModalTelefono = { abierto: false, telefono: null };
+
 export default function AdminEmergenciaPage() {
+  const queryClient = useQueryClient();
   const [texto, setTexto] = useState('');
   const [seleccion, setSeleccion] = useState<ResultadoBusquedaEmergencia | null>(null);
+  const [modalTelefono, setModalTelefono] = useState<EstadoModalTelefono>(MODAL_CERRADO);
+  const [telefonoAEliminar, setTelefonoAEliminar] = useState<TelefonoEmergencia | null>(null);
 
   const termino = texto.trim();
 
@@ -48,6 +78,60 @@ export default function AdminEmergenciaPage() {
       }
     },
     enabled: seleccion !== null,
+  });
+
+  const telefonosQuery = useQuery({
+    queryKey: TELEFONOS_QUERY_KEY,
+    queryFn: async () => {
+      try {
+        return await listarTelefonosEmergencia();
+      } catch (err) {
+        console.error('[AdminEmergenciaPage] Error al listar teléfonos:', err);
+        throw err;
+      }
+    },
+  });
+
+  const crearTelefonoMutation = useMutation({
+    mutationFn: (input: CrearTelefonoInput) => crearTelefonoEmergencia(input),
+    onSuccess: () => {
+      toast.success('Teléfono agregado');
+      setModalTelefono(MODAL_CERRADO);
+      void queryClient.invalidateQueries({ queryKey: TELEFONOS_QUERY_KEY });
+    },
+    onError: (err) => {
+      console.error('[AdminEmergenciaPage] Error al crear teléfono:', err);
+      toast.error(resolverMensajeError(err) ?? MENSAJE_ERROR_GENERICO);
+    },
+  });
+
+  const actualizarTelefonoMutation = useMutation({
+    mutationFn: (vars: { id: string; input: ActualizarTelefonoInput }) =>
+      actualizarTelefonoEmergencia(vars.id, vars.input),
+    onSuccess: () => {
+      toast.success('Teléfono actualizado');
+      setModalTelefono(MODAL_CERRADO);
+      void queryClient.invalidateQueries({ queryKey: TELEFONOS_QUERY_KEY });
+    },
+    onError: (err) => {
+      console.error('[AdminEmergenciaPage] Error al actualizar teléfono:', err);
+      toast.error(resolverMensajeError(err) ?? MENSAJE_ERROR_GENERICO);
+    },
+  });
+
+  const eliminarTelefonoMutation = useMutation({
+    mutationFn: (id: string) => eliminarTelefonoEmergencia(id),
+    onSuccess: (_data, id) => {
+      toast.success('Teléfono eliminado');
+      setTelefonoAEliminar(null);
+      if (modalTelefono.telefono?.id === id) setModalTelefono(MODAL_CERRADO);
+      void queryClient.invalidateQueries({ queryKey: TELEFONOS_QUERY_KEY });
+    },
+    onError: (err) => {
+      console.error('[AdminEmergenciaPage] Error al eliminar teléfono:', err);
+      toast.error(resolverMensajeError(err) ?? MENSAJE_ERROR_GENERICO);
+      setTelefonoAEliminar(null);
+    },
   });
 
   return (
@@ -137,6 +221,104 @@ export default function AdminEmergenciaPage() {
           {expedienteQuery.data && <ExpedientePanel expediente={expedienteQuery.data} />}
         </div>
       </div>
+
+      {/* Teléfonos de emergencia de la sede */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between rounded-lg border-l-4 border-crimson bg-white p-6 shadow-sm">
+          <div>
+            <h2 className="font-display text-xl font-semibold text-crimson">
+              Teléfonos de emergencia de la sede
+            </h2>
+            <p className="mt-1 text-sm text-slate/60">
+              Estos números aparecen en el botón de pánico del menú superior.
+            </p>
+          </div>
+          <button
+            onClick={() => setModalTelefono({ abierto: true, telefono: null })}
+            className="rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-navy-deep"
+          >
+            + Nuevo teléfono
+          </button>
+        </div>
+
+        <div className="overflow-x-auto rounded-lg border-l-4 border-crimson bg-white shadow-sm">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-mist text-left text-slate/60">
+                <th className="px-4 py-3 font-medium">Etiqueta</th>
+                <th className="px-4 py-3 font-medium">Teléfono</th>
+                <th className="px-4 py-3 font-medium"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {telefonosQuery.isLoading && <SkeletonTableRows columns={3} />}
+              {telefonosQuery.isError && (
+                <tr>
+                  <td colSpan={3} className="px-4 py-6 text-center text-crimson">
+                    {telefonosQuery.error instanceof ApiError
+                      ? telefonosQuery.error.message
+                      : 'No se pudo cargar el listado de teléfonos. Intenta de nuevo más tarde.'}
+                  </td>
+                </tr>
+              )}
+              {!telefonosQuery.isLoading &&
+                !telefonosQuery.isError &&
+                telefonosQuery.data?.length === 0 && (
+                  <tr>
+                    <td colSpan={3} className="px-4 py-6 text-center text-slate/60">
+                      Todavía no hay teléfonos de emergencia registrados en tu sede.
+                    </td>
+                  </tr>
+                )}
+              {telefonosQuery.data?.map((telefono) => (
+                <tr key={telefono.id} className="border-b border-mist last:border-0">
+                  <td className="px-4 py-3 text-slate">{telefono.etiqueta}</td>
+                  <td className="px-4 py-3 text-slate/80">{telefono.telefono}</td>
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      onClick={() => setModalTelefono({ abierto: true, telefono })}
+                      className="text-navy hover:underline"
+                    >
+                      Editar
+                    </button>
+                    <button
+                      onClick={() => setTelefonoAEliminar(telefono)}
+                      className="ml-4 text-crimson hover:underline"
+                    >
+                      Eliminar
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {modalTelefono.abierto && (
+        <TelefonoModal
+          telefono={modalTelefono.telefono}
+          guardando={
+            crearTelefonoMutation.isPending || actualizarTelefonoMutation.isPending
+          }
+          onCrear={(payload) => crearTelefonoMutation.mutate(payload)}
+          onEditar={(payload) => {
+            const telefonoId = modalTelefono.telefono?.id;
+            if (!telefonoId) return;
+            actualizarTelefonoMutation.mutate({ id: telefonoId, input: payload });
+          }}
+          onCancelar={() => setModalTelefono(MODAL_CERRADO)}
+        />
+      )}
+
+      {telefonoAEliminar && (
+        <ConfirmarEliminarTelefonoModal
+          telefono={telefonoAEliminar}
+          eliminando={eliminarTelefonoMutation.isPending}
+          onConfirmar={() => eliminarTelefonoMutation.mutate(telefonoAEliminar.id)}
+          onCancelar={() => setTelefonoAEliminar(null)}
+        />
+      )}
     </div>
   );
 }
