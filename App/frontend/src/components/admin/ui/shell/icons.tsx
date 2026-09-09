@@ -204,3 +204,15 @@ export function IconEmergencia({ className }: IconProps) {
     </svg>
   );
 }
+
+/** Megáfono — ítem "Avisos" del sidebar (Fase 16, Día 47). Distinto de la campana de `NotificacionesBell`. */
+export function IconAvisos({ className }: IconProps) {
+  return (
+    <svg {...BASE} className={className} aria-hidden="true">
+      <path d="M3 11v2a1 1 0 0 0 1 1h2l4 4V6L6 10H4a1 1 0 0 0-1 1Z" />
+      <path d="M10 14v3a2 2 0 0 0 4 0v-1" />
+      <path d="M16 8a4 4 0 0 1 0 8" />
+      <path d="M19 5a8 8 0 0 1 0 14" />
+    </svg>
+  );
+}
