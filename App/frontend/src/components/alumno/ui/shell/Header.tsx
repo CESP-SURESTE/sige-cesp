@@ -28,12 +28,14 @@ import { NotificacionesBell } from './NotificacionesBell';
 function NavAlumno() {
   const pathname = usePathname();
   const enCalendario = pathname.startsWith('/alumno/calendario');
+  const enAvisos = pathname.startsWith('/alumno/avisos');
+  const enPerfil = !enCalendario && !enAvisos;
   return (
     <nav className="flex items-center gap-4 text-sm font-medium">
       <Link
         href="/alumno"
-        aria-current={!enCalendario ? 'page' : undefined}
-        className={!enCalendario ? 'text-navy' : 'text-slate/60 hover:text-navy'}
+        aria-current={enPerfil ? 'page' : undefined}
+        className={enPerfil ? 'text-navy' : 'text-slate/60 hover:text-navy'}
       >
         Mi perfil
       </Link>
@@ -43,6 +45,13 @@ function NavAlumno() {
         className={enCalendario ? 'text-navy' : 'text-slate/60 hover:text-navy'}
       >
         Calendario
+      </Link>
+      <Link
+        href="/alumno/avisos"
+        aria-current={enAvisos ? 'page' : undefined}
+        className={enAvisos ? 'text-navy' : 'text-slate/60 hover:text-navy'}
+      >
+        Avisos
       </Link>
     </nav>
   );
