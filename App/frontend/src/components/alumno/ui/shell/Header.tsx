@@ -18,8 +18,9 @@ import { NotificacionesBell } from './NotificacionesBell';
  * motivo que `AdminShell`: `ProfileDropdown`/`SedeCarreraBadge` necesitan
  * interacción/`useQuery`, `email` se resuelve en el servidor y llega como prop.
  *
- * `NavAlumno` (Fase 15, Día 44, Task 10) — nav de 2 links ("Mi perfil" /
- * "Calendario") con estado activo vía `usePathname()`, calco de `NavMaestro`
+ * `NavAlumno` (Fase 15, Día 44, Task 10; "Avisos" agregado en Fase 16) — nav
+ * de 3 links ("Mi perfil" / "Calendario" / "Avisos") con estado activo vía
+ * `usePathname()`, calco de `NavMaestro`
  * en `components/maestro/ui/shell/Header.tsx` (Task 9). Se coloca entre el
  * bloque de título y `SedeCarreraBadge` — `NotificacionesBell`/
  * `ProfileDropdown` se mantienen como el bloque final de la derecha, sin

@@ -605,6 +605,12 @@ export class AvisosService {
    * `alcanceId` → nombre legible, en batch. SEDE no tiene id ("Toda la
    * sede"); CARRERA/GRUPO se resuelven con un `findMany` cada uno. Un
    * `alcanceId` que ya no existe → `null` (no rompe la tabla del cliente).
+   *
+   * NOTA: este helper (y `contarRecibosPorAviso`) asume que el caller ya
+   * pasó avisos acotados a la sede del actor (`where: { sedeId, ... }` en
+   * `listarPublicadosPorActor`). Los `alcanceId` y `avisoIds` son por tanto
+   * transitivamente sede-bound, así que no hace falta un `sedeId` explícito
+   * en su `where`.
    */
   private async resolverAlcanceNombres(
     avisos: {

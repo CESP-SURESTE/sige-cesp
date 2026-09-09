@@ -904,14 +904,40 @@ describe('AvisosController (e2e)', () => {
       expect(body.page).toBe(1);
     });
 
-    it('no incluye avisos de otra sede', async () => {
-      const res = await request(app.getHttpServer())
+    it('el where filtra por sedeId: un aviso publicado en Valladolid no aparece para el admin de Mérida, y el admin de Valladolid solo ve el suyo', async () => {
+      // El admin de Valladolid publica algo real → ejerce la mitad `sedeId`
+      // del `where` (el test anterior solo probaba `autorUsuarioId`).
+      const pub = await postAviso(await tokenAdminValladolid(), {
+        titulo: 'Publicado por admin Valladolid',
+        cuerpo: 'x',
+        alcanceTipo: 'SEDE',
+      });
+      expect(pub.status).toBe(201);
+      const avisoValladolidId = (pub.body as AvisoBody).data.id;
+
+      // El admin de Mérida NO ve el aviso de Valladolid.
+      const resMerida = await request(app.getHttpServer())
+        .get('/avisos/publicados?page=1&limit=50')
+        .set('Authorization', `Bearer ${await tokenAdminMerida()}`);
+      expect(resMerida.status).toBe(200);
+      const idsMerida = (
+        resMerida.body as { data: { id: string }[] }
+      ).data.map((a) => a.id);
+      expect(idsMerida).not.toContain(avisoValladolidId);
+
+      // El admin de Valladolid SÍ ve ese aviso, y ninguno de los que Mérida
+      // publicó en esta suite.
+      const resVdd = await request(app.getHttpServer())
         .get('/avisos/publicados?page=1&limit=50')
         .set('Authorization', `Bearer ${await tokenAdminValladolid()}`);
-      expect(res.status).toBe(200);
-      const body = res.body as { data: { id: string }[] };
-      // El admin de Valladolid no ha publicado nada en esta suite
-      expect(body.data).toEqual([]);
+      expect(resVdd.status).toBe(200);
+      const idsVdd = (resVdd.body as { data: { id: string }[] }).data.map(
+        (a) => a.id,
+      );
+      expect(idsVdd).toContain(avisoValladolidId);
+      idsMerida.forEach((idMerida) => {
+        expect(idsVdd).not.toContain(idMerida);
+      });
     });
 
     it('totalDestinatarios y leidos son correctos tras una lectura', async () => {
@@ -940,21 +966,63 @@ describe('AvisosController (e2e)', () => {
       expect(row!.leidos).toBeLessThanOrEqual(row!.totalDestinatarios);
     });
 
-    it('alcanceNombre: "Toda la sede" para SEDE, nombre de grupo para GRUPO', async () => {
+    it('alcanceNombre: "Toda la sede" para SEDE, nombre real para CARRERA y GRUPO', async () => {
       await postAviso(await tokenAdminMerida(), {
         titulo: 'A toda la sede',
         cuerpo: 'a',
         alcanceTipo: 'SEDE',
       });
+      const pubCarrera = await postAviso(await tokenAdminMerida(), {
+        titulo: 'A una carrera',
+        cuerpo: 'c',
+        alcanceTipo: 'CARRERA',
+        alcanceId: carreraId,
+      });
+      expect(pubCarrera.status).toBe(201);
+      const carrera = await prisma.carrera.findUnique({
+        where: { id: carreraId },
+      });
+
       const res = await request(app.getHttpServer())
         .get('/avisos/publicados?page=1&limit=50')
         .set('Authorization', `Bearer ${await tokenAdminMerida()}`);
       const data = (res.body as { data: AvisoPublicadoItemBody[] }).data;
       const sede = data.find((a) => a.titulo === 'A toda la sede');
       expect(sede!.alcanceNombre).toBe('Toda la sede');
+      const carreraRow = data.find((a) => a.titulo === 'A una carrera');
+      expect(carreraRow!.alcanceTipo).toBe('CARRERA');
+      expect(carreraRow!.alcanceNombre).toBe(carrera!.nombre);
       const grupo = data.find((a) => a.alcanceTipo === 'GRUPO');
       expect(typeof grupo!.alcanceNombre).toBe('string');
       expect(grupo!.alcanceNombre!.length).toBeGreaterThan(0);
+    });
+
+    it('simetría maestro: el maestro ve en publicados el aviso que él publicó; el admin (otro autor) no lo ve', async () => {
+      const pub = await postAviso(await tokenMaestro(), {
+        titulo: 'Publicado por el maestro para simetría',
+        cuerpo: 'm',
+        alcanceTipo: 'GRUPO',
+        alcanceId: grupoId,
+      });
+      expect(pub.status).toBe(201);
+      const avisoId = (pub.body as AvisoBody).data.id;
+
+      const resMaestro = await request(app.getHttpServer())
+        .get('/avisos/publicados?page=1&limit=50')
+        .set('Authorization', `Bearer ${await tokenMaestro()}`);
+      expect(resMaestro.status).toBe(200);
+      const idsMaestro = (
+        resMaestro.body as { data: { id: string }[] }
+      ).data.map((a) => a.id);
+      expect(idsMaestro).toContain(avisoId);
+
+      const resAdmin = await request(app.getHttpServer())
+        .get('/avisos/publicados?page=1&limit=50')
+        .set('Authorization', `Bearer ${await tokenAdminMerida()}`);
+      const idsAdmin = (
+        resAdmin.body as { data: { id: string }[] }
+      ).data.map((a) => a.id);
+      expect(idsAdmin).not.toContain(avisoId);
     });
 
     it('un ALUMNO recibe 403 ROL_NO_AUTORIZADO', async () => {

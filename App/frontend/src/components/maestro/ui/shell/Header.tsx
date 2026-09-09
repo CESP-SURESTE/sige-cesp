@@ -11,8 +11,9 @@ import { NotificacionesBell } from './NotificacionesBell';
  * que `components/alumno/ui/shell/Header.tsx` (ver ese comentario para el
  * porqué de "sin sidebar todavía"), pero con `SedeBadge` (sin carrera).
  *
- * `NavMaestro` (Fase 15, Día 43, Task 9) — nav de 2 links ("Mi perfil" /
- * "Calendario") con estado activo vía `usePathname()`, mismo criterio de
+ * `NavMaestro` (Fase 15, Día 43, Task 9; "Avisos" agregado en Fase 16) — nav
+ * de 3 links ("Mi perfil" / "Calendario" / "Avisos") con estado activo vía
+ * `usePathname()`, mismo criterio de
  * `NavLink` en `components/admin/ui/shell/Sidebar.tsx` pero sin sidebar
  * (este árbol nunca tuvo uno). Se coloca entre el bloque de título y
  * `SedeBadge` — `NotificacionesBell`/`ProfileDropdown` se mantienen como el

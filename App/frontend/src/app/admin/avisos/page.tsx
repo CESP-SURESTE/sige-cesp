@@ -85,6 +85,21 @@ export default function AdminAvisosPage() {
     placeholderData: keepPreviousData,
   });
 
+  // Si la página actual quedó fuera de rango tras un borrado (que puede
+  // vaciar la última página), saltamos a la última página real. Ajuste de
+  // estado DURANTE el render — patrón oficial de React para "corregir estado
+  // cuando cambian los datos" (https://react.dev/learn/you-might-not-need-an-effect
+  // §"Adjusting some state when a prop changes"); no es un efecto, así que no
+  // dispara `react-hooks/set-state-in-effect`. React descarta este render y
+  // vuelve a renderizar antes de pintar.
+  if (publicadosQuery.data && publicadosQuery.data.total > 0) {
+    const ultimaPaginaPub = Math.max(
+      1,
+      Math.ceil(publicadosQuery.data.total / LIMIT),
+    );
+    if (pagePub > ultimaPaginaPub) setPagePub(ultimaPaginaPub);
+  }
+
   const eliminarMutation = useMutation({
     mutationFn: (id: string) => eliminarAviso(id),
     onSuccess: () => {
@@ -179,7 +194,8 @@ export default function AdminAvisosPage() {
                       </td>
                     </tr>
                   )}
-                {publicadosQuery.data?.data.map((row) => (
+                {!publicadosQuery.isError &&
+                  publicadosQuery.data?.data.map((row) => (
                   <tr key={row.id} className="border-b border-mist last:border-0">
                     <td className="px-4 py-3 text-slate">{row.titulo}</td>
                     <td className="px-4 py-3 text-slate/80">
@@ -258,16 +274,28 @@ export default function AdminAvisosPage() {
                       </td>
                     </tr>
                   )}
-                {recibidosQuery.data?.data.map((row) => (
+                {!recibidosQuery.isError &&
+                  recibidosQuery.data?.data.map((row) => (
                   <tr
                     key={row.id}
-                    className="cursor-pointer border-b border-mist last:border-0 hover:bg-mist/30"
+                    role="button"
+                    tabIndex={0}
+                    className="cursor-pointer border-b border-mist last:border-0 hover:bg-mist/30 focus:bg-mist/30 focus:outline-none"
                     onClick={() => setDetalleId(row.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setDetalleId(row.id);
+                      }
+                    }}
                   >
                     <td className="px-4 py-3 text-slate">
                       {row.titulo}
                       {row.leidoEn === null && (
-                        <span className="ml-2 inline-block size-2 rounded-full bg-navy" />
+                        <span
+                          className="ml-2 inline-block size-2 rounded-full bg-navy"
+                          aria-label="No leído"
+                        />
                       )}
                     </td>
                     <td className="px-4 py-3 text-slate/80">
@@ -300,6 +328,7 @@ export default function AdminAvisosPage() {
           onCerrar={() => setModalNuevo(false)}
           onPublicado={() => {
             setModalNuevo(false);
+            setPagePub(1);
             void queryClient.invalidateQueries({
               queryKey: ['admin', 'avisos', 'publicados'],
             });

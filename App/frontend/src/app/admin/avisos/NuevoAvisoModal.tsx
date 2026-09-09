@@ -93,6 +93,30 @@ export function NuevoAvisoModal({ onCerrar, onPublicado }: NuevoAvisoModalProps)
     },
   });
 
+  // Estado del catálogo del sub-select según el alcance elegido (mismo
+  // criterio que `publicarDeshabilitado` del gemelo de `app/maestro/avisos/`:
+  // no decir "Completa los campos" cuando el problema real es un fetch muerto
+  // o un catálogo vacío).
+  const catalogoIsLoading =
+    (alcanceTipo === 'CARRERA' && carrerasQuery.isLoading) ||
+    (alcanceTipo === 'GRUPO' && gruposQuery.isLoading);
+  const catalogoIsError =
+    (alcanceTipo === 'CARRERA' && carrerasQuery.isError) ||
+    (alcanceTipo === 'GRUPO' && gruposQuery.isError);
+  const opcionesCatalogo =
+    alcanceTipo === 'CARRERA'
+      ? (carrerasQuery.data ?? [])
+      : alcanceTipo === 'GRUPO'
+        ? (gruposQuery.data?.data ?? [])
+        : [];
+  const catalogoVacio =
+    alcanceTipo !== 'SEDE' &&
+    !catalogoIsLoading &&
+    !catalogoIsError &&
+    opcionesCatalogo.length === 0;
+  const publicarDeshabilitado =
+    mutation.isPending || catalogoIsLoading || catalogoIsError || catalogoVacio;
+
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!titulo.trim() || !cuerpo.trim()) {
@@ -201,6 +225,14 @@ export function NuevoAvisoModal({ onCerrar, onPublicado }: NuevoAvisoModalProps)
                   </option>
                 ))}
               </select>
+              {carrerasQuery.isError && (
+                <p className="mt-1 text-sm text-crimson">
+                  No se pudo cargar el catálogo. Intenta de nuevo.
+                </p>
+              )}
+              {catalogoVacio && (
+                <p className="mt-1 text-sm text-slate/60">No hay carreras registradas.</p>
+              )}
             </div>
           )}
 
@@ -225,6 +257,14 @@ export function NuevoAvisoModal({ onCerrar, onPublicado }: NuevoAvisoModalProps)
                   </option>
                 ))}
               </select>
+              {gruposQuery.isError && (
+                <p className="mt-1 text-sm text-crimson">
+                  No se pudo cargar el catálogo. Intenta de nuevo.
+                </p>
+              )}
+              {catalogoVacio && (
+                <p className="mt-1 text-sm text-slate/60">No hay grupos registrados.</p>
+              )}
             </div>
           )}
 
@@ -239,7 +279,7 @@ export function NuevoAvisoModal({ onCerrar, onPublicado }: NuevoAvisoModalProps)
             </button>
             <button
               type="submit"
-              disabled={mutation.isPending}
+              disabled={publicarDeshabilitado}
               className="rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-navy-deep disabled:opacity-50"
             >
               {mutation.isPending ? 'Publicando…' : 'Publicar'}
