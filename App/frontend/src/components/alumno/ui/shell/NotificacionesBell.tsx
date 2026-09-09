@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -9,6 +10,7 @@ import {
   marcarLeida,
   type Notificacion,
 } from '@/lib/api/notificaciones';
+import { DetalleAvisoModal } from '@/app/alumno/avisos/DetalleAvisoModal';
 import { IconCampana } from './icons';
 
 /**
@@ -24,13 +26,18 @@ import { IconCampana } from './icons';
  * websockets (el volumen de un ERP escolar no lo justifica; estabilidad >
  * todo). La lista completa solo se pide al abrir el dropdown.
  *
- * En la Fase 14 no existen `Aviso` ni `EventoCalendario`, así que un ítem
- * del dropdown solo se marca como leído al hacer click (no navega a ningún
- * lado todavía). El deep-link por `tipo` lo agregan las Fases 15/16.
+ * Deep-link por `tipo`: un ítem `AVISO` abre el `DetalleAvisoModal` de este
+ * árbol, renderizado con `createPortal` a `document.body` (mismo criterio
+ * que la campana de admin, cuyo `<header>` con `backdrop-blur` recorta
+ * `position: fixed`; acá se mantiene igual por uniformidad). El
+ * `GET /avisos/:id` del modal ya marca la `Notificacion` como leída en el
+ * backend. Los tipos `RECORDATORIO_EVENTO`/`EVENTO_NUEVO` solo se marcan
+ * leídos al hacer click (no hay `GET /eventos/:id` para abrirlos).
  */
 export function NotificacionesBell() {
   const queryClient = useQueryClient();
   const [abierto, setAbierto] = useState(false);
+  const [avisoAbierto, setAvisoAbierto] = useState<string | null>(null);
   const contenedorRef = useRef<HTMLDivElement>(null);
 
   const { data: conteo } = useQuery({
@@ -85,6 +92,13 @@ export function NotificacionesBell() {
   const noLeidas = conteo?.total ?? 0;
 
   async function onClickItem(n: Notificacion) {
+    if (n.tipo === 'AVISO') {
+      // El `GET /avisos/:id` del modal marca la `Notificacion` como leída en
+      // el backend, así que no se llama `marcarLeida` aquí.
+      setAvisoAbierto(n.referenciaId);
+      setAbierto(false);
+      return;
+    }
     if (n.leidoEn) return;
     try {
       await marcarLeida(n.id);
@@ -149,6 +163,18 @@ export function NotificacionesBell() {
           </ul>
         </div>
       )}
+
+      {avisoAbierto !== null &&
+        createPortal(
+          <DetalleAvisoModal
+            avisoId={avisoAbierto}
+            onCerrar={() => {
+              setAvisoAbierto(null);
+              void queryClient.invalidateQueries({ queryKey: ['notificaciones'] });
+            }}
+          />,
+          document.body,
+        )}
     </div>
   );
 }
