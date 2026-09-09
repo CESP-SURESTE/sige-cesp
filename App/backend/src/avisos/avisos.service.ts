@@ -57,6 +57,24 @@ export interface ReciboItem {
   leidoEn: Date | null;
 }
 
+/**
+ * Item de `GET /avisos/publicados` — la tabla de gestión del autor (Día 47).
+ * `alcanceNombre`, `totalDestinatarios` y `leidos` se derivan al vuelo
+ * (regla 1), resueltos en batch para evitar N+1. `alcanceNombre` es `null`
+ * si el `alcanceId` apunta a una carrera/grupo ya borrado (defensivo).
+ */
+export interface AvisoPublicadoItem {
+  id: string;
+  titulo: string;
+  cuerpo: string;
+  alcanceTipo: AlcanceDestino;
+  alcanceId: string | null;
+  alcanceNombre: string | null;
+  createdAt: Date;
+  totalDestinatarios: number;
+  leidos: number;
+}
+
 const AUTOR_DESCONOCIDO = { nombres: '', apellidoPaterno: '' };
 
 /**
@@ -260,6 +278,71 @@ export class AvisosService {
       return { data, page, limit, total };
     } catch (err) {
       console.error('[AvisosService.feedDelActor] error inesperado:', err);
+      throw err;
+    }
+  }
+
+  /**
+   * `GET /avisos/publicados` — Fase 16, Día 47. Los avisos que el actor
+   * (`ADMINISTRATIVO`/`MAESTRO`) publicó en su sede, paginado, con
+   * contadores de recibo. `where` acotado a `{ sedeId, autorUsuarioId }` —
+   * el backend nunca confía en un `autorUsuarioId` de query (regla 2, mismo
+   * criterio que `sedeId`).
+   */
+  async listarPublicadosPorActor(
+    actorUsuarioId: string,
+    sedeId: string,
+    page: number,
+    limit: number,
+  ): Promise<{
+    data: AvisoPublicadoItem[];
+    page: number;
+    limit: number;
+    total: number;
+  }> {
+    try {
+      const where = { sedeId, autorUsuarioId: actorUsuarioId };
+      const [total, avisos] = await Promise.all([
+        this.prisma.aviso.count({ where }),
+        this.prisma.aviso.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip: (page - 1) * limit,
+          take: limit,
+          select: {
+            id: true,
+            titulo: true,
+            cuerpo: true,
+            alcanceTipo: true,
+            alcanceId: true,
+            createdAt: true,
+          },
+        }),
+      ]);
+
+      const avisoIds = avisos.map((a) => a.id);
+      const [alcanceNombres, contadores] = await Promise.all([
+        this.resolverAlcanceNombres(avisos),
+        this.contarRecibosPorAviso(avisoIds),
+      ]);
+
+      const data: AvisoPublicadoItem[] = avisos.map((a) => ({
+        id: a.id,
+        titulo: a.titulo,
+        cuerpo: a.cuerpo,
+        alcanceTipo: a.alcanceTipo,
+        alcanceId: a.alcanceId,
+        alcanceNombre: alcanceNombres.get(a.id) ?? null,
+        createdAt: a.createdAt,
+        totalDestinatarios: contadores.get(a.id)?.total ?? 0,
+        leidos: contadores.get(a.id)?.leidos ?? 0,
+      }));
+      return { data, page, limit, total };
+    } catch (err) {
+      console.error(
+        '[AvisosService.listarPublicadosPorActor] error inesperado:',
+        err,
+      );
       throw err;
     }
   }
@@ -515,6 +598,82 @@ export class AvisosService {
         `${p.nombres} ${p.apellidoPaterno} ${p.apellidoMaterno}`.trim(),
       ),
     );
+    return map;
+  }
+
+  /**
+   * `alcanceId` → nombre legible, en batch. SEDE no tiene id ("Toda la
+   * sede"); CARRERA/GRUPO se resuelven con un `findMany` cada uno. Un
+   * `alcanceId` que ya no existe → `null` (no rompe la tabla del cliente).
+   */
+  private async resolverAlcanceNombres(
+    avisos: {
+      id: string;
+      alcanceTipo: AlcanceDestino;
+      alcanceId: string | null;
+    }[],
+  ): Promise<Map<string, string | null>> {
+    const map = new Map<string, string | null>();
+    const carreraIds = new Set<string>();
+    const grupoIds = new Set<string>();
+    for (const a of avisos) {
+      if (a.alcanceTipo === AlcanceDestino.SEDE) {
+        map.set(a.id, 'Toda la sede');
+      } else if (a.alcanceTipo === AlcanceDestino.CARRERA && a.alcanceId) {
+        carreraIds.add(a.alcanceId);
+      } else if (a.alcanceTipo === AlcanceDestino.GRUPO && a.alcanceId) {
+        grupoIds.add(a.alcanceId);
+      }
+    }
+    const [carreras, grupos] = await Promise.all([
+      carreraIds.size
+        ? this.prisma.carrera.findMany({
+            where: { id: { in: [...carreraIds] } },
+            select: { id: true, nombre: true },
+          })
+        : Promise.resolve([] as { id: string; nombre: string }[]),
+      grupoIds.size
+        ? this.prisma.grupo.findMany({
+            where: { id: { in: [...grupoIds] } },
+            select: { id: true, nombre: true },
+          })
+        : Promise.resolve([] as { id: string; nombre: string }[]),
+    ]);
+    const carreraNombre = new Map(carreras.map((c) => [c.id, c.nombre]));
+    const grupoNombre = new Map(grupos.map((g) => [g.id, g.nombre]));
+    for (const a of avisos) {
+      if (map.has(a.id)) continue;
+      if (a.alcanceTipo === AlcanceDestino.CARRERA) {
+        map.set(a.id, carreraNombre.get(a.alcanceId ?? '') ?? null);
+      } else if (a.alcanceTipo === AlcanceDestino.GRUPO) {
+        map.set(a.id, grupoNombre.get(a.alcanceId ?? '') ?? null);
+      } else {
+        map.set(a.id, null);
+      }
+    }
+    return map;
+  }
+
+  /**
+   * `avisoId` → `{ total, leidos }` de sus `Notificacion` `tipo: AVISO`
+   * (el snapshot de destinatarios fijado al publicar). Un solo `findMany`
+   * para todos los avisos de la página.
+   */
+  private async contarRecibosPorAviso(
+    avisoIds: string[],
+  ): Promise<Map<string, { total: number; leidos: number }>> {
+    const map = new Map<string, { total: number; leidos: number }>();
+    if (avisoIds.length === 0) return map;
+    const notifs = await this.prisma.notificacion.findMany({
+      where: { tipo: 'AVISO', referenciaId: { in: avisoIds } },
+      select: { referenciaId: true, leidoEn: true },
+    });
+    for (const n of notifs) {
+      const cur = map.get(n.referenciaId) ?? { total: 0, leidos: 0 };
+      cur.total += 1;
+      if (n.leidoEn !== null) cur.leidos += 1;
+      map.set(n.referenciaId, cur);
+    }
     return map;
   }
 

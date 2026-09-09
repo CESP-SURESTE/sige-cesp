@@ -42,6 +42,17 @@ interface FeedBody {
   limit: number;
   total: number;
 }
+interface AvisoPublicadoItemBody {
+  id: string;
+  titulo: string;
+  cuerpo: string;
+  alcanceTipo: string;
+  alcanceId: string | null;
+  alcanceNombre: string | null;
+  createdAt: string;
+  totalDestinatarios: number;
+  leidos: number;
+}
 interface DetalleBody {
   data: FeedItemBody;
 }
@@ -856,6 +867,110 @@ describe('AvisosController (e2e)', () => {
         .delete(`/avisos/${(pub.body as AvisoBody).data.id}`)
         .set('Authorization', `Bearer ${await tokenAdminValladolid()}`);
       expect(res.status).toBe(404);
+    });
+  });
+
+  describe('GET /avisos/publicados', () => {
+    it('el autor ve solo los avisos que publicó, no los de otro admin de la misma sede', async () => {
+      // Aviso del admin de Mérida
+      await postAviso(await tokenAdminMerida(), {
+        titulo: 'Publicado por admin Mérida',
+        cuerpo: 'x',
+        alcanceTipo: 'GRUPO',
+        alcanceId: grupoId,
+      });
+      // Aviso de un maestro de la misma sede (otro autor)
+      await postAviso(await tokenMaestro(), {
+        titulo: 'Publicado por maestro',
+        cuerpo: 'y',
+        alcanceTipo: 'GRUPO',
+        alcanceId: grupoId,
+      });
+
+      const res = await request(app.getHttpServer())
+        .get('/avisos/publicados?page=1&limit=50')
+        .set('Authorization', `Bearer ${await tokenAdminMerida()}`);
+
+      expect(res.status).toBe(200);
+      const body = res.body as {
+        data: { titulo: string }[];
+        page: number;
+        limit: number;
+        total: number;
+      };
+      const titulos = body.data.map((a) => a.titulo);
+      expect(titulos).toContain('Publicado por admin Mérida');
+      expect(titulos).not.toContain('Publicado por maestro');
+      expect(body.page).toBe(1);
+    });
+
+    it('no incluye avisos de otra sede', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/avisos/publicados?page=1&limit=50')
+        .set('Authorization', `Bearer ${await tokenAdminValladolid()}`);
+      expect(res.status).toBe(200);
+      const body = res.body as { data: { id: string }[] };
+      // El admin de Valladolid no ha publicado nada en esta suite
+      expect(body.data).toEqual([]);
+    });
+
+    it('totalDestinatarios y leidos son correctos tras una lectura', async () => {
+      const pub = await postAviso(await tokenAdminMerida(), {
+        titulo: 'Con recibo',
+        cuerpo: 'z',
+        alcanceTipo: 'GRUPO',
+        alcanceId: grupoId,
+      });
+      const avisoId = (pub.body as AvisoBody).data.id;
+
+      // El alumno matriculado lo abre → 1 recibo leído
+      await request(app.getHttpServer())
+        .get(`/avisos/${avisoId}`)
+        .set('Authorization', `Bearer ${await tokenAlumno()}`);
+
+      const res = await request(app.getHttpServer())
+        .get('/avisos/publicados?page=1&limit=50')
+        .set('Authorization', `Bearer ${await tokenAdminMerida()}`);
+      const row = (res.body as { data: (AvisoPublicadoItemBody & { id: string })[] }).data.find(
+        (a) => a.id === avisoId,
+      );
+      expect(row).toBeDefined();
+      expect(row!.totalDestinatarios).toBeGreaterThanOrEqual(1);
+      expect(row!.leidos).toBeGreaterThanOrEqual(1);
+      expect(row!.leidos).toBeLessThanOrEqual(row!.totalDestinatarios);
+    });
+
+    it('alcanceNombre: "Toda la sede" para SEDE, nombre de grupo para GRUPO', async () => {
+      await postAviso(await tokenAdminMerida(), {
+        titulo: 'A toda la sede',
+        cuerpo: 'a',
+        alcanceTipo: 'SEDE',
+      });
+      const res = await request(app.getHttpServer())
+        .get('/avisos/publicados?page=1&limit=50')
+        .set('Authorization', `Bearer ${await tokenAdminMerida()}`);
+      const data = (res.body as { data: AvisoPublicadoItemBody[] }).data;
+      const sede = data.find((a) => a.titulo === 'A toda la sede');
+      expect(sede!.alcanceNombre).toBe('Toda la sede');
+      const grupo = data.find((a) => a.alcanceTipo === 'GRUPO');
+      expect(typeof grupo!.alcanceNombre).toBe('string');
+      expect(grupo!.alcanceNombre!.length).toBeGreaterThan(0);
+    });
+
+    it('un ALUMNO recibe 403 ROL_NO_AUTORIZADO', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/avisos/publicados')
+        .set('Authorization', `Bearer ${await tokenAlumno()}`);
+      expect(res.status).toBe(403);
+      expect((res.body as ErrorBody).code).toBe('ROL_NO_AUTORIZADO');
+    });
+
+    it('limit fuera de rango: 400 VALIDATION_ERROR', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/avisos/publicados?limit=999')
+        .set('Authorization', `Bearer ${await tokenAdminMerida()}`);
+      expect(res.status).toBe(400);
+      expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
     });
   });
 });

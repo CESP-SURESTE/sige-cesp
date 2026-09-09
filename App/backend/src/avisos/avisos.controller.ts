@@ -70,6 +70,27 @@ export class AvisosController {
   }
 
   /**
+   * `GET /avisos/publicados` — Fase 16, Día 47. Los avisos que publicó el
+   * actor (no los que recibió — eso es `GET /avisos`). Segmento fijo
+   * declarado antes de `@Get(':id')` (convención específico→genérico del
+   * repo). `@Roles(ADMINISTRATIVO, MAESTRO)` — un ALUMNO no publica, 403.
+   */
+  @Get('publicados')
+  @Roles(RolUsuario.ADMINISTRATIVO, RolUsuario.MAESTRO)
+  async publicados(
+    @Query() query: ListarAvisosQueryDto,
+    @SedeActual() sedeId: string,
+    @ActorUsuarioId() actorUsuarioId: string,
+  ) {
+    return this.avisosService.listarPublicadosPorActor(
+      actorUsuarioId,
+      sedeId,
+      query.page ?? 1,
+      query.limit ?? 20,
+    );
+  }
+
+  /**
    * `GET /avisos/:id/recibos` — reporte de recibos de lectura. Declarado
    * ANTES de `GET /avisos/:id` (convención específico→genérico del repo,
    * ver `GET /eventos/listado` antes de `GET /eventos`). Sin `@Roles`: la
