@@ -11,6 +11,32 @@ function SkeletonBlock({ className = '' }: { className?: string }) {
   return <div className={`animate-pulse rounded bg-mist ${className}`} />;
 }
 
+/** Filas de tabla en carga — `columns` celdas por fila, `rows` filas.
+ * Copia del `SkeletonTableRows` de components/admin/ui/Skeleton.tsx (regla
+ * 11: se duplica por árbol, sin import cruzado). Lo usa
+ * app/maestro/avisos/page.tsx. */
+export function SkeletonTableRows({
+  columns,
+  rows = 5,
+}: {
+  columns: number;
+  rows?: number;
+}) {
+  return (
+    <>
+      {Array.from({ length: rows }).map((_, r) => (
+        <tr key={r}>
+          {Array.from({ length: columns }).map((_, c) => (
+            <td key={c} className="px-4 py-3">
+              <SkeletonBlock className="h-4 w-full max-w-40" />
+            </td>
+          ))}
+        </tr>
+      ))}
+    </>
+  );
+}
+
 /** Card de perfil con `sections` bloques, cada uno con un título y
  * `fieldsPerSection` pares etiqueta/valor en grid — mismo patrón visual que
  * las secciones apiladas reales de app/maestro/page.tsx (Datos personales,

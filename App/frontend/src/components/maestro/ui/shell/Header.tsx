@@ -21,12 +21,14 @@ import { NotificacionesBell } from './NotificacionesBell';
 function NavMaestro() {
   const pathname = usePathname();
   const enCalendario = pathname.startsWith('/maestro/calendario');
+  const enAvisos = pathname.startsWith('/maestro/avisos');
+  const enPerfil = !enCalendario && !enAvisos;
   return (
     <nav className="flex items-center gap-4 text-sm font-medium">
       <Link
         href="/maestro"
-        aria-current={!enCalendario ? 'page' : undefined}
-        className={!enCalendario ? 'text-navy' : 'text-slate/60 hover:text-navy'}
+        aria-current={enPerfil ? 'page' : undefined}
+        className={enPerfil ? 'text-navy' : 'text-slate/60 hover:text-navy'}
       >
         Mi perfil
       </Link>
@@ -36,6 +38,13 @@ function NavMaestro() {
         className={enCalendario ? 'text-navy' : 'text-slate/60 hover:text-navy'}
       >
         Calendario
+      </Link>
+      <Link
+        href="/maestro/avisos"
+        aria-current={enAvisos ? 'page' : undefined}
+        className={enAvisos ? 'text-navy' : 'text-slate/60 hover:text-navy'}
+      >
+        Avisos
       </Link>
     </nav>
   );
