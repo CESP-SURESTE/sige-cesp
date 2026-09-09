@@ -49,13 +49,15 @@ export function DetalleAvisoModal({ avisoId, onCerrar }: DetalleAvisoModalProps)
       onClick={onCerrar}
     >
       <div
-        className="w-full max-w-lg rounded-lg bg-white p-6 shadow-lg"
+        className="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-lg bg-white shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
-        {detalleQuery.isLoading && <p className="text-sm text-slate/60">Cargando…</p>}
+        {detalleQuery.isLoading && (
+          <p className="p-6 text-sm text-slate/60">Cargando…</p>
+        )}
 
         {detalleQuery.isError && (
-          <p className="text-sm text-crimson">
+          <p className="p-6 text-sm text-crimson">
             {detalleQuery.error instanceof ApiError
               ? detalleQuery.error.message
               : 'No se pudo cargar el aviso. Intenta de nuevo más tarde.'}
@@ -64,21 +66,25 @@ export function DetalleAvisoModal({ avisoId, onCerrar }: DetalleAvisoModalProps)
 
         {detalleQuery.data && (
           <>
-            <h2 className="font-display text-lg font-semibold text-slate">
-              {detalleQuery.data.titulo}
-            </h2>
-            <p className="mt-1 text-sm text-slate/60">
-              Por {detalleQuery.data.autor.nombres}{' '}
-              {detalleQuery.data.autor.apellidoPaterno} ·{' '}
-              {formatearFechaHora(detalleQuery.data.createdAt)}
-            </p>
-            <p className="mt-4 text-sm whitespace-pre-wrap text-slate">
-              {detalleQuery.data.cuerpo}
-            </p>
+            <div className="border-b border-mist px-6 py-4">
+              <h2 className="font-display text-lg font-semibold text-slate">
+                {detalleQuery.data.titulo}
+              </h2>
+              <p className="mt-1 text-sm text-slate/60">
+                Por {detalleQuery.data.autor.nombres}{' '}
+                {detalleQuery.data.autor.apellidoPaterno} ·{' '}
+                {formatearFechaHora(detalleQuery.data.createdAt)}
+              </p>
+            </div>
+            <div className="min-h-0 overflow-y-auto px-6 py-4">
+              <p className="text-sm whitespace-pre-wrap text-slate">
+                {detalleQuery.data.cuerpo}
+              </p>
+            </div>
           </>
         )}
 
-        <div className="mt-6 flex justify-end">
+        <div className="flex justify-end border-t border-mist px-6 py-4">
           <button
             type="button"
             onClick={onCerrar}
