@@ -9,9 +9,8 @@ import { PrismaService } from '../../prisma/prisma.service';
  * el log a qué destinatario correspondió un envío fallido (regla 12).
  *
  * Standalone (recibe `prisma` como arg, igual que `resolverDestinatarios`
- * en `alcance-publicacion.util.ts`). `CalendarioService.obtenerCorreosPersonales`
- * es una copia private idéntica — se deja sin tocar por estabilidad; Fase 17
- * la unifica contra esta función.
+ * en `alcance-publicacion.util.ts`). Usado por `AvisosService` y
+ * `CalendarioService` (fan-out de correo best-effort).
  */
 export async function obtenerCorreosPersonales(
   prisma: PrismaService,

@@ -18,6 +18,7 @@ import {
   validarAlcancePublicacion,
   resolverDestinatarios,
 } from '../common/publicacion/alcance-publicacion.util';
+import { obtenerCorreosPersonales } from '../common/publicacion/correos-destinatarios.util';
 import { expandirOcurrencias, type ReglaRecurrencia } from './recurrencia.util';
 import type { ActualizarEventoDto } from './dto/actualizar-evento.dto';
 import type { CrearEventoDto } from './dto/crear-evento.dto';
@@ -1028,8 +1029,10 @@ export class CalendarioService {
             notificacionesCreadas += resultado.creadas;
 
             if (destinatarios.length > 0) {
-              const correos =
-                await this.obtenerCorreosPersonales(destinatarios);
+              const correos = await obtenerCorreosPersonales(
+                this.prisma,
+                destinatarios,
+              );
               await this.enviarCorreosRecordatorioEnLotes(
                 correos,
                 evento,
@@ -1061,36 +1064,6 @@ export class CalendarioService {
       );
       throw err;
     }
-  }
-
-  /**
-   * Resuelve `correoPersonal` para una lista de `Usuario.id`, cualquiera
-   * que sea su rol — el correo de bienvenida (Fase 4) ya estableció que
-   * el correo real/legible SIEMPRE es `correoPersonal` del perfil, nunca
-   * `Usuario.email` (login sintético). Usuarios sin ningún perfil
-   * (no debería pasar en la práctica) se omiten silenciosamente — no hay
-   * a dónde mandarles el correo. Devuelve el par `usuarioId`/`correoPersonal`
-   * para poder identificar en el log a qué destinatario correspondió un
-   * envío fallido (regla 12).
-   */
-  private async obtenerCorreosPersonales(
-    usuarioIds: string[],
-  ): Promise<{ usuarioId: string; correoPersonal: string }[]> {
-    const [alumnos, maestros, administrativos] = await Promise.all([
-      this.prisma.perfilAlumno.findMany({
-        where: { usuarioId: { in: usuarioIds } },
-        select: { usuarioId: true, correoPersonal: true },
-      }),
-      this.prisma.perfilMaestro.findMany({
-        where: { usuarioId: { in: usuarioIds } },
-        select: { usuarioId: true, correoPersonal: true },
-      }),
-      this.prisma.perfilAdministrativo.findMany({
-        where: { usuarioId: { in: usuarioIds } },
-        select: { usuarioId: true, correoPersonal: true },
-      }),
-    ]);
-    return [...alumnos, ...maestros, ...administrativos];
   }
 
   /**
