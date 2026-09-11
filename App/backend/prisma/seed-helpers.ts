@@ -215,7 +215,17 @@ export async function seedMaestro(params: {
     RolUsuario.MAESTRO,
     params.sedeId,
   );
-  if (yaExistia) return;
+  if (yaExistia) {
+    // El `Usuario` puede existir sin su `PerfilMaestro` si un reseed
+    // anterior se truncó a mitad de camino (visto en producción/dev el
+    // 2026-09-10: `reset-db.ts` limpia todo, pero un reseed parcial deja
+    // `Usuario` creado y el perfil sin crear todavía) — self-healing en
+    // vez de asumir "Usuario existe ⇒ ya está completo".
+    const existente = await prisma.perfilMaestro.findUnique({
+      where: { usuarioId },
+    });
+    if (existente) return existente;
+  }
 
   await prisma.perfilMaestro.create({
     data: {
@@ -263,7 +273,18 @@ export async function seedAdministrativo(params: {
     RolUsuario.ADMINISTRATIVO,
     params.sedeId,
   );
-  if (yaExistia) return;
+  if (yaExistia) {
+    // Mismo self-healing que `seedMaestro` — un `Usuario` sin
+    // `PerfilAdministrativo` es el síntoma real encontrado el 2026-09-10:
+    // los 6 administrativos ancla (2 por sede × 3 sedes) quedaron así tras
+    // un reseed parcial, rompiendo `perfil.e2e-spec.ts`/
+    // `emergencia.e2e-spec.ts` con 500 en vez de asumir que ya estaban
+    // completos.
+    const existente = await prisma.perfilAdministrativo.findUnique({
+      where: { usuarioId },
+    });
+    if (existente) return existente;
+  }
 
   await prisma.perfilAdministrativo.create({
     data: {
