@@ -29,10 +29,16 @@ export function clearPlatformToken(): void {
   localStorage.removeItem(TOKEN_KEY);
 }
 
-export async function platformFetch<T>(
+/**
+ * Núcleo compartido por `platformFetch` y `platformFetchPaginated` — hace la
+ * request, maneja el 401 (limpia token + redirige a /plataforma/login, igual
+ * que antes) y lanza `ApiError` en cualquier !ok. Devuelve el body ya
+ * parseado (el objeto `{ data, ... }` completo), sin desenvolver.
+ */
+async function platformRequest(
   path: string,
   init?: RequestInit,
-): Promise<T> {
+): Promise<unknown> {
   if (!API_URL) {
     throw new Error(
       'NEXT_PUBLIC_API_URL no está definida (App/frontend/.env.local)',
@@ -82,5 +88,26 @@ export async function platformFetch<T>(
     );
   }
 
+  return body;
+}
+
+export async function platformFetch<T>(
+  path: string,
+  init?: RequestInit,
+): Promise<T> {
+  const body = await platformRequest(path, init);
   return (body as { data: T }).data;
+}
+
+/**
+ * Como `platformFetch`, pero para respuestas paginadas del contrato de esta
+ * API (`{ data: T[], page, limit, total }`). `platformFetch` descarta
+ * `page`/`limit`/`total` al hacer `.data` — esta variante los conserva.
+ */
+export async function platformFetchPaginated<T>(
+  path: string,
+  init?: RequestInit,
+): Promise<{ data: T[]; page: number; limit: number; total: number }> {
+  const body = await platformRequest(path, init);
+  return body as { data: T[]; page: number; limit: number; total: number };
 }
