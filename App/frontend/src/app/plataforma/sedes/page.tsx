@@ -5,8 +5,9 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { ApiError } from '@/lib/api/http';
-import { getPlatformToken, clearPlatformToken } from '@/lib/api/platform-http';
+import { getPlatformToken } from '@/lib/api/platform-http';
 import { listarSedes, crearSede, actualizarSede, eliminarSede, type Sede, type SedeInput } from '@/lib/api/sedes';
+import { PlataformaNav } from '../PlataformaNav';
 import { SkeletonTableRows } from '../Skeleton';
 import { ConfirmarEliminarSedeModal } from './ConfirmarEliminarSedeModal';
 import { SedeModal } from './SedeModal';
@@ -107,27 +108,9 @@ export default function PlataformaSedesPage() {
     },
   });
 
-  function cerrarSesion() {
-    clearPlatformToken();
-    router.push('/plataforma/login');
-  }
-
   return (
     <main className="mx-auto max-w-4xl p-8">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="font-display text-sm font-semibold tracking-[0.14em] text-navy uppercase">
-            SIGE · Plataforma
-          </p>
-          <h1 className="mt-1 font-display text-2xl font-semibold text-slate">Sedes</h1>
-        </div>
-        <button
-          onClick={cerrarSesion}
-          className="text-sm text-slate/60 hover:text-navy"
-        >
-          Cerrar sesión
-        </button>
-      </div>
+      <PlataformaNav activo="sedes" titulo="Sedes" />
 
       <div className="mt-6 flex items-center justify-between rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm">
         <div>

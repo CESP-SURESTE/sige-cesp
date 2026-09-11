@@ -1,12 +1,12 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { ApiError } from '@/lib/api/http';
-import { getPlatformToken, clearPlatformToken } from '@/lib/api/platform-http';
+import { getPlatformToken } from '@/lib/api/platform-http';
 import { obtenerResumenGlobal } from '@/lib/api/sedes';
+import { PlataformaNav } from './PlataformaNav';
 import { SkeletonLines, SkeletonStatTiles } from './Skeleton';
 
 export default function PlataformaDashboardPage() {
@@ -34,11 +34,6 @@ export default function PlataformaDashboardPage() {
     },
   });
 
-  function cerrarSesion() {
-    clearPlatformToken();
-    router.push('/plataforma/login');
-  }
-
   const data = resumenQuery.data;
   const maxAlumnosPorSede = data
     ? Math.max(...data.alumnosPorSede.map((f) => f.cantidad), 1)
@@ -46,25 +41,7 @@ export default function PlataformaDashboardPage() {
 
   return (
     <main className="mx-auto max-w-4xl p-8">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="font-display text-sm font-semibold tracking-[0.14em] text-navy uppercase">
-            SIGE · Plataforma
-          </p>
-          <h1 className="mt-1 font-display text-2xl font-semibold text-slate">Dashboard</h1>
-        </div>
-        <div className="flex items-center gap-4">
-          <Link href="/plataforma/sedes" className="text-sm text-navy hover:underline">
-            Gestionar sedes
-          </Link>
-          <button
-            onClick={cerrarSesion}
-            className="text-sm text-slate/60 hover:text-navy"
-          >
-            Cerrar sesión
-          </button>
-        </div>
-      </div>
+      <PlataformaNav activo="dashboard" titulo="Dashboard" />
 
       {resumenQuery.isLoading && (
         <div className="mt-6 space-y-6">
