@@ -168,153 +168,168 @@ export class PlatformAdminService {
    * `in`, no un query por fila (sin N+1).
    */
   async listarAuditoria(filtros: FiltrosAuditoria): Promise<ListaAuditoria> {
-    const page = filtros.page ?? 1;
-    const limit = filtros.limit ?? 20;
+    try {
+      const page = filtros.page ?? 1;
+      const limit = filtros.limit ?? 20;
 
-    // Regla cruzada: hasta < desde -> 400. (El formato ya lo validó el DTO.)
-    if (filtros.desde && filtros.hasta && filtros.hasta < filtros.desde) {
-      throw new BadRequestException({
-        error: 'El parámetro "hasta" no puede ser anterior a "desde"',
-        code: 'VALIDATION_ERROR',
-      });
-    }
+      // Regla cruzada: hasta < desde -> 400. (El formato ya lo validó el DTO.)
+      if (filtros.desde && filtros.hasta && filtros.hasta < filtros.desde) {
+        throw new BadRequestException({
+          error: 'El parámetro "hasta" no puede ser anterior a "desde"',
+          code: 'VALIDATION_ERROR',
+        });
+      }
 
-    const where: Prisma.RegistroAuditoriaWhereInput = {};
-    if (filtros.sedeId) where.sedeId = filtros.sedeId;
-    if (filtros.accion) where.accion = filtros.accion;
-    if (filtros.entidad) where.entidad = filtros.entidad;
-    if (filtros.actorId) {
-      where.OR = [
-        { usuarioId: filtros.actorId },
-        { adminPlataformaId: filtros.actorId },
+      const where: Prisma.RegistroAuditoriaWhereInput = {};
+      if (filtros.sedeId) where.sedeId = filtros.sedeId;
+      if (filtros.accion) where.accion = filtros.accion;
+      if (filtros.entidad) where.entidad = filtros.entidad;
+      if (filtros.actorId) {
+        where.OR = [
+          { usuarioId: filtros.actorId },
+          { adminPlataformaId: filtros.actorId },
+        ];
+      }
+      if (filtros.desde || filtros.hasta) {
+        const fecha: Prisma.DateTimeFilter = {};
+        // `fecha` es un timestamp UTC real, pero el frontend lo muestra con
+        // `toLocaleString('es-MX')` (hora local del navegador). CESP opera
+        // en Yucatán, `America/Merida` = UTC-06:00 fijo todo el año (sin
+        // horario de verano desde 2022) — offset hardcodeado a propósito, es
+        // sistema de una sola región, no amerita una librería de timezones.
+        // Sin esto, un registro de las 19:30 hora local (01:30Z del día
+        // siguiente) quedaba fuera del filtro `desde=hasta=ese día`.
+        if (filtros.desde)
+          fecha.gte = new Date(`${filtros.desde}T00:00:00.000-06:00`);
+        if (filtros.hasta) {
+          const d = new Date(`${filtros.hasta}T00:00:00.000-06:00`);
+          d.setUTCDate(d.getUTCDate() + 1);
+          fecha.lt = d; // rango [desde, hasta] inclusivo por día, en hora local de CESP
+        }
+        where.fecha = fecha;
+      }
+
+      const [filas, total] = await Promise.all([
+        this.prisma.registroAuditoria.findMany({
+          where,
+          orderBy: [{ fecha: 'desc' }, { id: 'desc' }],
+          skip: (page - 1) * limit,
+          take: limit,
+          select: {
+            id: true,
+            fecha: true,
+            accion: true,
+            entidad: true,
+            entidadId: true,
+            detalle: true,
+            usuarioId: true,
+            adminPlataformaId: true,
+            sede: { select: { id: true, nombre: true } },
+          },
+        }),
+        this.prisma.registroAuditoria.count({ where }),
+      ]);
+
+      // Resolución de actor en batch (sin N+1).
+      const usuarioIds = [
+        ...new Set(
+          filas.map((f) => f.usuarioId).filter((x): x is string => !!x),
+        ),
       ];
-    }
-    if (filtros.desde || filtros.hasta) {
-      const fecha: Prisma.DateTimeFilter = {};
-      if (filtros.desde) fecha.gte = new Date(`${filtros.desde}T00:00:00.000Z`);
-      if (filtros.hasta) {
-        const d = new Date(`${filtros.hasta}T00:00:00.000Z`);
-        d.setUTCDate(d.getUTCDate() + 1);
-        fecha.lt = d; // rango [desde, hasta] inclusivo por día, en UTC
+      const adminIds = [
+        ...new Set(
+          filas.map((f) => f.adminPlataformaId).filter((x): x is string => !!x),
+        ),
+      ];
+
+      // `in: []` es un no-op para Prisma (devuelve `[]` sin viaje relevante a
+      // la DB), así que se consultan siempre — 2 `findMany` como máximo, sin
+      // N+1 y sin ramas de tipo que compliquen el tipado del `Promise.all`.
+      const [usuarios, admins] = await Promise.all([
+        this.prisma.usuario.findMany({
+          where: { id: { in: usuarioIds } },
+          select: {
+            id: true,
+            rol: true,
+            email: true,
+            perfilAlumno: {
+              select: {
+                nombres: true,
+                apellidoPaterno: true,
+                apellidoMaterno: true,
+              },
+            },
+            perfilMaestro: {
+              select: {
+                nombres: true,
+                apellidoPaterno: true,
+                apellidoMaterno: true,
+              },
+            },
+            perfilAdministrativo: {
+              select: {
+                nombres: true,
+                apellidoPaterno: true,
+                apellidoMaterno: true,
+              },
+            },
+          },
+        }),
+        this.prisma.adminPlataforma.findMany({
+          where: { id: { in: adminIds } },
+          select: { id: true, nombre: true },
+        }),
+      ]);
+
+      const nombreUsuario = new Map<
+        string,
+        { nombre: string; rol: RolUsuario }
+      >();
+      for (const u of usuarios) {
+        const p = u.perfilAlumno ?? u.perfilMaestro ?? u.perfilAdministrativo;
+        const nombre = p
+          ? [p.nombres, p.apellidoPaterno, p.apellidoMaterno]
+              .filter((x): x is string => !!x)
+              .join(' ')
+          : u.email;
+        nombreUsuario.set(u.id, { nombre, rol: u.rol });
       }
-      where.fecha = fecha;
-    }
+      const nombreAdmin = new Map(admins.map((a) => [a.id, a.nombre]));
 
-    const [filas, total] = await Promise.all([
-      this.prisma.registroAuditoria.findMany({
-        where,
-        orderBy: { fecha: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit,
-        select: {
-          id: true,
-          fecha: true,
-          accion: true,
-          entidad: true,
-          entidadId: true,
-          detalle: true,
-          usuarioId: true,
-          adminPlataformaId: true,
-          sede: { select: { id: true, nombre: true } },
-        },
-      }),
-      this.prisma.registroAuditoria.count({ where }),
-    ]);
-
-    // Resolución de actor en batch (sin N+1).
-    const usuarioIds = [
-      ...new Set(filas.map((f) => f.usuarioId).filter((x): x is string => !!x)),
-    ];
-    const adminIds = [
-      ...new Set(
-        filas.map((f) => f.adminPlataformaId).filter((x): x is string => !!x),
-      ),
-    ];
-
-    // `in: []` es un no-op para Prisma (devuelve `[]` sin viaje relevante a
-    // la DB), así que se consultan siempre — 2 `findMany` como máximo, sin
-    // N+1 y sin ramas de tipo que compliquen el tipado del `Promise.all`.
-    const [usuarios, admins] = await Promise.all([
-      this.prisma.usuario.findMany({
-        where: { id: { in: usuarioIds } },
-        select: {
-          id: true,
-          rol: true,
-          email: true,
-          perfilAlumno: {
-            select: {
-              nombres: true,
-              apellidoPaterno: true,
-              apellidoMaterno: true,
-            },
-          },
-          perfilMaestro: {
-            select: {
-              nombres: true,
-              apellidoPaterno: true,
-              apellidoMaterno: true,
-            },
-          },
-          perfilAdministrativo: {
-            select: {
-              nombres: true,
-              apellidoPaterno: true,
-              apellidoMaterno: true,
-            },
-          },
-        },
-      }),
-      this.prisma.adminPlataforma.findMany({
-        where: { id: { in: adminIds } },
-        select: { id: true, nombre: true },
-      }),
-    ]);
-
-    const nombreUsuario = new Map<
-      string,
-      { nombre: string; rol: RolUsuario }
-    >();
-    for (const u of usuarios) {
-      const p = u.perfilAlumno ?? u.perfilMaestro ?? u.perfilAdministrativo;
-      const nombre = p
-        ? [p.nombres, p.apellidoPaterno, p.apellidoMaterno]
-            .filter((x): x is string => !!x)
-            .join(' ')
-        : u.email;
-      nombreUsuario.set(u.id, { nombre, rol: u.rol });
-    }
-    const nombreAdmin = new Map(admins.map((a) => [a.id, a.nombre]));
-
-    const data: RegistroAuditoriaItem[] = filas.map((f) => {
-      let actor: RegistroAuditoriaItem['actor'];
-      if (f.usuarioId) {
-        const info = nombreUsuario.get(f.usuarioId);
-        actor = {
-          id: f.usuarioId,
-          tipo: 'USUARIO',
-          nombre: info?.nombre ?? '—',
-          rol: info?.rol ?? null,
+      const data: RegistroAuditoriaItem[] = filas.map((f) => {
+        let actor: RegistroAuditoriaItem['actor'];
+        if (f.usuarioId) {
+          const info = nombreUsuario.get(f.usuarioId);
+          actor = {
+            id: f.usuarioId,
+            tipo: 'USUARIO',
+            nombre: info?.nombre ?? '—',
+            rol: info?.rol ?? null,
+          };
+        } else {
+          actor = {
+            id: f.adminPlataformaId!,
+            tipo: 'PLATAFORMA',
+            nombre: nombreAdmin.get(f.adminPlataformaId!) ?? '—',
+            rol: null,
+          };
+        }
+        return {
+          id: f.id,
+          fecha: f.fecha.toISOString(),
+          accion: f.accion,
+          entidad: f.entidad,
+          entidadId: f.entidadId,
+          actor,
+          sede: f.sede ? { id: f.sede.id, nombre: f.sede.nombre } : null,
+          detalle: f.detalle ?? null,
         };
-      } else {
-        actor = {
-          id: f.adminPlataformaId!,
-          tipo: 'PLATAFORMA',
-          nombre: nombreAdmin.get(f.adminPlataformaId!) ?? '—',
-          rol: null,
-        };
-      }
-      return {
-        id: f.id,
-        fecha: f.fecha.toISOString(),
-        accion: f.accion,
-        entidad: f.entidad,
-        entidadId: f.entidadId,
-        actor,
-        sede: f.sede ? { id: f.sede.id, nombre: f.sede.nombre } : null,
-        detalle: f.detalle ?? null,
-      };
-    });
+      });
 
-    return { data, page, limit, total };
+      return { data, page, limit, total };
+    } catch (err) {
+      console.error('[PlatformAdminService.listarAuditoria] error inesperado:', err);
+      throw err;
+    }
   }
 }

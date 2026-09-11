@@ -152,11 +152,7 @@ export default function PlataformaDashboardPage() {
           </Link>
         </div>
 
-        {actividadQuery.isLoading && (
-          <div className="mt-3">
-            <SkeletonLines count={5} />
-          </div>
-        )}
+        {actividadQuery.isLoading && <SkeletonLines count={5} />}
         {actividadQuery.isError && (
           <p className="mt-3 text-sm text-slate/60">
             No se pudo cargar la actividad reciente.
