@@ -561,6 +561,44 @@ export async function seedSede(config: SedeSeedConfig) {
     });
   }
 
+  // Asignación de maestros a las materias de ciclo 1 de cada grupo — para que
+  // la vista de asignaciones del admin y el dashboard del maestro no salgan
+  // vacíos. Reparte las materias del grupo entre los maestros de la sede de
+  // forma determinística (materia i → maestro i % N). Idempotente por el
+  // `@@unique([grupoId, materiaId, maestroId])` (findFirst + create, mismo
+  // patrón que grupos/materias más arriba en esta función).
+  const maestrosSede = await prisma.perfilMaestro.findMany({
+    where: { usuario: { sedeId: sede.id } },
+    orderBy: { usuario: { email: 'asc' } },
+  });
+  if (maestrosSede.length > 0) {
+    for (const grupo of grupos) {
+      const materiasGrupo = await prisma.materia.findMany({
+        where: { carreraId: grupo.carreraId, ciclo: grupo.cicloActual },
+        orderBy: { nombre: 'asc' },
+      });
+      for (let i = 0; i < materiasGrupo.length; i++) {
+        const maestro = maestrosSede[i % maestrosSede.length];
+        const yaAsignado = await prisma.grupoMateriaMaestro.findFirst({
+          where: {
+            grupoId: grupo.id,
+            materiaId: materiasGrupo[i].id,
+            maestroId: maestro.id,
+          },
+        });
+        if (!yaAsignado) {
+          await prisma.grupoMateriaMaestro.create({
+            data: {
+              grupoId: grupo.id,
+              materiaId: materiasGrupo[i].id,
+              maestroId: maestro.id,
+            },
+          });
+        }
+      }
+    }
+  }
+
   for (const personal of config.personalServicios) {
     await seedPersonalServicios({ sedeId: sede.id, ...personal });
   }

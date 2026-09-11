@@ -1,3 +1,6 @@
 # Scratch de subagentes (superpowers) — reportes/paquetes de review
 # temporales, no son parte del repo.
 .superpowers/
+
+# Credenciales de cuentas demo del entorno dev — nunca al repo.
+CUENTAS-DEMO.md
