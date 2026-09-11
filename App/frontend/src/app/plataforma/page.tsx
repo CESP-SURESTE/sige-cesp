@@ -1,8 +1,10 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
+import { listarAuditoria } from '@/lib/api/auditoria-plataforma';
 import { ApiError } from '@/lib/api/http';
 import { getPlatformToken } from '@/lib/api/platform-http';
 import { obtenerResumenGlobal } from '@/lib/api/sedes';
@@ -29,6 +31,21 @@ export default function PlataformaDashboardPage() {
         return await obtenerResumenGlobal();
       } catch (err) {
         console.error('[PlataformaDashboardPage] Error al obtener el resumen global:', err);
+        throw err;
+      }
+    },
+  });
+
+  const actividadQuery = useQuery({
+    queryKey: ['plataforma', 'auditoria', 'reciente'],
+    queryFn: async () => {
+      try {
+        return await listarAuditoria({ limit: 5 });
+      } catch (err) {
+        console.error(
+          '[PlataformaDashboardPage] Error al obtener actividad reciente:',
+          err,
+        );
         throw err;
       }
     },
@@ -121,6 +138,50 @@ export default function PlataformaDashboardPage() {
           </div>
         </>
       )}
+
+      <div className="mt-8 rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm">
+        <div className="flex items-center justify-between">
+          <h2 className="font-display text-lg font-semibold text-slate">
+            Actividad reciente
+          </h2>
+          <Link
+            href="/plataforma/auditoria"
+            className="text-sm text-navy hover:underline"
+          >
+            Ver todo →
+          </Link>
+        </div>
+
+        {actividadQuery.isLoading && (
+          <div className="mt-3">
+            <SkeletonLines count={5} />
+          </div>
+        )}
+        {actividadQuery.isError && (
+          <p className="mt-3 text-sm text-slate/60">
+            No se pudo cargar la actividad reciente.
+          </p>
+        )}
+        {actividadQuery.data && actividadQuery.data.data.length === 0 && (
+          <p className="mt-3 text-sm text-slate/60">
+            Sin actividad registrada todavía.
+          </p>
+        )}
+        {actividadQuery.data && actividadQuery.data.data.length > 0 && (
+          <ul className="mt-3 space-y-2 text-sm">
+            {actividadQuery.data.data.map((r) => (
+              <li key={r.id} className="flex flex-wrap gap-x-2 text-slate/80">
+                <span className="text-slate/50">
+                  {new Date(r.fecha).toLocaleDateString('es-MX')}
+                </span>
+                <span className="font-medium text-slate">{r.actor.nombre}</span>
+                <span>· {r.accion}</span>
+                <span>· {r.entidad}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </main>
   );
 }
