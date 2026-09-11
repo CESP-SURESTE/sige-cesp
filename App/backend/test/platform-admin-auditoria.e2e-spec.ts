@@ -39,6 +39,13 @@ interface ListaBody {
   total: number;
 }
 
+// Mismo offset fijo -06:00 (America/Merida, sin DST) que usa
+// PlatformAdminService.listarAuditoria para anclar desde/hasta al día
+// calendario local, no al UTC de `new Date().toISOString()`.
+function fechaLocalCESP(fecha: Date): string {
+  return new Date(fecha.getTime() - 6 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
 describe('GET /platform-admin/auditoria (e2e)', () => {
   let app: INestApplication<App>;
   let prisma: PrismaService;
@@ -283,7 +290,11 @@ describe('GET /platform-admin/auditoria (e2e)', () => {
   });
 
   it('filtra por rango de fechas', async () => {
-    const hoy = new Date().toISOString().slice(0, 10);
+    // Espeja el offset fijo -06:00 (America/Merida, sin DST) que usa
+    // PlatformAdminService.listarAuditoria para el filtro desde/hasta, para
+    // que "hoy" coincida con el día calendario local a cualquier hora, no
+    // solo evitando fallar cerca de medianoche UTC.
+    const hoy = fechaLocalCESP(new Date());
     const res = await get(`?desde=${hoy}&hasta=${hoy}&limit=100`);
     expect(res.status).toBe(200);
     const mios = (res.body as ListaBody).data.filter((r) =>
