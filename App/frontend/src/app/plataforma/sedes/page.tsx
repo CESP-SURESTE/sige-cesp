@@ -6,34 +6,26 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { ApiError } from '@/lib/api/http';
 import { getPlatformToken } from '@/lib/api/platform-http';
-import { listarSedes, crearSede, actualizarSede, eliminarSede, type Sede, type SedeInput } from '@/lib/api/sedes';
+import { listarSedes, actualizarSede, eliminarSede, type Sede, type SedeInput } from '@/lib/api/sedes';
 import { PlataformaNav } from '../PlataformaNav';
 import { SkeletonTableRows } from '../Skeleton';
 import { ConfirmarEliminarSedeModal } from './ConfirmarEliminarSedeModal';
 import { SedeModal } from './SedeModal';
 
 /**
- * ACTUALIZADO (2026-08-25): unificación de alta+edición en un solo modal
- * (`SedeModal`, Task 2 de la unificación de CRUD admin — regla 13 ampliada
- * de `CLAUDE.md` raíz, mismo patrón que Task 1 en `app/admin/carreras/`). El
- * form fijo de "Nueva sede" desapareció — un botón "+ Nueva sede" abre
- * `SedeModal` en modo alta (`sede: null`), el botón "Editar" de la tabla lo
- * abre en modo edición (`sede` prellenado). `PATCH /sedes/:id` sigue siendo
- * parcial por diseño (campos vacíos = sin cambio no se envían).
+ * ACTUALIZADO (2026-09-11): la creación de sede se movió a
+ * `app/plataforma/sedes/nueva/page.tsx` (exige alta de director +
+ * administrativo fundadores, Task 6 del plan "Sede con fundadores
+ * obligatorios") — "+ Nueva sede" ahora navega ahí en vez de abrir un modal.
+ * `SedeModal` se recortó a solo edición (Task 7); `sedeAEditar: null`
+ * significa modal cerrado. `PATCH /sedes/:id` sigue siendo parcial por
+ * diseño (campos vacíos = sin cambio no se envían).
  */
-
-/** Estado del modal único de alta/edición — `sede: null` es modo alta explícito. */
-interface EstadoModalSede {
-  abierto: boolean;
-  sede: Sede | null;
-}
-
-const MODAL_CERRADO: EstadoModalSede = { abierto: false, sede: null };
 
 export default function PlataformaSedesPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const [modalSede, setModalSede] = useState<EstadoModalSede>(MODAL_CERRADO);
+  const [sedeAEditar, setSedeAEditar] = useState<Sede | null>(null);
   const [sedeAEliminar, setSedeAEliminar] = useState<Sede | null>(null);
 
   // Protección de ruta del lado del cliente — app/plataforma está
@@ -58,25 +50,12 @@ export default function PlataformaSedesPage() {
     },
   });
 
-  const crearMutation = useMutation({
-    mutationFn: (input: SedeInput) => crearSede(input),
-    onSuccess: () => {
-      toast.success('Sede creada');
-      setModalSede(MODAL_CERRADO);
-      void queryClient.invalidateQueries({ queryKey: ['plataforma', 'sedes'] });
-    },
-    onError: (err, vars) => {
-      console.error('[PlataformaSedesPage] Error al crear sede:', { input: vars, err });
-      toast.error(err instanceof ApiError ? err.message : 'Error al crear la sede');
-    },
-  });
-
   const actualizarMutation = useMutation({
     mutationFn: (vars: { id: string; input: Partial<SedeInput> }) =>
       actualizarSede(vars.id, vars.input),
     onSuccess: () => {
       toast.success('Sede actualizada');
-      setModalSede(MODAL_CERRADO);
+      setSedeAEditar(null);
       void queryClient.invalidateQueries({ queryKey: ['plataforma', 'sedes'] });
     },
     onError: (err, vars) => {
@@ -94,8 +73,8 @@ export default function PlataformaSedesPage() {
     onSuccess: (_data, id) => {
       toast.success('Sede eliminada');
       setSedeAEliminar(null);
-      if (modalSede.sede?.id === id) {
-        setModalSede(MODAL_CERRADO);
+      if (sedeAEditar?.id === id) {
+        setSedeAEditar(null);
       }
     },
     onError: (err, vars) => {
@@ -118,7 +97,7 @@ export default function PlataformaSedesPage() {
           <p className="mt-1 text-sm text-slate/60">Alta y edición de las sedes de la plataforma.</p>
         </div>
         <button
-          onClick={() => setModalSede({ abierto: true, sede: null })}
+          onClick={() => router.push('/plataforma/sedes/nueva')}
           className="rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-navy-deep"
         >
           + Nueva sede
@@ -162,7 +141,7 @@ export default function PlataformaSedesPage() {
                 <td className="px-4 py-3 text-slate/80">{sede.telefono}</td>
                 <td className="px-4 py-3 text-right">
                   <button
-                    onClick={() => setModalSede({ abierto: true, sede })}
+                    onClick={() => setSedeAEditar(sede)}
                     className="text-navy hover:underline"
                   >
                     Editar
@@ -189,17 +168,14 @@ export default function PlataformaSedesPage() {
         />
       )}
 
-      {modalSede.abierto && (
+      {sedeAEditar && (
         <SedeModal
-          sede={modalSede.sede}
-          guardando={crearMutation.isPending || actualizarMutation.isPending}
-          onCrear={(payload) => crearMutation.mutate(payload)}
+          sede={sedeAEditar}
+          guardando={actualizarMutation.isPending}
           onEditar={(payload) => {
-            const sedeId = modalSede.sede?.id;
-            if (!sedeId) return;
-            actualizarMutation.mutate({ id: sedeId, input: payload });
+            actualizarMutation.mutate({ id: sedeAEditar.id, input: payload });
           }}
-          onCancelar={() => setModalSede(MODAL_CERRADO)}
+          onCancelar={() => setSedeAEditar(null)}
         />
       )}
     </main>
