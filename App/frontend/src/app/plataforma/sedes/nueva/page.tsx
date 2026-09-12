@@ -276,6 +276,11 @@ export default function NuevaSedePage() {
             </p>
           )}
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            {/* `director` nunca es null — su alta es atómica con la sede
+                (si falla, la sede entera se borra, ver
+                `SedesService.crearConFundadores`). `administrativo` es
+                best-effort: puede venir `null` si su alta falló, ver
+                `advertenciaAdministrativo` arriba. */}
             <CredencialesCard titulo="Director" resultado={resultado.director} />
             {resultado.administrativo && (
               <CredencialesCard titulo="Administrativo" resultado={resultado.administrativo} />
@@ -303,6 +308,7 @@ export default function NuevaSedePage() {
         descripcion="Crea la sede junto con sus 2 cuentas administrativas fundadoras — un director (SUPER_ADMIN) y un administrativo (ADMIN). Ambas cuentas quedan listas de inmediato, con contraseña temporal."
         onSubmit={handleSubmit((values) => mutation.mutate(values))}
         isPending={mutation.isPending}
+        submitLabel="Crear sede y cuentas"
       >
         <fieldset className="space-y-4 rounded-lg border border-mist bg-bone/50 p-4">
           <legend className="px-1 font-display text-base font-semibold text-slate">

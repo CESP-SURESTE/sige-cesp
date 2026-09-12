@@ -91,6 +91,11 @@ export function listarSedes(): Promise<Sede[]> {
   return platformFetch<Sede[]>('/sedes');
 }
 
+/**
+ * @deprecated Reemplazada por `crearSedeConFundadores` desde 2026-09-11 —
+ * `POST /sedes` ya no acepta el body plano. Se conserva sin borrar por si
+ * algo más la referencia; confirma antes de borrar de verdad.
+ */
 export function crearSede(input: SedeInput): Promise<Sede> {
   return platformFetch<Sede>('/sedes', {
     method: 'POST',
