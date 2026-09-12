@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  HttpException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -208,12 +209,26 @@ export class SedesService {
         '[SedesService.crearConFundadores] Falló el alta del segundo administrativo — sede y director quedan creados, sin deshacer (regla 3):',
         err,
       );
+
+      // Hallazgo Important del review final (2026-09-11): antes se devolvía
+      // siempre el mismo string genérico sin importar la causa real (CURP
+      // duplicado, email colisionado, Auth caído, etc.). Si `err` es una
+      // excepción HTTP de Nest (`ConflictException`/`NotFoundException`/...),
+      // se extrae su `error` real para incluirlo en el mensaje; cualquier
+      // otro tipo de error (ej. una excepción no controlada) cae al mensaje
+      // genérico de siempre.
+      const detalleError =
+        err instanceof HttpException
+          ? (err.getResponse() as { error?: string }).error
+          : undefined;
+
       return {
         sede,
         director,
         administrativo: null,
-        advertenciaAdministrativo:
-          'La sede y el director se crearon correctamente, pero el segundo administrativo no pudo darse de alta. Inicia sesión como el director y complétalo desde "Administrativos > Nuevo".',
+        advertenciaAdministrativo: detalleError
+          ? `La sede y el director se crearon correctamente, pero el segundo administrativo no pudo darse de alta (${detalleError}). Inicia sesión como el director y complétalo desde "Administrativos > Nuevo".`
+          : 'La sede y el director se crearon correctamente, pero el segundo administrativo no pudo darse de alta. Inicia sesión como el director y complétalo desde "Administrativos > Nuevo".',
       };
     }
   }

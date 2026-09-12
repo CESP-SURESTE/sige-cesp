@@ -764,6 +764,10 @@ export class PersonasService {
     sedeId: string,
     actorAdminPlataformaId: string,
   ): Promise<AltaPersonaResult> {
+    // Defensivo/inalcanzable con el caller actual: `SedesService.crearConFundadores`
+    // nunca manda `codigoExterno` en el DTO que arma (director/administrativo
+    // fundadores no lo capturan). Se conserva por simetría con `altaPersona`
+    // (mismo pre-check) por si `SedesService` cambia en el futuro para aceptarlo.
     if (dto.codigoExterno) {
       const codigoExternoEnUso = await this.prisma.usuario.findUnique({
         where: { codigoExterno: dto.codigoExterno },
