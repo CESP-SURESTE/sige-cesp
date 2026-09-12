@@ -3,8 +3,22 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { AccionAuditoria, Prisma, RolUsuario, type Sede } from '@prisma/client';
+import {
+  AccionAuditoria,
+  NivelPermiso,
+  Prisma,
+  RolUsuario,
+  type Sede,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import type {
+  CrearPersonaDto,
+  PerfilAdministrativoDto,
+} from '../personas/dto/crear-persona.dto';
+import {
+  PersonasService,
+  type AltaPersonaResult,
+} from '../personas/personas.service';
 import type { ActualizarSedeDto } from './dto/actualizar-sede.dto';
 import type { CrearSedeDto } from './dto/crear-sede.dto';
 
@@ -43,7 +57,10 @@ function hayCambiosReales(dto: ActualizarSedeDto, existente: Sede): boolean {
 
 @Injectable()
 export class SedesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly personasService: PersonasService,
+  ) {}
 
   /**
    * Trae una sede por id. El `SedeGuard` ya garantizó, antes de llegar acá,
@@ -109,6 +126,95 @@ export class SedesService {
       }
       console.error('[SedesService.crear] error inesperado:', err);
       throw err;
+    }
+  }
+
+  /**
+   * `POST /sedes` (2026-09-11) — crea la sede + 2 cuentas ADMINISTRATIVO
+   * fundadoras (director `SUPER_ADMIN` + administrativo `ADMIN`). Ver
+   * `docs/superpowers/specs/2026-09-11-sede-fundadores-obligatorios-design.md`
+   * para la justificación completa de la estrategia de atomicidad.
+   *
+   * Atómico de verdad para Sede+Director: si el alta del director falla, la
+   * sede recién creada (0 dependientes todavía) se borra — mismo camino que
+   * `eliminar`. El segundo administrativo es best-effort: si falla, sede y
+   * director quedan creados (regla 3 de CLAUDE.md raíz prohíbe deshacer una
+   * persona ya creada) y la respuesta trae `administrativo: null` +
+   * `advertenciaAdministrativo`.
+   */
+  async crearConFundadores(
+    dtoSede: CrearSedeDto,
+    dtoDirector: PerfilAdministrativoDto,
+    dtoAdministrativo: PerfilAdministrativoDto,
+    actorPlatformAdminId: string,
+  ): Promise<{
+    sede: Sede;
+    director: AltaPersonaResult;
+    administrativo: AltaPersonaResult | null;
+    advertenciaAdministrativo?: string;
+  }> {
+    const sede = await this.crear(dtoSede, actorPlatformAdminId);
+
+    const dtoDirectorCompleto: CrearPersonaDto = {
+      rol: RolUsuario.ADMINISTRATIVO,
+      perfilAdministrativo: {
+        ...dtoDirector,
+        nivelPermiso: NivelPermiso.SUPER_ADMIN,
+      },
+    };
+
+    let director: AltaPersonaResult;
+    try {
+      director = await this.personasService.altaAdministrativoFundador(
+        dtoDirectorCompleto,
+        sede.id,
+        actorPlatformAdminId,
+      );
+    } catch (err) {
+      console.error(
+        '[SedesService.crearConFundadores] Falló el alta del director — compensando (borrando la sede recién creada):',
+        err,
+      );
+      try {
+        await this.eliminar(sede.id, actorPlatformAdminId);
+      } catch (compensationErr) {
+        console.error(
+          '[SedesService.crearConFundadores] CRÍTICO: no se pudo borrar la sede tras el fallo del director — queda huérfana, requiere limpieza manual. sedeId:',
+          sede.id,
+          compensationErr,
+        );
+      }
+      throw err;
+    }
+
+    const dtoAdministrativoCompleto: CrearPersonaDto = {
+      rol: RolUsuario.ADMINISTRATIVO,
+      perfilAdministrativo: {
+        ...dtoAdministrativo,
+        nivelPermiso: NivelPermiso.ADMIN,
+      },
+    };
+
+    try {
+      const administrativo =
+        await this.personasService.altaAdministrativoFundador(
+          dtoAdministrativoCompleto,
+          sede.id,
+          actorPlatformAdminId,
+        );
+      return { sede, director, administrativo };
+    } catch (err) {
+      console.error(
+        '[SedesService.crearConFundadores] Falló el alta del segundo administrativo — sede y director quedan creados, sin deshacer (regla 3):',
+        err,
+      );
+      return {
+        sede,
+        director,
+        administrativo: null,
+        advertenciaAdministrativo:
+          'La sede y el director se crearon correctamente, pero el segundo administrativo no pudo darse de alta. Inicia sesión como el director y complétalo desde "Administrativos > Nuevo".',
+      };
     }
   }
 

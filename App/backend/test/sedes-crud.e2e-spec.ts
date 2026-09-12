@@ -1,11 +1,12 @@
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { randomUUID } from 'node:crypto';
-import { RolUsuario } from '@prisma/client';
+import { NivelPermiso, PuestoAdministrativo, RolUsuario } from '@prisma/client';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
 import { loadEnv } from '../src/load-env';
+import { PERSONAS_SUPABASE_CLIENT_OVERRIDE } from '../src/personas/personas.service';
 import { firmarPlatformAdminToken } from '../src/platform-admin/platform-admin-jwt.util';
 import { hashPassword } from '../src/platform-admin/password.util';
 import { PrismaService } from '../src/prisma/prisma.service';
@@ -17,8 +18,8 @@ interface ErrorBody {
   error: string;
   code: string;
 }
-interface SedeBody {
-  data: { id: string; nombre: string };
+interface SedeConFundadoresBody {
+  data: { sede: { id: string; nombre: string } };
 }
 
 describe('CRUD /sedes con PlatformAdminGuard (e2e)', () => {
@@ -27,11 +28,85 @@ describe('CRUD /sedes con PlatformAdminGuard (e2e)', () => {
   let token: string;
   const emailAdmin = 'e2e.sedes-crud@nexo-sd.mx';
   const nombreSedePrueba = `Sede E2E ${Date.now()}`;
+  let createUser: jest.Mock;
+  let deleteUser: jest.Mock;
+
+  function contactoValido(overrides: Record<string, unknown> = {}) {
+    return {
+      nombre: 'Contacto Prueba',
+      telefono: '9990004444',
+      parentesco: 'Padre',
+      ...overrides,
+    };
+  }
+
+  function infoMedicaValida(overrides: Record<string, unknown> = {}) {
+    return {
+      tieneCondicionMedica: false,
+      tipoSangre: 'O_POSITIVO',
+      ...overrides,
+    };
+  }
+
+  function fundadorValido(overrides: Record<string, unknown> = {}) {
+    return {
+      nombres: 'Prueba',
+      apellidoPaterno: 'Fundador',
+      curp: `CURP${randomUUID().slice(0, 14).toUpperCase()}`,
+      correoPersonal: `fundador.${randomUUID()}@example.com`,
+      telefono: '9990001111',
+      fechaContratacion: '2026-01-01',
+      puesto: PuestoAdministrativo.DIRECTOR,
+      contactos: [contactoValido()],
+      infoMedica: infoMedicaValida(),
+      ...overrides,
+    };
+  }
+
+  function mockCreateUserExitoso() {
+    createUser.mockImplementation(({ email }: { email: string }) => ({
+      data: {
+        user: {
+          id: randomUUID(),
+          email,
+          aud: 'authenticated',
+          role: 'authenticated',
+          app_metadata: {},
+          user_metadata: {},
+        },
+      },
+      error: null,
+    }));
+  }
+
+  /** Body completo de `POST /sedes` — sede + 2 fundadores válidos. */
+  function bodySedeConFundadores(nombre: string) {
+    return {
+      sede: {
+        nombre,
+        direccion: 'Calle Falsa 123',
+        ubicacionReferencia: 'Frente al parque',
+        telefono: '9991234567',
+      },
+      director: fundadorValido({
+        correoPersonal: `director.${randomUUID()}@example.com`,
+      }),
+      administrativo: fundadorValido({
+        correoPersonal: `admin.${randomUUID()}@example.com`,
+      }),
+    };
+  }
 
   beforeAll(async () => {
+    createUser = jest.fn();
+    deleteUser = jest.fn().mockResolvedValue({ data: {}, error: null });
+
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(PERSONAS_SUPABASE_CLIENT_OVERRIDE)
+      .useValue({ auth: { admin: { createUser, deleteUser } } })
+      .compile();
 
     app = moduleFixture.createNestApplication();
     configureApp(app);
@@ -107,26 +182,55 @@ describe('CRUD /sedes con PlatformAdminGuard (e2e)', () => {
 
   let sedeCreadaId: string;
 
-  it('POST /sedes crea una sede y audita con adminPlataformaId', async () => {
+  it('POST /sedes crea una sede + director + administrativo, audita con adminPlataformaId', async () => {
+    mockCreateUserExitoso();
+
     const res = await request(app.getHttpServer())
       .post('/sedes')
       .set('Authorization', `Bearer ${token}`)
       .send({
-        nombre: nombreSedePrueba,
-        direccion: 'Calle Falsa 123',
-        ubicacionReferencia: 'Frente al parque',
-        telefono: '9991234567',
+        sede: {
+          nombre: nombreSedePrueba,
+          direccion: 'Calle Falsa 123',
+          ubicacionReferencia: 'Frente al parque',
+          telefono: '9991234567',
+        },
+        director: fundadorValido({
+          correoPersonal: `director.${randomUUID()}@example.com`,
+        }),
+        administrativo: fundadorValido({
+          correoPersonal: `admin.${randomUUID()}@example.com`,
+        }),
       });
 
     expect(res.status).toBe(201);
-    expect((res.body as SedeBody).data.nombre).toBe(nombreSedePrueba);
-    sedeCreadaId = (res.body as SedeBody).data.id;
+    const body = res.body as {
+      data: {
+        sede: { id: string; nombre: string };
+        director: { usuario: { id: string } };
+        administrativo: { usuario: { id: string } } | null;
+      };
+    };
+    expect(body.data.sede.nombre).toBe(nombreSedePrueba);
+    expect(body.data.director.usuario.id).toBeTruthy();
+    expect(body.data.administrativo?.usuario.id).toBeTruthy();
+    sedeCreadaId = body.data.sede.id;
 
     const registro = await prisma.registroAuditoria.findFirst({
       where: { entidad: 'Sede', entidadId: sedeCreadaId },
     });
     expect(registro?.adminPlataformaId).not.toBeNull();
     expect(registro?.usuarioId).toBeNull();
+
+    const director = await prisma.perfilAdministrativo.findUnique({
+      where: { usuarioId: body.data.director.usuario.id },
+    });
+    expect(director?.nivelPermiso).toBe(NivelPermiso.SUPER_ADMIN);
+
+    const administrativo = await prisma.perfilAdministrativo.findUnique({
+      where: { usuarioId: body.data.administrativo!.usuario.id },
+    });
+    expect(administrativo?.nivelPermiso).toBe(NivelPermiso.ADMIN);
   });
 
   it('POST /sedes con nombre duplicado -> 409 CONFLICT', async () => {
@@ -134,10 +238,18 @@ describe('CRUD /sedes con PlatformAdminGuard (e2e)', () => {
       .post('/sedes')
       .set('Authorization', `Bearer ${token}`)
       .send({
-        nombre: nombreSedePrueba,
-        direccion: 'Otra dirección',
-        ubicacionReferencia: 'Otra referencia',
-        telefono: '9997654321',
+        sede: {
+          nombre: nombreSedePrueba,
+          direccion: 'Otra dirección',
+          ubicacionReferencia: 'Otra referencia',
+          telefono: '9997654321',
+        },
+        director: fundadorValido({
+          correoPersonal: `director.${randomUUID()}@example.com`,
+        }),
+        administrativo: fundadorValido({
+          correoPersonal: `admin.${randomUUID()}@example.com`,
+        }),
       });
 
     expect(res.status).toBe(409);
@@ -245,17 +357,36 @@ describe('CRUD /sedes con PlatformAdminGuard (e2e)', () => {
   });
 
   describe('DELETE /sedes/:id', () => {
+    /**
+     * Este `describe` prueba las reglas de `DELETE /sedes/:id` en función de
+     * qué tan "vacía" está la sede — necesita poder producir una sede
+     * REALMENTE vacía (0 dependientes), pero desde el 2026-09-11
+     * `POST /sedes` siempre crea 2 fundadores `ADMINISTRATIVO` junto con la
+     * sede (ver `SedesService.crearConFundadores`). Se borran los 2
+     * fundadores inmediatamente después de crearlos para restaurar el
+     * escenario "sede vacía" que este bloque necesita — los tests que
+     * agregan su propio dato asociado (alumno/maestro/carrera) siguen
+     * bloqueando el DELETE igual, sin importar si los fundadores están o no.
+     */
     async function crearSedeDePrueba(nombre: string): Promise<string> {
+      mockCreateUserExitoso();
       const res = await request(app.getHttpServer())
         .post('/sedes')
         .set('Authorization', `Bearer ${token}`)
-        .send({
-          nombre,
-          direccion: 'Calle Falsa 123',
-          ubicacionReferencia: 'Frente al parque',
-          telefono: '9991234567',
-        });
-      return (res.body as SedeBody).data.id;
+        .send(bodySedeConFundadores(nombre));
+      const body = res.body as {
+        data: {
+          sede: { id: string };
+          director: { usuario: { id: string } };
+          administrativo: { usuario: { id: string } } | null;
+        };
+      };
+      const idsFundadores = [
+        body.data.director.usuario.id,
+        body.data.administrativo?.usuario.id,
+      ].filter((id): id is string => Boolean(id));
+      await prisma.usuario.deleteMany({ where: { id: { in: idsFundadores } } });
+      return body.data.sede.id;
     }
 
     it('sede vacía se elimina exitosamente', async () => {
@@ -447,16 +578,12 @@ describe('CRUD /sedes con PlatformAdminGuard (e2e)', () => {
     }
 
     async function crearSedeDePrueba(nombre: string): Promise<string> {
+      mockCreateUserExitoso();
       const res = await request(app.getHttpServer())
         .post('/sedes')
         .set('Authorization', `Bearer ${token}`)
-        .send({
-          nombre,
-          direccion: 'Calle Falsa 123',
-          ubicacionReferencia: 'Frente al parque',
-          telefono: '9991234567',
-        });
-      return (res.body as SedeBody).data.id;
+        .send(bodySedeConFundadores(nombre));
+      return (res.body as SedeConFundadoresBody).data.sede.id;
     }
 
     it('devuelve conteos globales correctos cruzando 2 sedes distintas', async () => {
