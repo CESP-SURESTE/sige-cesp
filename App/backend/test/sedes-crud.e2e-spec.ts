@@ -266,6 +266,112 @@ describe('CRUD /sedes con PlatformAdminGuard (e2e)', () => {
     expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
   });
 
+  it('POST /sedes — falla el alta del director -> la sede recién creada se borra (nada queda)', async () => {
+    // El director es el primer alta que llama a Supabase Auth -> falla de
+    // entrada, así que ni siquiera se intenta el administrativo.
+    createUser.mockReset();
+    createUser.mockImplementation(() => ({
+      data: null,
+      error: { code: 'unexpected_failure', status: 500, message: 'boom' },
+    }));
+
+    const nombreSedeFalla = `Sede E2E Falla Director ${Date.now()}`;
+
+    const res = await request(app.getHttpServer())
+      .post('/sedes')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        sede: {
+          nombre: nombreSedeFalla,
+          direccion: 'Calle Falsa 456',
+          ubicacionReferencia: 'Frente al mercado',
+          telefono: '9991234568',
+        },
+        director: fundadorValido({ correoPersonal: `director-falla.${randomUUID()}@example.com` }),
+        administrativo: fundadorValido({
+          correoPersonal: `admin-falla.${randomUUID()}@example.com`,
+        }),
+      });
+
+    expect(res.status).toBe(500);
+
+    const sedeHuerfana = await prisma.sede.findUnique({
+      where: { nombre: nombreSedeFalla },
+    });
+    expect(sedeHuerfana).toBeNull();
+  });
+
+  it('POST /sedes — falla el alta del administrativo -> sede+director quedan, respuesta trae advertencia', async () => {
+    createUser.mockReset();
+    let llamada = 0;
+    createUser.mockImplementation(({ email }: { email: string }) => {
+      llamada += 1;
+      if (llamada === 1) {
+        // Director: éxito
+        return {
+          data: {
+            user: {
+              id: randomUUID(),
+              email,
+              aud: 'authenticated',
+              role: 'authenticated',
+              app_metadata: {},
+              user_metadata: {},
+            },
+          },
+          error: null,
+        };
+      }
+      // Administrativo: falla
+      return {
+        data: null,
+        error: { code: 'unexpected_failure', status: 500, message: 'boom' },
+      };
+    });
+
+    const nombreSedeParcial = `Sede E2E Falla Administrativo ${Date.now()}`;
+
+    const res = await request(app.getHttpServer())
+      .post('/sedes')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        sede: {
+          nombre: nombreSedeParcial,
+          direccion: 'Calle Falsa 789',
+          ubicacionReferencia: 'Frente a la plaza',
+          telefono: '9991234569',
+        },
+        director: fundadorValido({
+          correoPersonal: `director-parcial.${randomUUID()}@example.com`,
+        }),
+        administrativo: fundadorValido({
+          correoPersonal: `admin-parcial.${randomUUID()}@example.com`,
+        }),
+      });
+
+    expect(res.status).toBe(201);
+    const body = res.body as {
+      data: {
+        sede: { id: string };
+        director: { usuario: { id: string } };
+        administrativo: null;
+        advertenciaAdministrativo: string;
+      };
+    };
+    expect(body.data.administrativo).toBeNull();
+    expect(body.data.advertenciaAdministrativo).toContain('director');
+
+    const sedeParcial = await prisma.sede.findUnique({
+      where: { id: body.data.sede.id },
+    });
+    expect(sedeParcial).not.toBeNull();
+
+    const director = await prisma.usuario.findUnique({
+      where: { id: body.data.director.usuario.id },
+    });
+    expect(director).not.toBeNull();
+  });
+
   it('GET /sedes incluye la sede recién creada', async () => {
     const res = await request(app.getHttpServer())
       .get('/sedes')
