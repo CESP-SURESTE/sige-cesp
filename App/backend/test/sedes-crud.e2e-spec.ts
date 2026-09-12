@@ -197,6 +197,12 @@ describe('CRUD /sedes con PlatformAdminGuard (e2e)', () => {
         },
         director: fundadorValido({
           correoPersonal: `director.${randomUUID()}@example.com`,
+          // nivelPermiso enviado por el cliente debe ignorarse/sobreescribirse
+          // server-side (ver `SedesService.crearConFundadores` — el spread
+          // pone el valor forzado al final). `AUXILIAR` es un valor inválido
+          // para un director real: si el forzado fallara, el assert de abajo
+          // (`SUPER_ADMIN`) lo detectaría.
+          nivelPermiso: NivelPermiso.AUXILIAR,
         }),
         administrativo: fundadorValido({
           correoPersonal: `admin.${randomUUID()}@example.com`,
@@ -225,6 +231,8 @@ describe('CRUD /sedes con PlatformAdminGuard (e2e)', () => {
     const director = await prisma.perfilAdministrativo.findUnique({
       where: { usuarioId: body.data.director.usuario.id },
     });
+    // Regression guard: el `nivelPermiso: AUXILIAR` mandado arriba en el
+    // body del director se ignoró — el server lo forzó a SUPER_ADMIN.
     expect(director?.nivelPermiso).toBe(NivelPermiso.SUPER_ADMIN);
 
     const administrativo = await prisma.perfilAdministrativo.findUnique({
