@@ -6,8 +6,24 @@ import type { FieldErrors, FieldValues, Path, UseFormRegister } from 'react-hook
 import { FieldError } from './FieldError';
 import { INPUT_CLASS, LABEL_CLASS } from './estilos';
 
-/** Nombre del sub-objeto de perfil según `rol`, espejo de `CrearPersonaDto` (backend). */
-export type PerfilPrefix = 'perfilAlumno' | 'perfilMaestro' | 'perfilAdministrativo';
+/**
+ * Nombre del sub-objeto de perfil según `rol`, espejo de `CrearPersonaDto`
+ * (backend) — `'perfilAlumno' | 'perfilMaestro' | 'perfilAdministrativo'`.
+ * Ganó `'director' | 'administrativo'` (Task 6, 2026-09-11): el formulario
+ * de `sedes/nueva/page.tsx` no tiene un solo sub-perfil por rol, tiene 2
+ * fundadores del MISMO rol (`ADMINISTRATIVO`, ambos vía `FundadorInput`,
+ * `lib/api/sedes.ts`) distinguidos por su cargo (director/administrativo),
+ * así que el prefijo de sección es ese cargo, no el nombre de rol de
+ * `CrearPersonaDto`. Ajuste hecho en esta copia duplicada de
+ * `app/plataforma/` únicamente (regla 11 — no se toca el original en
+ * `components/admin/ui/persona-alta/`, que no lo necesita).
+ */
+export type PerfilPrefix =
+  | 'perfilAlumno'
+  | 'perfilMaestro'
+  | 'perfilAdministrativo'
+  | 'director'
+  | 'administrativo';
 
 /**
  * Campos de datos personales que los 3 sub-perfiles (`PerfilAlumnoDto`/
