@@ -730,6 +730,79 @@ export class PersonasService {
       );
     }
 
+    return this.ejecutarAltaPersona(dto, sedeId, { usuarioId: actorUsuarioId });
+  }
+
+  /**
+   * Solo lo llama `SedesService.crearConFundadores` — sin controller/ruta
+   * propia. Crea un ADMINISTRATIVO fundador de una sede recién creada, SIN
+   * `verificarJerarquiaNivelPermiso` (no hay jerarquía previa que consultar:
+   * 0 administrativos en la sede todavía; el actor real es `AdminPlataforma`,
+   * por diseño ya por encima de esa jerarquía — mismo criterio del spec de
+   * Día 20, `docs/superpowers/specs/2026-08-14-crud-sedes-admin-plataforma-design.md`).
+   * `dto.perfilAdministrativo.nivelPermiso` debe venir ya resuelto por el
+   * caller — `SedesService` lo fuerza a SUPER_ADMIN/ADMIN server-side, nunca
+   * lo decide el cliente (regla 1 de CLAUDE.md raíz).
+   *
+   * DESVIACIÓN respecto al brief/spec original (2026-09-11): la firma acá
+   * gana un tercer parámetro `actorAdminPlataformaId`, que NI el brief de
+   * esta task NI el spec de diseño mencionaban. Motivo: el bloque de
+   * `ejecutarAltaPersona` extraído "verbatim" de `altaPersona` (líneas
+   * 733-1107 originales) escribe un `RegistroAuditoria` usando
+   * `actorUsuarioId` — un parámetro que ninguno de los dos documentos
+   * declaraba para `ejecutarAltaPersona`/`altaAdministrativoFundador`. Sin
+   * un actor real, ese insert queda con `usuario_id`/`admin_plataforma_id`
+   * ambos NULL, lo que viola el CHECK `registro_auditoria_actor_check`
+   * (migración `20260814220151_admin_plataforma`, regla "un actor XOR el
+   * otro, nunca ninguno") — un error real de Postgres en cada llamada a
+   * `crearConFundadores`, no solo un problema de tipos. Ver el reporte de
+   * esta task para el detalle completo; queda documentado también acá por
+   * si `SedesService` (Task 2) se implementa sin releer el reporte.
+   */
+  async altaAdministrativoFundador(
+    dto: CrearPersonaDto,
+    sedeId: string,
+    actorAdminPlataformaId: string,
+  ): Promise<AltaPersonaResult> {
+    if (dto.codigoExterno) {
+      const codigoExternoEnUso = await this.prisma.usuario.findUnique({
+        where: { codigoExterno: dto.codigoExterno },
+        select: { id: true },
+      });
+      if (codigoExternoEnUso) {
+        throw new ConflictException({
+          error: 'Ya existe un usuario con ese código externo',
+          code: 'CONFLICT',
+        });
+      }
+    }
+
+    if (!dto.perfilAdministrativo) {
+      throw new BadRequestException({
+        error: 'perfilAdministrativo es requerido',
+        code: 'VALIDATION_ERROR',
+      });
+    }
+
+    return this.ejecutarAltaPersona(dto, sedeId, {
+      adminPlataformaId: actorAdminPlataformaId,
+    });
+  }
+
+  /**
+   * `actor` identifica a quién auditar como responsable del `RegistroAuditoria`
+   * `ALTA` que se crea dentro de la transacción de abajo — exactamente uno de
+   * `usuarioId`/`adminPlataformaId` (nunca ambos, nunca ninguno), por el CHECK
+   * `registro_auditoria_actor_check`. `altaPersona` pasa `{ usuarioId }` (el
+   * admin real que hace la request); `altaAdministrativoFundador` pasa
+   * `{ adminPlataformaId }` (no hay `Usuario` actor en ese camino — ver el
+   * comentario de `altaAdministrativoFundador` arriba).
+   */
+  private async ejecutarAltaPersona(
+    dto: CrearPersonaDto,
+    sedeId: string,
+    actor: { usuarioId: string } | { adminPlataformaId: string },
+  ): Promise<AltaPersonaResult> {
     // --- Generación del login (feature 2026-08-18) — DEBE ocurrir antes de
     // llamar a Supabase Auth (unas líneas abajo), porque el Admin API
     // necesita el email de la cuenta ANTES de que exista la fila de
@@ -975,12 +1048,15 @@ export class PersonasService {
 
         // Regla 5 de CLAUDE.md raíz — RegistroAuditoria solo se crea acá,
         // automáticamente, nunca vía un endpoint de escritura directa.
-        // `usuarioId` es el ACTOR (el admin que hace la request, sacado del
-        // JWT — `actorUsuarioId`), no la persona recién creada; esa va en
-        // `entidadId`.
+        // El actor (quién hace la request) va en `usuarioId` O
+        // `adminPlataformaId` según `actor` (ver JSDoc de este método) —
+        // nunca ambos, nunca ninguno (CHECK `registro_auditoria_actor_check`).
+        // La persona recién creada NO es el actor, va en `entidadId`.
         await tx.registroAuditoria.create({
           data: {
-            usuarioId: actorUsuarioId,
+            usuarioId: 'usuarioId' in actor ? actor.usuarioId : null,
+            adminPlataformaId:
+              'adminPlataformaId' in actor ? actor.adminPlataformaId : null,
             sedeId,
             accion: AccionAuditoria.ALTA,
             entidad: 'Usuario',

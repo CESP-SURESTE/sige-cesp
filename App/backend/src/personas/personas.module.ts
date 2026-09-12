@@ -27,6 +27,6 @@ import {
     PersonasService,
     { provide: PERSONAS_SUPABASE_CLIENT_OVERRIDE, useValue: undefined },
   ],
-  exports: [PERSONAS_SUPABASE_CLIENT_OVERRIDE],
+  exports: [PersonasService, PERSONAS_SUPABASE_CLIENT_OVERRIDE],
 })
 export class PersonasModule {}
