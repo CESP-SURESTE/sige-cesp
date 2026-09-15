@@ -1,11 +1,12 @@
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { randomUUID } from 'node:crypto';
-import { RolUsuario } from '@prisma/client';
+import { NivelPermiso, PuestoAdministrativo, RolUsuario } from '@prisma/client';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
 import { loadEnv } from '../src/load-env';
+import { PERSONAS_SUPABASE_CLIENT_OVERRIDE } from '../src/personas/personas.service';
 import { firmarPlatformAdminToken } from '../src/platform-admin/platform-admin-jwt.util';
 import { hashPassword } from '../src/platform-admin/password.util';
 import { PrismaService } from '../src/prisma/prisma.service';
@@ -17,8 +18,8 @@ interface ErrorBody {
   error: string;
   code: string;
 }
-interface SedeBody {
-  data: { id: string; nombre: string };
+interface SedeConFundadoresBody {
+  data: { sede: { id: string; nombre: string } };
 }
 
 describe('CRUD /sedes con PlatformAdminGuard (e2e)', () => {
@@ -27,11 +28,85 @@ describe('CRUD /sedes con PlatformAdminGuard (e2e)', () => {
   let token: string;
   const emailAdmin = 'e2e.sedes-crud@nexo-sd.mx';
   const nombreSedePrueba = `Sede E2E ${Date.now()}`;
+  let createUser: jest.Mock;
+  let deleteUser: jest.Mock;
+
+  function contactoValido(overrides: Record<string, unknown> = {}) {
+    return {
+      nombre: 'Contacto Prueba',
+      telefono: '9990004444',
+      parentesco: 'Padre',
+      ...overrides,
+    };
+  }
+
+  function infoMedicaValida(overrides: Record<string, unknown> = {}) {
+    return {
+      tieneCondicionMedica: false,
+      tipoSangre: 'O_POSITIVO',
+      ...overrides,
+    };
+  }
+
+  function fundadorValido(overrides: Record<string, unknown> = {}) {
+    return {
+      nombres: 'Prueba',
+      apellidoPaterno: 'Fundador',
+      curp: `CURP${randomUUID().slice(0, 14).toUpperCase()}`,
+      correoPersonal: `fundador.${randomUUID()}@example.com`,
+      telefono: '9990001111',
+      fechaContratacion: '2026-01-01',
+      puesto: PuestoAdministrativo.DIRECTOR,
+      contactos: [contactoValido()],
+      infoMedica: infoMedicaValida(),
+      ...overrides,
+    };
+  }
+
+  function mockCreateUserExitoso() {
+    createUser.mockImplementation(({ email }: { email: string }) => ({
+      data: {
+        user: {
+          id: randomUUID(),
+          email,
+          aud: 'authenticated',
+          role: 'authenticated',
+          app_metadata: {},
+          user_metadata: {},
+        },
+      },
+      error: null,
+    }));
+  }
+
+  /** Body completo de `POST /sedes` — sede + 2 fundadores válidos. */
+  function bodySedeConFundadores(nombre: string) {
+    return {
+      sede: {
+        nombre,
+        direccion: 'Calle Falsa 123',
+        ubicacionReferencia: 'Frente al parque',
+        telefono: '9991234567',
+      },
+      director: fundadorValido({
+        correoPersonal: `director.${randomUUID()}@example.com`,
+      }),
+      administrativo: fundadorValido({
+        correoPersonal: `admin.${randomUUID()}@example.com`,
+      }),
+    };
+  }
 
   beforeAll(async () => {
+    createUser = jest.fn();
+    deleteUser = jest.fn().mockResolvedValue({ data: {}, error: null });
+
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(PERSONAS_SUPABASE_CLIENT_OVERRIDE)
+      .useValue({ auth: { admin: { createUser, deleteUser } } })
+      .compile();
 
     app = moduleFixture.createNestApplication();
     configureApp(app);
@@ -107,26 +182,63 @@ describe('CRUD /sedes con PlatformAdminGuard (e2e)', () => {
 
   let sedeCreadaId: string;
 
-  it('POST /sedes crea una sede y audita con adminPlataformaId', async () => {
+  it('POST /sedes crea una sede + director + administrativo, audita con adminPlataformaId', async () => {
+    mockCreateUserExitoso();
+
     const res = await request(app.getHttpServer())
       .post('/sedes')
       .set('Authorization', `Bearer ${token}`)
       .send({
-        nombre: nombreSedePrueba,
-        direccion: 'Calle Falsa 123',
-        ubicacionReferencia: 'Frente al parque',
-        telefono: '9991234567',
+        sede: {
+          nombre: nombreSedePrueba,
+          direccion: 'Calle Falsa 123',
+          ubicacionReferencia: 'Frente al parque',
+          telefono: '9991234567',
+        },
+        director: fundadorValido({
+          correoPersonal: `director.${randomUUID()}@example.com`,
+          // nivelPermiso enviado por el cliente debe ignorarse/sobreescribirse
+          // server-side (ver `SedesService.crearConFundadores` — el spread
+          // pone el valor forzado al final). `AUXILIAR` es un valor inválido
+          // para un director real: si el forzado fallara, el assert de abajo
+          // (`SUPER_ADMIN`) lo detectaría.
+          nivelPermiso: NivelPermiso.AUXILIAR,
+        }),
+        administrativo: fundadorValido({
+          correoPersonal: `admin.${randomUUID()}@example.com`,
+        }),
       });
 
     expect(res.status).toBe(201);
-    expect((res.body as SedeBody).data.nombre).toBe(nombreSedePrueba);
-    sedeCreadaId = (res.body as SedeBody).data.id;
+    const body = res.body as {
+      data: {
+        sede: { id: string; nombre: string };
+        director: { usuario: { id: string } };
+        administrativo: { usuario: { id: string } } | null;
+      };
+    };
+    expect(body.data.sede.nombre).toBe(nombreSedePrueba);
+    expect(body.data.director.usuario.id).toBeTruthy();
+    expect(body.data.administrativo?.usuario.id).toBeTruthy();
+    sedeCreadaId = body.data.sede.id;
 
     const registro = await prisma.registroAuditoria.findFirst({
       where: { entidad: 'Sede', entidadId: sedeCreadaId },
     });
     expect(registro?.adminPlataformaId).not.toBeNull();
     expect(registro?.usuarioId).toBeNull();
+
+    const director = await prisma.perfilAdministrativo.findUnique({
+      where: { usuarioId: body.data.director.usuario.id },
+    });
+    // Regression guard: el `nivelPermiso: AUXILIAR` mandado arriba en el
+    // body del director se ignoró — el server lo forzó a SUPER_ADMIN.
+    expect(director?.nivelPermiso).toBe(NivelPermiso.SUPER_ADMIN);
+
+    const administrativo = await prisma.perfilAdministrativo.findUnique({
+      where: { usuarioId: body.data.administrativo!.usuario.id },
+    });
+    expect(administrativo?.nivelPermiso).toBe(NivelPermiso.ADMIN);
   });
 
   it('POST /sedes con nombre duplicado -> 409 CONFLICT', async () => {
@@ -134,10 +246,18 @@ describe('CRUD /sedes con PlatformAdminGuard (e2e)', () => {
       .post('/sedes')
       .set('Authorization', `Bearer ${token}`)
       .send({
-        nombre: nombreSedePrueba,
-        direccion: 'Otra dirección',
-        ubicacionReferencia: 'Otra referencia',
-        telefono: '9997654321',
+        sede: {
+          nombre: nombreSedePrueba,
+          direccion: 'Otra dirección',
+          ubicacionReferencia: 'Otra referencia',
+          telefono: '9997654321',
+        },
+        director: fundadorValido({
+          correoPersonal: `director.${randomUUID()}@example.com`,
+        }),
+        administrativo: fundadorValido({
+          correoPersonal: `admin.${randomUUID()}@example.com`,
+        }),
       });
 
     expect(res.status).toBe(409);
@@ -152,6 +272,112 @@ describe('CRUD /sedes con PlatformAdminGuard (e2e)', () => {
 
     expect(res.status).toBe(400);
     expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+  });
+
+  it('POST /sedes — falla el alta del director -> la sede recién creada se borra (nada queda)', async () => {
+    // El director es el primer alta que llama a Supabase Auth -> falla de
+    // entrada, así que ni siquiera se intenta el administrativo.
+    createUser.mockReset();
+    createUser.mockImplementation(() => ({
+      data: null,
+      error: { code: 'unexpected_failure', status: 500, message: 'boom' },
+    }));
+
+    const nombreSedeFalla = `Sede E2E Falla Director ${Date.now()}`;
+
+    const res = await request(app.getHttpServer())
+      .post('/sedes')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        sede: {
+          nombre: nombreSedeFalla,
+          direccion: 'Calle Falsa 456',
+          ubicacionReferencia: 'Frente al mercado',
+          telefono: '9991234568',
+        },
+        director: fundadorValido({ correoPersonal: `director-falla.${randomUUID()}@example.com` }),
+        administrativo: fundadorValido({
+          correoPersonal: `admin-falla.${randomUUID()}@example.com`,
+        }),
+      });
+
+    expect(res.status).toBe(500);
+
+    const sedeHuerfana = await prisma.sede.findUnique({
+      where: { nombre: nombreSedeFalla },
+    });
+    expect(sedeHuerfana).toBeNull();
+  });
+
+  it('POST /sedes — falla el alta del administrativo -> sede+director quedan, respuesta trae advertencia', async () => {
+    createUser.mockReset();
+    let llamada = 0;
+    createUser.mockImplementation(({ email }: { email: string }) => {
+      llamada += 1;
+      if (llamada === 1) {
+        // Director: éxito
+        return {
+          data: {
+            user: {
+              id: randomUUID(),
+              email,
+              aud: 'authenticated',
+              role: 'authenticated',
+              app_metadata: {},
+              user_metadata: {},
+            },
+          },
+          error: null,
+        };
+      }
+      // Administrativo: falla
+      return {
+        data: null,
+        error: { code: 'unexpected_failure', status: 500, message: 'boom' },
+      };
+    });
+
+    const nombreSedeParcial = `Sede E2E Falla Administrativo ${Date.now()}`;
+
+    const res = await request(app.getHttpServer())
+      .post('/sedes')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        sede: {
+          nombre: nombreSedeParcial,
+          direccion: 'Calle Falsa 789',
+          ubicacionReferencia: 'Frente a la plaza',
+          telefono: '9991234569',
+        },
+        director: fundadorValido({
+          correoPersonal: `director-parcial.${randomUUID()}@example.com`,
+        }),
+        administrativo: fundadorValido({
+          correoPersonal: `admin-parcial.${randomUUID()}@example.com`,
+        }),
+      });
+
+    expect(res.status).toBe(201);
+    const body = res.body as {
+      data: {
+        sede: { id: string };
+        director: { usuario: { id: string } };
+        administrativo: null;
+        advertenciaAdministrativo: string;
+      };
+    };
+    expect(body.data.administrativo).toBeNull();
+    expect(body.data.advertenciaAdministrativo).toContain('director');
+
+    const sedeParcial = await prisma.sede.findUnique({
+      where: { id: body.data.sede.id },
+    });
+    expect(sedeParcial).not.toBeNull();
+
+    const director = await prisma.usuario.findUnique({
+      where: { id: body.data.director.usuario.id },
+    });
+    expect(director).not.toBeNull();
   });
 
   it('GET /sedes incluye la sede recién creada', async () => {
@@ -245,17 +471,36 @@ describe('CRUD /sedes con PlatformAdminGuard (e2e)', () => {
   });
 
   describe('DELETE /sedes/:id', () => {
+    /**
+     * Este `describe` prueba las reglas de `DELETE /sedes/:id` en función de
+     * qué tan "vacía" está la sede — necesita poder producir una sede
+     * REALMENTE vacía (0 dependientes), pero desde el 2026-09-11
+     * `POST /sedes` siempre crea 2 fundadores `ADMINISTRATIVO` junto con la
+     * sede (ver `SedesService.crearConFundadores`). Se borran los 2
+     * fundadores inmediatamente después de crearlos para restaurar el
+     * escenario "sede vacía" que este bloque necesita — los tests que
+     * agregan su propio dato asociado (alumno/maestro/carrera) siguen
+     * bloqueando el DELETE igual, sin importar si los fundadores están o no.
+     */
     async function crearSedeDePrueba(nombre: string): Promise<string> {
+      mockCreateUserExitoso();
       const res = await request(app.getHttpServer())
         .post('/sedes')
         .set('Authorization', `Bearer ${token}`)
-        .send({
-          nombre,
-          direccion: 'Calle Falsa 123',
-          ubicacionReferencia: 'Frente al parque',
-          telefono: '9991234567',
-        });
-      return (res.body as SedeBody).data.id;
+        .send(bodySedeConFundadores(nombre));
+      const body = res.body as {
+        data: {
+          sede: { id: string };
+          director: { usuario: { id: string } };
+          administrativo: { usuario: { id: string } } | null;
+        };
+      };
+      const idsFundadores = [
+        body.data.director.usuario.id,
+        body.data.administrativo?.usuario.id,
+      ].filter((id): id is string => Boolean(id));
+      await prisma.usuario.deleteMany({ where: { id: { in: idsFundadores } } });
+      return body.data.sede.id;
     }
 
     it('sede vacía se elimina exitosamente', async () => {
@@ -300,7 +545,7 @@ describe('CRUD /sedes con PlatformAdminGuard (e2e)', () => {
       expect(registroEliminacion!.detalle).toEqual({ nombre });
     });
 
-    it('sede con alumno activo -> 409 CONFLICT, no se borra', async () => {
+    it('sede con alumno activo -> baja lógica, no se borra', async () => {
       const id = await crearSedeDePrueba(
         `Sede E2E Delete AlumnoActivo ${Date.now()}`,
       );
@@ -318,18 +563,19 @@ describe('CRUD /sedes con PlatformAdminGuard (e2e)', () => {
         .delete(`/sedes/${id}`)
         .set('Authorization', `Bearer ${token}`);
 
-      expect(res.status).toBe(409);
-      expect((res.body as ErrorBody).code).toBe('CONFLICT');
-      expect((res.body as ErrorBody).error).toMatch(/alumno/i);
-      expect((res.body as ErrorBody).error).toMatch(/1 alumno/);
+      expect(res.status).toBe(200);
+      const body = res.body as { data: { ok: boolean; eliminacionReal: boolean } };
+      expect(body.data.ok).toBe(true);
+      expect(body.data.eliminacionReal).toBe(false);
 
       const sedeEnDb = await prisma.sede.findUnique({ where: { id } });
       expect(sedeEnDb).not.toBeNull();
+      expect(sedeEnDb!.activa).toBe(false);
 
       await prisma.usuario.delete({ where: { id: usuario.id } });
     });
 
-    it('sede con alumno dado de baja (activo=false) -> 409 CONFLICT igual (Usuario.sedeId sigue siendo FK sin onDelete)', async () => {
+    it('sede con alumno dado de baja (activo=false) -> baja lógica igual (Usuario.sedeId sigue siendo FK sin onDelete)', async () => {
       const id = await crearSedeDePrueba(
         `Sede E2E Delete AlumnoBaja ${Date.now()}`,
       );
@@ -347,17 +593,17 @@ describe('CRUD /sedes con PlatformAdminGuard (e2e)', () => {
         .delete(`/sedes/${id}`)
         .set('Authorization', `Bearer ${token}`);
 
-      expect(res.status).toBe(409);
-      expect((res.body as ErrorBody).code).toBe('CONFLICT');
-      expect((res.body as ErrorBody).error).toMatch(
-        /otros datos asociados|datos asociados/,
-      );
+      expect(res.status).toBe(200);
+      const body = res.body as { data: { ok: boolean; eliminacionReal: boolean } };
+      expect(body.data.ok).toBe(true);
+      expect(body.data.eliminacionReal).toBe(false);
 
       const sedeEnDb = await prisma.sede.findUnique({ where: { id } });
       expect(sedeEnDb).not.toBeNull();
+      expect(sedeEnDb!.activa).toBe(false);
     });
 
-    it('sede con maestro activo -> 409 CONFLICT (protegido por el FK de Usuario, no por el chequeo explícito de alumnos)', async () => {
+    it('sede con maestro activo -> baja lógica (protegido por el FK de Usuario)', async () => {
       const id = await crearSedeDePrueba(
         `Sede E2E Delete MaestroActivo ${Date.now()}`,
       );
@@ -375,14 +621,17 @@ describe('CRUD /sedes con PlatformAdminGuard (e2e)', () => {
         .delete(`/sedes/${id}`)
         .set('Authorization', `Bearer ${token}`);
 
-      expect(res.status).toBe(409);
-      expect((res.body as ErrorBody).code).toBe('CONFLICT');
+      expect(res.status).toBe(200);
+      const body = res.body as { data: { ok: boolean; eliminacionReal: boolean } };
+      expect(body.data.ok).toBe(true);
+      expect(body.data.eliminacionReal).toBe(false);
 
       const sedeEnDb = await prisma.sede.findUnique({ where: { id } });
       expect(sedeEnDb).not.toBeNull();
+      expect(sedeEnDb!.activa).toBe(false);
     });
 
-    it('sede con una carrera asociada (sin alumnos) -> 409 CONFLICT por datos asociados', async () => {
+    it('sede con una carrera asociada (sin alumnos) -> baja lógica por datos asociados', async () => {
       const id = await crearSedeDePrueba(
         `Sede E2E Delete Carrera ${Date.now()}`,
       );
@@ -403,13 +652,85 @@ describe('CRUD /sedes con PlatformAdminGuard (e2e)', () => {
         .delete(`/sedes/${id}`)
         .set('Authorization', `Bearer ${token}`);
 
-      expect(res.status).toBe(409);
-      expect((res.body as ErrorBody).code).toBe('CONFLICT');
+      expect(res.status).toBe(200);
+      const body = res.body as { data: { ok: boolean; eliminacionReal: boolean } };
+      expect(body.data.ok).toBe(true);
+      expect(body.data.eliminacionReal).toBe(false);
 
       const sedeEnDb = await prisma.sede.findUnique({ where: { id } });
       expect(sedeEnDb).not.toBeNull();
+      expect(sedeEnDb!.activa).toBe(false);
 
       await prisma.carrera.delete({ where: { id: carrera.id } });
+    });
+
+    it('sede con fundadores intactos -> baja lógica (no se borra ni la sede ni los fundadores)', async () => {
+      mockCreateUserExitoso();
+      const nombre = `Sede E2E Delete ConFundadores ${Date.now()}`;
+      const res1 = await request(app.getHttpServer())
+        .post('/sedes')
+        .set('Authorization', `Bearer ${token}`)
+        .send(bodySedeConFundadores(nombre));
+      const { sede, director, administrativo } = (res1.body as {
+        data: {
+          sede: { id: string };
+          director: { usuario: { id: string } };
+          administrativo: { usuario: { id: string } } | null;
+        };
+      }).data;
+
+      const res = await request(app.getHttpServer())
+        .delete(`/sedes/${sede.id}`)
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(res.status).toBe(200);
+      const body = res.body as { data: { ok: boolean; eliminacionReal: boolean } };
+      expect(body.data.ok).toBe(true);
+      expect(body.data.eliminacionReal).toBe(false);
+
+      const sedeEnDb = await prisma.sede.findUnique({ where: { id: sede.id } });
+      expect(sedeEnDb).not.toBeNull();
+      expect(sedeEnDb!.activa).toBe(false);
+
+      // regla 3 — los fundadores siguen existiendo, intactos
+      const directorEnDb = await prisma.usuario.findUnique({
+        where: { id: director.usuario.id },
+      });
+      expect(directorEnDb).not.toBeNull();
+      if (administrativo) {
+        const administrativoEnDb = await prisma.usuario.findUnique({
+          where: { id: administrativo.usuario.id },
+        });
+        expect(administrativoEnDb).not.toBeNull();
+      }
+    });
+
+    it('PATCH /sedes/:id con activa: true reactiva una sede dada de baja lógica', async () => {
+      const id = await crearSedeDePrueba(
+        `Sede E2E Reactivar ${Date.now()}`,
+      );
+      // Fuerza baja lógica creando un alumno activo, luego DELETE
+      await prisma.usuario.create({
+        data: {
+          id: randomUUID(),
+          email: `fixture.reactivar-sede.${randomUUID()}@example.com`,
+          rol: RolUsuario.ALUMNO,
+          sedeId: id,
+          activo: true,
+        },
+      });
+      await request(app.getHttpServer())
+        .delete(`/sedes/${id}`)
+        .set('Authorization', `Bearer ${token}`);
+
+      const res = await request(app.getHttpServer())
+        .patch(`/sedes/${id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ activa: true });
+
+      expect(res.status).toBe(200);
+      const sedeEnDb = await prisma.sede.findUnique({ where: { id } });
+      expect(sedeEnDb!.activa).toBe(true);
     });
 
     it('id inexistente -> 404 NOT_FOUND', async () => {
@@ -447,16 +768,12 @@ describe('CRUD /sedes con PlatformAdminGuard (e2e)', () => {
     }
 
     async function crearSedeDePrueba(nombre: string): Promise<string> {
+      mockCreateUserExitoso();
       const res = await request(app.getHttpServer())
         .post('/sedes')
         .set('Authorization', `Bearer ${token}`)
-        .send({
-          nombre,
-          direccion: 'Calle Falsa 123',
-          ubicacionReferencia: 'Frente al parque',
-          telefono: '9991234567',
-        });
-      return (res.body as SedeBody).data.id;
+        .send(bodySedeConFundadores(nombre));
+      return (res.body as SedeConFundadoresBody).data.sede.id;
     }
 
     it('devuelve conteos globales correctos cruzando 2 sedes distintas', async () => {

@@ -12,13 +12,20 @@ import {
   AccionAuditoria,
   EstatusAcademico,
   EstatusEmpleado,
+  MotivoBaja,
   NivelPermiso,
   Prisma,
   RolUsuario,
+  TipoContratacion,
+  TipoLicencia,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
-import { CrearPersonaDto, InfoMedicaDto } from './dto/crear-persona.dto';
+import {
+  CrearPersonaDto,
+  InfoMedicaDto,
+  PerfilMaestroDto,
+} from './dto/crear-persona.dto';
 import { ListarPersonasQueryDto } from './dto/listar-personas.query.dto';
 import { generateTemporaryPassword } from './temporary-password';
 
@@ -30,7 +37,7 @@ export interface PersonaListItemAlumno {
   matricula: string;
   carrera: { id: string; nombre: string };
   estatusAcademico: EstatusAcademico;
-  semestreActual: number;
+  cuatrimestreActual: number;
   activo: boolean;
 }
 
@@ -41,11 +48,55 @@ export interface PersonaListItemMaestro {
   apellidoMaterno: string | null;
   cedulaProfesional: string | null;
   estatus: EstatusEmpleado;
+  /** Solo tiene valor si `estatus === 'LICENCIA'` (feature estética,
+   * 2026-08-27 — tooltip del badge de estatus en el listado de maestros,
+   * paridad con `PersonaListItemAdministrativo`). `null` en cualquier otro
+   * estatus, incluyendo el rastro histórico de una licencia pasada (no se
+   * limpia al reactivar, ver Contrato de API de `PATCH /personas/:id/estatus`)
+   * — el frontend solo lo muestra cuando el estatus actual es LICENCIA. */
+  tipoLicencia: TipoLicencia | null;
+  /** Tipo de contratación y sus campos condicionales (2026-09-07 — paridad
+   * con `GET /perfil` y `POST /personas`, ahora también en el listado del
+   * admin). `null` para maestros de altas anteriores al 2026-09-07 (columnas
+   * nullable, sin backfill). `diasTemporal` solo tiene valor si
+   * `tipoContratacion === 'TEMPORAL'`; `contratoFechaInicio`/`contratoFechaFin`
+   * solo si `=== 'CONTRATO'` (fechas ISO `YYYY-MM-DD`). */
+  tipoContratacion: TipoContratacion | null;
+  diasTemporal: number | null;
+  contratoFechaInicio: string | null;
+  contratoFechaFin: string | null;
+  activo: boolean;
+}
+
+/**
+ * `GET /personas?rol=ADMINISTRATIVO` (Fase 10, unificación CRUD admin) —
+ * mismo shape resumen que `PersonaListItemMaestro`, sin un identificador
+ * externo equivalente a `cedulaProfesional`/`matricula` (`PerfilAdministrativo`
+ * no tiene uno en el schema, no se inventa acá).
+ */
+export interface PersonaListItemAdministrativo {
+  usuarioId: string;
+  nombres: string;
+  apellidoPaterno: string;
+  apellidoMaterno: string | null;
+  puesto: string;
+  nivelPermiso: NivelPermiso;
+  estatus: EstatusEmpleado;
+  /** Solo tiene valor si `estatus === 'LICENCIA'` (feature estética,
+   * 2026-08-26 — tooltip del badge de estatus en el listado). `null` en
+   * cualquier otro estatus, incluyendo el rastro histórico de una licencia
+   * pasada (no se limpia al reactivar, ver Contrato de API de
+   * `PATCH /personas/:id/estatus`) — el frontend solo lo muestra cuando el
+   * estatus actual es LICENCIA. */
+  tipoLicencia: TipoLicencia | null;
   activo: boolean;
 }
 
 export interface ListarPersonasResult {
-  data: PersonaListItemAlumno[] | PersonaListItemMaestro[];
+  data:
+    | PersonaListItemAlumno[]
+    | PersonaListItemMaestro[]
+    | PersonaListItemAdministrativo[];
   page: number;
   limit: number;
   total: number;
@@ -179,6 +230,31 @@ export class PersonasService {
   };
 
   /**
+   * `MOTIVO_BAJA_REVOCA` — motivos de `BAJA` que extinguen la relación laboral
+   * (arts. 47 y 53 LFT) y por tanto revocan el acceso (`Usuario.activo = false`):
+   * - RENUNCIA / DESPIDO — terminación por voluntad del trabajador / rescisión (art. 47)
+   * - FALLECIMIENTO — art. 53 fr. II
+   * - TERMINACION_INCAPACIDAD_PERMANENTE — art. 53 fr. IV
+   *
+   * `BAJA_TEMPORAL_SALUD` (suspensión, art. 42) y `OTRO` (sin clasificar) NO
+   * revocan: la baja es cosmética hasta que se elija un motivo de terminación
+   * explícito. Fail-safe: cortar acceso es una acción deliberada del admin.
+   *
+   * Es un `Record<MotivoBaja, boolean>` (no un `Set`) a propósito: TS obliga a
+   * clasificar explícitamente cualquier valor nuevo del enum antes de compilar.
+   */
+  private static readonly MOTIVO_BAJA_REVOCA: Record<MotivoBaja, boolean> = {
+    // Terminación de la relación laboral (arts. 47 y 53 LFT) — revocan acceso:
+    [MotivoBaja.RENUNCIA]: true, // terminación por voluntad del trabajador
+    [MotivoBaja.DESPIDO]: true, // rescisión sin responsabilidad para el patrón (art. 47)
+    [MotivoBaja.FALLECIMIENTO]: true, // art. 53 fr. II
+    [MotivoBaja.TERMINACION_INCAPACIDAD_PERMANENTE]: true, // art. 53 fr. IV
+    // Suspensión (art. 42) / sin clasificar — NO revocan (fail-safe):
+    [MotivoBaja.BAJA_TEMPORAL_SALUD]: false,
+    [MotivoBaja.OTRO]: false,
+  };
+
+  /**
    * Dominio placeholder del login sintético (feature 2026-08-18) — UN SOLO
    * dominio fijo para los 3 roles (pedido explícito: "no hace falta uno
    * distinto por rol ni por sede"). No es un buzón real — nadie recibe
@@ -242,6 +318,33 @@ export class PersonasService {
       medicamentos: infoMedica.medicamentos,
       alergias: infoMedica.alergias,
       tratamientoAdicional: infoMedica.tratamientoAdicional,
+      tipoSangre: infoMedica.tipoSangre,
+    };
+  }
+
+  /**
+   * Tipo de contratación del maestro (2026-09-07) — `tipoContratacion` es
+   * siempre requerido; los 3 campos condicionales solo traen valor según el
+   * tipo (`diasTemporal` si TEMPORAL, `contratoFecha*` si CONTRATO), en
+   * cualquier otro caso quedan `null`. El DTO ya validó forma/tipo
+   * (`@ValidateIf`) y `PersonasService.altaPersona` la regla cruzada de
+   * fechas antes de llegar acá. `contratoFecha*` son `string` ISO en el DTO
+   * y `DateTime?` en el schema — se convierten con `new Date(...)`.
+   */
+  private datosContratacionMaestro(perfil: PerfilMaestroDto) {
+    const esTemporal = perfil.tipoContratacion === TipoContratacion.TEMPORAL;
+    const esContrato = perfil.tipoContratacion === TipoContratacion.CONTRATO;
+    return {
+      tipoContratacion: perfil.tipoContratacion,
+      diasTemporal: esTemporal ? (perfil.diasTemporal ?? null) : null,
+      contratoFechaInicio:
+        esContrato && perfil.contratoFechaInicio
+          ? new Date(perfil.contratoFechaInicio)
+          : null,
+      contratoFechaFin:
+        esContrato && perfil.contratoFechaFin
+          ? new Date(perfil.contratoFechaFin)
+          : null,
     };
   }
 
@@ -578,11 +681,34 @@ export class PersonasService {
       // `PerfilAlumno.matricula` queda como defensa mínima contra un bug
       // futuro en el generador, no como camino esperado (ver catch de
       // `P2002` más abajo).
-    } else if (dto.rol === RolUsuario.MAESTRO && !dto.perfilMaestro) {
-      throw new BadRequestException({
-        error: 'perfilMaestro es requerido para rol MAESTRO',
-        code: 'VALIDATION_ERROR',
-      });
+    } else if (dto.rol === RolUsuario.MAESTRO) {
+      if (!dto.perfilMaestro) {
+        throw new BadRequestException({
+          error: 'perfilMaestro es requerido para rol MAESTRO',
+          code: 'VALIDATION_ERROR',
+        });
+      }
+
+      // Regla cruzada de `tipoContratacion === CONTRATO` (2026-09-07) — el
+      // DTO (`@ValidateIf` + `@IsDateString`) ya garantiza que ambas fechas
+      // vienen y tienen formato ISO válido cuando el tipo es CONTRATO; acá
+      // se valida solo la relación ENTRE ellas, mismo criterio que
+      // Calendario valida `fechaFin`/`recurrenciaHasta` contra `fechaInicio`
+      // en el service (no en el DTO). Reutiliza `VALIDATION_ERROR`, sin
+      // código nuevo.
+      if (
+        dto.perfilMaestro.tipoContratacion === TipoContratacion.CONTRATO &&
+        dto.perfilMaestro.contratoFechaInicio &&
+        dto.perfilMaestro.contratoFechaFin &&
+        new Date(dto.perfilMaestro.contratoFechaFin).getTime() <=
+          new Date(dto.perfilMaestro.contratoFechaInicio).getTime()
+      ) {
+        throw new BadRequestException({
+          error:
+            'contratoFechaFin no puede ser anterior o igual a contratoFechaInicio',
+          code: 'VALIDATION_ERROR',
+        });
+      }
     } else if (dto.rol === RolUsuario.ADMINISTRATIVO) {
       // El propio DTO ya garantiza que `perfilAdministrativo` viene si `rol`
       // es ADMINISTRATIVO — este chequeo es defensivo, mismo criterio que el
@@ -604,6 +730,83 @@ export class PersonasService {
       );
     }
 
+    return this.ejecutarAltaPersona(dto, sedeId, { usuarioId: actorUsuarioId });
+  }
+
+  /**
+   * Solo lo llama `SedesService.crearConFundadores` — sin controller/ruta
+   * propia. Crea un ADMINISTRATIVO fundador de una sede recién creada, SIN
+   * `verificarJerarquiaNivelPermiso` (no hay jerarquía previa que consultar:
+   * 0 administrativos en la sede todavía; el actor real es `AdminPlataforma`,
+   * por diseño ya por encima de esa jerarquía — mismo criterio del spec de
+   * Día 20, `docs/superpowers/specs/2026-08-14-crud-sedes-admin-plataforma-design.md`).
+   * `dto.perfilAdministrativo.nivelPermiso` debe venir ya resuelto por el
+   * caller — `SedesService` lo fuerza a SUPER_ADMIN/ADMIN server-side, nunca
+   * lo decide el cliente (regla 1 de CLAUDE.md raíz).
+   *
+   * DESVIACIÓN respecto al brief/spec original (2026-09-11): la firma acá
+   * gana un tercer parámetro `actorAdminPlataformaId`, que NI el brief de
+   * esta task NI el spec de diseño mencionaban. Motivo: el bloque de
+   * `ejecutarAltaPersona` extraído "verbatim" de `altaPersona` (líneas
+   * 733-1107 originales) escribe un `RegistroAuditoria` usando
+   * `actorUsuarioId` — un parámetro que ninguno de los dos documentos
+   * declaraba para `ejecutarAltaPersona`/`altaAdministrativoFundador`. Sin
+   * un actor real, ese insert queda con `usuario_id`/`admin_plataforma_id`
+   * ambos NULL, lo que viola el CHECK `registro_auditoria_actor_check`
+   * (migración `20260814220151_admin_plataforma`, regla "un actor XOR el
+   * otro, nunca ninguno") — un error real de Postgres en cada llamada a
+   * `crearConFundadores`, no solo un problema de tipos. Ver el reporte de
+   * esta task para el detalle completo; queda documentado también acá por
+   * si `SedesService` (Task 2) se implementa sin releer el reporte.
+   */
+  async altaAdministrativoFundador(
+    dto: CrearPersonaDto,
+    sedeId: string,
+    actorAdminPlataformaId: string,
+  ): Promise<AltaPersonaResult> {
+    // Defensivo/inalcanzable con el caller actual: `SedesService.crearConFundadores`
+    // nunca manda `codigoExterno` en el DTO que arma (director/administrativo
+    // fundadores no lo capturan). Se conserva por simetría con `altaPersona`
+    // (mismo pre-check) por si `SedesService` cambia en el futuro para aceptarlo.
+    if (dto.codigoExterno) {
+      const codigoExternoEnUso = await this.prisma.usuario.findUnique({
+        where: { codigoExterno: dto.codigoExterno },
+        select: { id: true },
+      });
+      if (codigoExternoEnUso) {
+        throw new ConflictException({
+          error: 'Ya existe un usuario con ese código externo',
+          code: 'CONFLICT',
+        });
+      }
+    }
+
+    if (!dto.perfilAdministrativo) {
+      throw new BadRequestException({
+        error: 'perfilAdministrativo es requerido',
+        code: 'VALIDATION_ERROR',
+      });
+    }
+
+    return this.ejecutarAltaPersona(dto, sedeId, {
+      adminPlataformaId: actorAdminPlataformaId,
+    });
+  }
+
+  /**
+   * `actor` identifica a quién auditar como responsable del `RegistroAuditoria`
+   * `ALTA` que se crea dentro de la transacción de abajo — exactamente uno de
+   * `usuarioId`/`adminPlataformaId` (nunca ambos, nunca ninguno), por el CHECK
+   * `registro_auditoria_actor_check`. `altaPersona` pasa `{ usuarioId }` (el
+   * admin real que hace la request); `altaAdministrativoFundador` pasa
+   * `{ adminPlataformaId }` (no hay `Usuario` actor en ese camino — ver el
+   * comentario de `altaAdministrativoFundador` arriba).
+   */
+  private async ejecutarAltaPersona(
+    dto: CrearPersonaDto,
+    sedeId: string,
+    actor: { usuarioId: string } | { adminPlataformaId: string },
+  ): Promise<AltaPersonaResult> {
     // --- Generación del login (feature 2026-08-18) — DEBE ocurrir antes de
     // llamar a Supabase Auth (unas líneas abajo), porque el Admin API
     // necesita el email de la cuenta ANTES de que exista la fila de
@@ -727,7 +930,7 @@ export class PersonasService {
               // de esta operación de alta).
               estatusAcademico: 'INSCRITO',
               periodoIngreso: dto.perfilAlumno.periodoIngreso,
-              semestreActual: dto.perfilAlumno.semestreActual,
+              cuatrimestreActual: dto.perfilAlumno.cuatrimestreActual,
               telefono: dto.perfilAlumno.telefono,
             },
           });
@@ -770,6 +973,11 @@ export class PersonasService {
               // alguien ya en BAJA/LICENCIA (corrección QA manual,
               // 2026-08-12). El DTO ya no acepta `estatus` en la creación.
               estatus: EstatusEmpleado.ACTIVO,
+              // Tipo de contratación (2026-09-07) — ver
+              // `datosContratacionMaestro`. `tipoContratacion` siempre
+              // presente (requerido en el DTO); los condicionales quedan
+              // `null` salvo el caso que aplique.
+              ...this.datosContratacionMaestro(dto.perfilMaestro),
             },
           });
 
@@ -844,12 +1052,15 @@ export class PersonasService {
 
         // Regla 5 de CLAUDE.md raíz — RegistroAuditoria solo se crea acá,
         // automáticamente, nunca vía un endpoint de escritura directa.
-        // `usuarioId` es el ACTOR (el admin que hace la request, sacado del
-        // JWT — `actorUsuarioId`), no la persona recién creada; esa va en
-        // `entidadId`.
+        // El actor (quién hace la request) va en `usuarioId` O
+        // `adminPlataformaId` según `actor` (ver JSDoc de este método) —
+        // nunca ambos, nunca ninguno (CHECK `registro_auditoria_actor_check`).
+        // La persona recién creada NO es el actor, va en `entidadId`.
         await tx.registroAuditoria.create({
           data: {
-            usuarioId: actorUsuarioId,
+            usuarioId: 'usuarioId' in actor ? actor.usuarioId : null,
+            adminPlataformaId:
+              'adminPlataformaId' in actor ? actor.adminPlataformaId : null,
             sedeId,
             accion: AccionAuditoria.ALTA,
             entidad: 'Usuario',
@@ -977,11 +1188,13 @@ export class PersonasService {
   }
 
   /**
-   * `GET /personas?rol=ALUMNO|MAESTRO&...` — Fase 5, Día 19.
+   * `GET /personas?rol=ALUMNO|MAESTRO|ADMINISTRATIVO&...` — Fase 5, Día 19,
+   * extendido a ADMINISTRATIVO (Fase 10, unificación CRUD admin).
    *
    * "Listados PARA administrativos" = listados que un ADMINISTRATIVO
-   * consulta, de ALUMNO y MAESTRO — NO un listado de ADMINISTRATIVO mismos
-   * (fuera de alcance, ver encargo del día).
+   * consulta, de ALUMNO, MAESTRO y (desde hoy) ADMINISTRATIVO mismos — el
+   * alcance que Día 19 dejaba fuera explícitamente se cierra en esta
+   * extensión.
    *
    * `sedeId` SIEMPRE viene de `@SedeActual()` (JWT, regla 2 de CLAUDE.md
    * raíz) — el controller nunca lo toma de query. El filtro de sede se
@@ -1058,7 +1271,7 @@ export class PersonasService {
             apellidoMaterno: true,
             matricula: true,
             estatusAcademico: true,
-            semestreActual: true,
+            cuatrimestreActual: true,
             carrera: { select: { id: true, nombre: true } },
             usuario: { select: { activo: true } },
           },
@@ -1081,7 +1294,7 @@ export class PersonasService {
           matricula: alumno.matricula,
           carrera: alumno.carrera,
           estatusAcademico: alumno.estatusAcademico,
-          semestreActual: alumno.semestreActual,
+          cuatrimestreActual: alumno.cuatrimestreActual,
           activo: alumno.usuario.activo,
         })),
         page,
@@ -1090,9 +1303,13 @@ export class PersonasService {
       };
     }
 
+    if (query.rol === RolUsuario.ADMINISTRATIVO) {
+      return this.listarAdministrativos(sedeId, query, page, limit, skip);
+    }
+
     // query.rol === RolUsuario.MAESTRO — el DTO (`@IsIn`) ya descarta
-    // cualquier otro valor (incluido ADMINISTRATIVO) con 400 VALIDATION_ERROR
-    // antes de llegar acá.
+    // cualquier otro valor con 400 VALIDATION_ERROR antes de llegar acá
+    // (ALUMNO se resuelve arriba, ADMINISTRATIVO justo arriba).
     if (
       query.estatus &&
       !Object.values(EstatusEmpleado).includes(query.estatus as EstatusEmpleado)
@@ -1144,6 +1361,11 @@ export class PersonasService {
           apellidoMaterno: true,
           cedulaProfesional: true,
           estatus: true,
+          tipoLicencia: true,
+          tipoContratacion: true,
+          diasTemporal: true,
+          contratoFechaInicio: true,
+          contratoFechaFin: true,
           usuario: { select: { activo: true } },
         },
         orderBy: [
@@ -1164,7 +1386,113 @@ export class PersonasService {
         apellidoMaterno: maestro.apellidoMaterno,
         cedulaProfesional: maestro.cedulaProfesional,
         estatus: maestro.estatus,
+        tipoLicencia: maestro.tipoLicencia,
+        tipoContratacion: maestro.tipoContratacion,
+        diasTemporal: maestro.diasTemporal,
+        contratoFechaInicio: maestro.contratoFechaInicio
+          ? maestro.contratoFechaInicio.toISOString().slice(0, 10)
+          : null,
+        contratoFechaFin: maestro.contratoFechaFin
+          ? maestro.contratoFechaFin.toISOString().slice(0, 10)
+          : null,
         activo: maestro.usuario.activo,
+      })),
+      page,
+      limit,
+      total,
+    };
+  }
+
+  /**
+   * Rama `rol=ADMINISTRATIVO` de `GET /personas` (Fase 10, unificación CRUD
+   * admin) — extraída a método privado (a diferencia de las ramas
+   * ALUMNO/MAESTRO, que quedan inline en `listarPorSedeYRol`) porque
+   * `listarPorSedeYRol` ya es un método largo y esta rama se agrega después,
+   * sin querer reordenar las 2 ramas existentes. MISMO patrón exacto que la
+   * rama MAESTRO: valida `estatus` contra `EstatusEmpleado` (mismo enum que
+   * maestro — `PerfilAdministrativo.estatus` es el mismo tipo), `buscar`
+   * hace `contains` case-insensitive contra `nombres`/`apellidoPaterno`/
+   * `apellidoMaterno` — SIN un campo tipo `cedulaProfesional`/`matricula`
+   * (`PerfilAdministrativo` no tiene un identificador externo equivalente,
+   * no se inventa uno).
+   */
+  private async listarAdministrativos(
+    sedeId: string,
+    query: ListarPersonasQueryDto,
+    page: number,
+    limit: number,
+    skip: number,
+  ): Promise<ListarPersonasResult> {
+    if (
+      query.estatus &&
+      !Object.values(EstatusEmpleado).includes(query.estatus as EstatusEmpleado)
+    ) {
+      throw new BadRequestException({
+        error: 'estatus inválido para rol ADMINISTRATIVO',
+        code: 'VALIDATION_ERROR',
+      });
+    }
+
+    const where: Prisma.PerfilAdministrativoWhereInput = {
+      usuario: { sedeId },
+      ...(query.estatus ? { estatus: query.estatus as EstatusEmpleado } : {}),
+      ...(query.buscar
+        ? {
+            OR: [
+              { nombres: { contains: query.buscar, mode: 'insensitive' } },
+              {
+                apellidoPaterno: {
+                  contains: query.buscar,
+                  mode: 'insensitive',
+                },
+              },
+              {
+                apellidoMaterno: {
+                  contains: query.buscar,
+                  mode: 'insensitive',
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+
+    const [total, administrativos] = await this.prisma.$transaction([
+      this.prisma.perfilAdministrativo.count({ where }),
+      this.prisma.perfilAdministrativo.findMany({
+        where,
+        select: {
+          usuarioId: true,
+          nombres: true,
+          apellidoPaterno: true,
+          apellidoMaterno: true,
+          puesto: true,
+          nivelPermiso: true,
+          estatus: true,
+          tipoLicencia: true,
+          usuario: { select: { activo: true } },
+        },
+        orderBy: [
+          { apellidoPaterno: 'asc' },
+          { apellidoMaterno: 'asc' },
+          { nombres: 'asc' },
+        ],
+        skip,
+        take: limit,
+      }),
+    ]);
+
+    return {
+      data: administrativos.map((administrativo) => ({
+        usuarioId: administrativo.usuarioId,
+        nombres: administrativo.nombres,
+        apellidoPaterno: administrativo.apellidoPaterno,
+        apellidoMaterno: administrativo.apellidoMaterno,
+        puesto: administrativo.puesto,
+        nivelPermiso: administrativo.nivelPermiso,
+        estatus: administrativo.estatus,
+        tipoLicencia: administrativo.tipoLicencia,
+        activo: administrativo.usuario.activo,
       })),
       page,
       limit,
@@ -1296,5 +1624,295 @@ export class PersonasService {
       alumnosPorCarrera,
       altasRecientes,
     };
+  }
+
+  /**
+   * Cálculo de `Usuario.activo` a partir del `estatus` nuevo (estatus
+   * avanzado, 2026-08-26) — SOLO se llama para `MAESTRO`/`ADMINISTRATIVO`
+   * (ver `cambiarEstatus`), nunca para `ALUMNO`. `ACTIVO` y `LICENCIA`
+   * siempre reactivan el acceso (una licencia no revoca la cuenta, solo
+   * documenta una ausencia temporal). `BAJA` revoca el acceso SOLO si
+   * `motivoBaja` es uno de los motivos de terminación de la relación laboral
+   * (`MOTIVO_BAJA_REVOCA`: `RENUNCIA`, `DESPIDO`, `FALLECIMIENTO`,
+   * `TERMINACION_INCAPACIDAD_PERMANENTE` — arts. 47 y 53 LFT) — una
+   * `BAJA_TEMPORAL_SALUD`/`OTRO` no revoca, la persona sigue de baja
+   * "cosmética" con acceso intacto (mismo criterio que la baja de alumno,
+   * pero acá sí puede activarse la revocación real cuando el motivo lo
+   * amerita).
+   */
+  private calcularActivoPorEstatus(
+    estatus: string,
+    motivoBaja: string | undefined,
+  ): boolean {
+    if (estatus !== EstatusEmpleado.BAJA) return true; // ACTIVO y LICENCIA siempre reactivan
+    const revoca =
+      PersonasService.MOTIVO_BAJA_REVOCA[motivoBaja as MotivoBaja] ?? false;
+    return !revoca;
+  }
+
+  /**
+   * `PATCH /personas/:id/estatus` (Fase 10, unificación CRUD admin) — primer
+   * código real del patrón "baja lógica" (regla 3 de CLAUDE.md raíz) que
+   * hasta hoy ningún rol tenía implementado. Genérico para los 3 roles
+   * (ALUMNO/MAESTRO/ADMINISTRATIVO) aunque el frontend de hoy solo lo use
+   * para ADMINISTRATIVO — la validación por rol es gratis acá, no le cierra
+   * la puerta a los otros 2 a futuro.
+   *
+   * `sedeId` (scoping, regla 2) y `actorUsuarioId` (regla 5, auditoría)
+   * SIEMPRE vienen del JWT vía `@SedeActual()`/`@ActorUsuarioId()` en el
+   * controller — nunca del body/param, más allá del `id` objetivo.
+   *
+   * Jerarquía de `NivelPermiso` (regla 7, MISMA tabla/lógica que
+   * `verificarJerarquiaNivelPermiso` de `altaPersona`) — SOLO aplica si el
+   * `Usuario` objetivo es `ADMINISTRATIVO`: un actor `AUXILIAR` no puede
+   * cambiar el estatus de NINGÚN administrativo, y un actor no puede tocar a
+   * un administrativo con `nivelPermiso` mayor al suyo propio. No aplica a
+   * ALUMNO/MAESTRO — `nivelPermiso` es exclusivo de `PerfilAdministrativo`.
+   *
+   * `RegistroAuditoria.accion` usa `AccionAuditoria.CAMBIO_ESTATUS` — a
+   * diferencia de `AuthService.cambiarPassword` (que reutiliza `EDICION`
+   * porque el enum NO tiene un valor dedicado a "cambio de contraseña"), acá
+   * sí existe un valor semánticamente exacto en el enum (`prisma/schema.prisma`,
+   * `AccionAuditoria`) — se usa ese, no `EDICION`.
+   *
+   * Estatus avanzado (2026-08-26) — extensión para `MAESTRO`/`ADMINISTRATIVO`:
+   * `estatus: LICENCIA` requiere `opciones.tipoLicencia` (válido, del enum
+   * `TipoLicencia`); `estatus: BAJA` requiere `opciones.motivoBaja` (válido,
+   * del enum `MotivoBaja`). `Usuario.activo` se recalcula al vuelo
+   * (`calcularActivoPorEstatus`, regla 1 de CLAUDE.md raíz no aplica acá
+   * porque SÍ se persiste — es la bandera real de acceso, no un derivado
+   * puramente de lectura) SOLO para `MAESTRO`/`ADMINISTRATIVO`, nunca para
+   * `ALUMNO` (la baja lógica de alumno sigue siendo cosmética, sin revocar
+   * acceso).
+   */
+  async cambiarEstatus(
+    id: string,
+    estatus: string,
+    sedeId: string,
+    actorUsuarioId: string,
+    opciones: { tipoLicencia?: string; motivoBaja?: string } = {},
+  ): Promise<{ ok: true }> {
+    try {
+      const usuario = await this.prisma.usuario.findFirst({
+        where: { id, sedeId },
+        select: {
+          id: true,
+          rol: true,
+          perfilAlumno: { select: { estatusAcademico: true } },
+          perfilMaestro: { select: { estatus: true } },
+          perfilAdministrativo: {
+            select: { estatus: true, nivelPermiso: true },
+          },
+        },
+      });
+
+      if (!usuario) {
+        throw new NotFoundException({
+          error: 'Persona no encontrada en tu sede',
+          code: 'NOT_FOUND',
+        });
+      }
+
+      if (usuario.rol === RolUsuario.ALUMNO) {
+        if (
+          !usuario.perfilAlumno ||
+          !Object.values(EstatusAcademico).includes(estatus as EstatusAcademico)
+        ) {
+          throw new BadRequestException({
+            error: 'estatus inválido para rol ALUMNO',
+            code: 'VALIDATION_ERROR',
+          });
+        }
+      } else {
+        // MAESTRO/ADMINISTRATIVO comparten el mismo enum (`EstatusEmpleado`).
+        const perfilEmpleado =
+          usuario.rol === RolUsuario.MAESTRO
+            ? usuario.perfilMaestro
+            : usuario.perfilAdministrativo;
+
+        if (
+          !perfilEmpleado ||
+          !Object.values(EstatusEmpleado).includes(estatus as EstatusEmpleado)
+        ) {
+          throw new BadRequestException({
+            error: `estatus inválido para rol ${usuario.rol}`,
+            code: 'VALIDATION_ERROR',
+          });
+        }
+
+        // `tipoLicencia`, si viene en el body, SIEMPRE debe ser un valor
+        // válido de `TipoLicencia` — sin importar `estatus`. Corrección de
+        // review: la primera versión solo validaba el enum cuando
+        // `estatus === LICENCIA`, dejando pasar un valor basura (ej.
+        // `estatus: 'ACTIVO', tipoLicencia: 'GARBAGE'`) sin validar; ese
+        // valor llegaba tal cual (vía el cast `as TipoLicencia` de la
+        // transacción de abajo) al `update` de Prisma, que lo rechazaba en
+        // runtime con un `PrismaClientValidationError` no capturado por el
+        // catch de abajo (`NotFoundException`/`BadRequestException`/
+        // `ForbiddenException`) — surgía como `500 SERVER_ERROR` en vez de
+        // `400 VALIDATION_ERROR`.
+        if (
+          opciones.tipoLicencia !== undefined &&
+          !Object.values(TipoLicencia).includes(
+            opciones.tipoLicencia as TipoLicencia,
+          )
+        ) {
+          throw new BadRequestException({
+            error: 'tipoLicencia inválido',
+            code: 'VALIDATION_ERROR',
+          });
+        }
+
+        if (estatus === EstatusEmpleado.LICENCIA && !opciones.tipoLicencia) {
+          throw new BadRequestException({
+            error: 'tipoLicencia es requerido cuando el estatus es LICENCIA',
+            code: 'VALIDATION_ERROR',
+          });
+        }
+
+        // Mismo criterio que `tipoLicencia` arriba — validación
+        // incondicional del enum si el campo viene, independiente de si
+        // `estatus` lo requiere.
+        if (
+          opciones.motivoBaja !== undefined &&
+          !Object.values(MotivoBaja).includes(
+            opciones.motivoBaja as MotivoBaja,
+          )
+        ) {
+          throw new BadRequestException({
+            error: 'motivoBaja inválido',
+            code: 'VALIDATION_ERROR',
+          });
+        }
+
+        if (estatus === EstatusEmpleado.BAJA && !opciones.motivoBaja) {
+          throw new BadRequestException({
+            error: 'motivoBaja es requerido cuando el estatus es BAJA',
+            code: 'VALIDATION_ERROR',
+          });
+        }
+
+        if (
+          usuario.rol === RolUsuario.ADMINISTRATIVO &&
+          usuario.perfilAdministrativo
+        ) {
+          const perfilActor = await this.prisma.perfilAdministrativo.findUnique(
+            {
+              where: { usuarioId: actorUsuarioId },
+              select: { nivelPermiso: true },
+            },
+          );
+          const nivelActor = perfilActor?.nivelPermiso ?? NivelPermiso.AUXILIAR;
+
+          if (nivelActor === NivelPermiso.AUXILIAR) {
+            throw new ForbiddenException({
+              error:
+                'Un usuario con nivel AUXILIAR no puede cambiar el estatus de personal administrativo',
+              code: 'NIVEL_PERMISO_INSUFICIENTE',
+            });
+          }
+
+          const rangoActor =
+            PersonasService.JERARQUIA_NIVEL_PERMISO[nivelActor];
+          const rangoObjetivo =
+            PersonasService.JERARQUIA_NIVEL_PERMISO[
+              usuario.perfilAdministrativo.nivelPermiso
+            ];
+
+          if (rangoActor < rangoObjetivo) {
+            throw new ForbiddenException({
+              error:
+                'No tienes nivel de permiso suficiente para cambiar el estatus de este administrativo',
+              code: 'NIVEL_PERMISO_INSUFICIENTE',
+            });
+          }
+        }
+      }
+
+      await this.prisma.$transaction(async (tx) => {
+        if (usuario.rol === RolUsuario.ALUMNO) {
+          await tx.perfilAlumno.update({
+            where: { usuarioId: id },
+            data: { estatusAcademico: estatus as EstatusAcademico },
+          });
+        } else if (usuario.rol === RolUsuario.MAESTRO) {
+          await tx.perfilMaestro.update({
+            where: { usuarioId: id },
+            data: {
+              estatus: estatus as EstatusEmpleado,
+              tipoLicencia: (opciones.tipoLicencia as TipoLicencia) ?? undefined,
+              motivoBaja: (opciones.motivoBaja as MotivoBaja) ?? undefined,
+            },
+          });
+        } else {
+          await tx.perfilAdministrativo.update({
+            where: { usuarioId: id },
+            data: {
+              estatus: estatus as EstatusEmpleado,
+              tipoLicencia: (opciones.tipoLicencia as TipoLicencia) ?? undefined,
+              motivoBaja: (opciones.motivoBaja as MotivoBaja) ?? undefined,
+            },
+          });
+        }
+
+        // `Usuario.activo` (estatus avanzado, 2026-08-26) — solo se toca
+        // para MAESTRO/ADMINISTRATIVO, NUNCA para ALUMNO (regla 3, baja
+        // lógica de alumno sigue cosmética, sin revocar acceso).
+        let activoNuevo: boolean | undefined;
+        if (
+          usuario.rol === RolUsuario.MAESTRO ||
+          usuario.rol === RolUsuario.ADMINISTRATIVO
+        ) {
+          activoNuevo = this.calcularActivoPorEstatus(
+            estatus,
+            opciones.motivoBaja,
+          );
+          await tx.usuario.update({
+            where: { id },
+            data: { activo: activoNuevo },
+          });
+        }
+
+        // Regla 5 de CLAUDE.md raíz — RegistroAuditoria solo se crea acá,
+        // automáticamente, dentro de la misma transacción del cambio.
+        await tx.registroAuditoria.create({
+          data: {
+            usuarioId: actorUsuarioId,
+            sedeId,
+            accion: AccionAuditoria.CAMBIO_ESTATUS,
+            entidad: 'Usuario',
+            entidadId: id,
+            detalle: {
+              rol: usuario.rol,
+              estatusNuevo: estatus,
+              tipoLicencia: opciones.tipoLicencia,
+              motivoBaja: opciones.motivoBaja,
+              cuentaRevocada: activoNuevo === false,
+            },
+          },
+        });
+      });
+
+      return { ok: true };
+    } catch (err) {
+      if (
+        err instanceof NotFoundException ||
+        err instanceof BadRequestException ||
+        err instanceof ForbiddenException
+      ) {
+        throw err;
+      }
+
+      // Regla 12 de CLAUDE.md raíz — loguear el error completo server-side
+      // antes de responder, aunque el cliente no reciba el detalle.
+      console.error(
+        '[PersonasService.cambiarEstatus] Error inesperado cambiando estatus:',
+        err,
+      );
+      throw new InternalServerErrorException({
+        error: 'Error inesperado al cambiar el estatus',
+        code: 'SERVER_ERROR',
+      });
+    }
   }
 }

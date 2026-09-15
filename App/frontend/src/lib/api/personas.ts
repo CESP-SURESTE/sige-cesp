@@ -45,13 +45,31 @@ export interface ContactoAlumnoInput extends ContactoInput {
 }
 
 /**
+ * Espejo del enum `TipoSangre` (`schema.prisma`, 2026-09-07) — Prisma no
+ * permite `+`/`-` en nombres de enum, el label legible vive solo en
+ * `InfoMedicaFieldset.tsx`.
+ */
+export type TipoSangre =
+  | 'A_POSITIVO'
+  | 'A_NEGATIVO'
+  | 'B_POSITIVO'
+  | 'B_NEGATIVO'
+  | 'AB_POSITIVO'
+  | 'AB_NEGATIVO'
+  | 'O_POSITIVO'
+  | 'O_NEGATIVO';
+
+/**
  * Idéntico para los 3 roles (espejo de `InfoMedicaAlumno`/`InfoMedicaMaestro`/
  * `InfoMedicaAdministrativo`, `schema.prisma`, y de `InfoMedicaDto`,
  * backend). Los 4 campos opcionales típicamente solo tienen sentido si
  * `tieneCondicionMedica` es `true` (criterio de UX en cada `page.tsx`).
+ * `tipoSangre` (2026-09-07) es REQUERIDO — `InfoMedicaDto.tipoSangre` no
+ * tiene `@IsOptional` en el backend, independiente de `tieneCondicionMedica`.
  */
 export interface InfoMedicaInput {
   tieneCondicionMedica: boolean;
+  tipoSangre: TipoSangre;
   padecimiento?: string;
   medicamentos?: string;
   alergias?: string;
@@ -68,7 +86,7 @@ export interface PerfilAlumnoInput {
   correoPersonal: string;
   carreraId: string;
   periodoIngreso: string;
-  semestreActual: number;
+  cuatrimestreActual: number;
   telefono?: string;
   /** 1-3 elementos — `ContactoAlumnoDto` (con `tipo`), exclusivo de alumno. */
   contactos: ContactoAlumnoInput[];
@@ -92,6 +110,16 @@ export type PuestoAdministrativo =
 /** Espejo de `NivelPermiso` (`schema.prisma`). */
 export type NivelPermiso = 'SUPER_ADMIN' | 'ADMIN' | 'AUXILIAR';
 
+/**
+ * Espejo de `TipoContratacion` (`schema.prisma`, 2026-09-07) — tipo de
+ * contratación del maestro. El backend (`PerfilMaestroDto`) exige campos
+ * condicionales según el valor: `TEMPORAL` → `diasTemporal`; `CONTRATO` →
+ * `contratoFechaInicio` + `contratoFechaFin` (rechaza con `400
+ * VALIDATION_ERROR` si `contratoFechaFin <= contratoFechaInicio`); `BASE` →
+ * ninguno.
+ */
+export type TipoContratacion = 'BASE' | 'TEMPORAL' | 'CONTRATO';
+
 export interface PerfilMaestroInput {
   nombres: string;
   apellidoPaterno: string;
@@ -102,6 +130,13 @@ export interface PerfilMaestroInput {
   telefono: string;
   /** ISO date (`YYYY-MM-DD`). */
   fechaContratacion: string;
+  tipoContratacion: TipoContratacion;
+  /** Requerido solo si `tipoContratacion === 'TEMPORAL'` — entero ≥ 1. */
+  diasTemporal?: number;
+  /** Requerido solo si `tipoContratacion === 'CONTRATO'` — ISO date (`YYYY-MM-DD`). */
+  contratoFechaInicio?: string;
+  /** Requerido solo si `tipoContratacion === 'CONTRATO'` — ISO date (`YYYY-MM-DD`). */
+  contratoFechaFin?: string;
   /** 1-3 elementos — `ContactoDto` (sin `tipo`). */
   contactos: ContactoInput[];
   infoMedica: InfoMedicaInput;
@@ -239,7 +274,7 @@ export interface PersonaListItemAlumno {
   matricula: string;
   carrera: { id: string; nombre: string };
   estatusAcademico: EstatusAcademico;
-  semestreActual: number;
+  cuatrimestreActual: number;
   /** `Usuario.activo` (regla 3 de `CLAUDE.md` raíz — baja lógica, nunca se
    * oculta la fila, se muestra distinguida). */
   activo: boolean;
@@ -252,6 +287,45 @@ export interface PersonaListItemMaestro {
   apellidoMaterno: string | null;
   cedulaProfesional: string | null;
   estatus: EstatusEmpleado;
+  /** Solo tiene valor si `estatus === 'LICENCIA'` (tooltip del badge de
+   * estatus, feature estética 2026-08-27) — `null` en cualquier otro
+   * estatus. */
+  tipoLicencia: TipoLicencia | null;
+  /** Tipo de contratación del maestro (2026-09-07) — `null` para maestros
+   * de altas previas al 2026-09-07 (espejo del backend). */
+  tipoContratacion: TipoContratacion | null;
+  /** Días de la contratación temporal — solo con `tipoContratacion ===
+   * 'TEMPORAL'`; `null` en otro caso o en altas previas al 2026-09-07. */
+  diasTemporal: number | null;
+  /** ISO date (`YYYY-MM-DD`) — solo con `tipoContratacion === 'CONTRATO'`;
+   * `null` en otro caso o en altas previas al 2026-09-07. */
+  contratoFechaInicio: string | null;
+  /** ISO date (`YYYY-MM-DD`) — solo con `tipoContratacion === 'CONTRATO'`;
+   * `null` en otro caso o en altas previas al 2026-09-07. */
+  contratoFechaFin: string | null;
+  activo: boolean;
+}
+
+/**
+ * `GET /personas?rol=ADMINISTRATIVO&...` (Fase 10, unificación CRUD admin) —
+ * espejo de `PersonaListItemAdministrativo`
+ * (`App/backend/src/personas/personas.service.ts`). Mismo shape resumen que
+ * `PersonaListItemMaestro`, sin un identificador externo equivalente a
+ * `cedulaProfesional`/`matricula` (`PerfilAdministrativo` no tiene uno en el
+ * schema, no se inventa acá).
+ */
+export interface PersonaListItemAdministrativo {
+  usuarioId: string;
+  nombres: string;
+  apellidoPaterno: string;
+  apellidoMaterno: string | null;
+  puesto: PuestoAdministrativo;
+  nivelPermiso: NivelPermiso;
+  estatus: EstatusEmpleado;
+  /** Solo tiene valor si `estatus === 'LICENCIA'` (tooltip del badge de
+   * estatus, feature estética 2026-08-26) — `null` en cualquier otro
+   * estatus. */
+  tipoLicencia: TipoLicencia | null;
   activo: boolean;
 }
 
@@ -280,4 +354,66 @@ export function listarMaestros(
 ): Promise<ApiListaPaginada<PersonaListItemMaestro>> {
   const query = construirQueryString({ rol: 'MAESTRO', ...params });
   return apiFetchAuthPaginado<PersonaListItemMaestro>(`/personas${query}`);
+}
+
+/**
+ * `listarAdministrativos` — Fase 10 (unificación CRUD admin). Mismo patrón
+ * que `listarMaestros`: fija `rol: 'ADMINISTRATIVO'`, no se expone como
+ * parámetro editable.
+ */
+export function listarAdministrativos(
+  params: ListarPersonasParams,
+): Promise<ApiListaPaginada<PersonaListItemAdministrativo>> {
+  const query = construirQueryString({ rol: 'ADMINISTRATIVO', ...params });
+  return apiFetchAuthPaginado<PersonaListItemAdministrativo>(
+    `/personas${query}`,
+  );
+}
+
+/** Espejo de `TipoLicencia` (`schema.prisma`) — solo aplica cuando
+ * `estatus: 'LICENCIA'` en `PATCH /personas/:id/estatus`. */
+export type TipoLicencia =
+  | 'VACACIONES'
+  | 'INCAPACIDAD_ENFERMEDAD_GENERAL'
+  | 'INCAPACIDAD_RIESGO_TRABAJO'
+  | 'MATERNIDAD'
+  | 'PATERNIDAD'
+  | 'ADOPCION'
+  | 'PERMISO_CON_GOCE_SUELDO'
+  | 'PERMISO_SIN_GOCE_SUELDO'
+  | 'OTRO';
+
+/** Espejo de `MotivoBaja` (`schema.prisma`) — solo aplica cuando
+ * `estatus: 'BAJA'` en `PATCH /personas/:id/estatus`. */
+export type MotivoBaja =
+  | 'RENUNCIA'
+  | 'DESPIDO'
+  | 'BAJA_TEMPORAL_SALUD'
+  | 'FALLECIMIENTO'
+  | 'TERMINACION_INCAPACIDAD_PERMANENTE'
+  | 'OTRO';
+
+/**
+ * `PATCH /personas/:id/estatus` (Fase 10, unificación CRUD admin; extendido
+ * en el plan "estatus avanzado y borrado de grupos", 2026-08-26) — cambio
+ * de estatus genérico (regla 3 de `CLAUDE.md` raíz, baja lógica). `id` es el
+ * `Usuario` objetivo — `sedeId`/`actorUsuarioId` los resuelve el backend del
+ * JWT, nunca acá. `estatus` viaja tal cual como `string` (el valor real del
+ * enum correspondiente al rol del objetivo — `EstatusEmpleado` para el único
+ * consumidor de hoy, `app/admin/administrativos/page.tsx`); el backend
+ * valida contra el enum correcto según el `rol` del `Usuario` objetivo.
+ * `extra.tipoLicencia`/`extra.motivoBaja` son opcionales — el backend los
+ * valida contra `TipoLicencia`/`MotivoBaja` siempre que vengan presentes, y
+ * revoca `Usuario.activo` automáticamente solo cuando `estatus: 'BAJA'` y
+ * `motivoBaja` es `'RENUNCIA'` o `'DESPIDO'`.
+ */
+export function cambiarEstatusPersona(
+  usuarioId: string,
+  estatus: string,
+  extra?: { tipoLicencia?: string; motivoBaja?: string },
+): Promise<{ ok: true }> {
+  return apiFetchAuth<{ ok: true }>(`/personas/${usuarioId}/estatus`, {
+    method: 'PATCH',
+    body: JSON.stringify({ estatus, ...extra }),
+  });
 }

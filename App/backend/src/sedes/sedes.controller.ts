@@ -14,7 +14,7 @@ import { SedeActual } from '../common/decorators/sede-actual.decorator';
 import { PlatformAdminGuard } from '../common/guards/platform-admin.guard';
 import { SedeGuard } from '../common/guards/sede.guard';
 import { ActualizarSedeDto } from './dto/actualizar-sede.dto';
-import { CrearSedeDto } from './dto/crear-sede.dto';
+import { CrearSedeConFundadoresDto } from './dto/crear-sede-con-fundadores.dto';
 import { SedesService } from './sedes.service';
 
 /**
@@ -48,10 +48,15 @@ export class SedesController {
   @HttpCode(201)
   @UseGuards(PlatformAdminGuard)
   async crear(
-    @Body() body: CrearSedeDto,
+    @Body() body: CrearSedeConFundadoresDto,
     @PlatformAdminActual() actorId: string,
   ) {
-    const data = await this.sedesService.crear(body, actorId);
+    const data = await this.sedesService.crearConFundadores(
+      body.sede,
+      body.director,
+      body.administrativo,
+      actorId,
+    );
     return { data };
   }
 

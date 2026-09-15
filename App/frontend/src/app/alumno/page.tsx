@@ -5,13 +5,24 @@ import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { ApiError } from '@/lib/api/http';
 import {
+  // `obtenerCompaneros` — oculto a pedido del usuario, 2026-09-07 (ver
+  // `SeccionCompaneros` más abajo) — no borrar, listo para reactivar.
+  // obtenerCompaneros,
   obtenerPerfil,
   obtenerUrlDescargaMalla,
+  // type CompaneroItem,
   type ContactoAlumno,
+  // type GrupoConCompaneros,
   type Perfil,
   type PerfilAlumno,
 } from '@/lib/api/perfil';
 import { IconCandado, IconPerfil } from '@/components/alumno/ui/shell/icons';
+import {
+  // `SkeletonLines` — solo la usaba `SeccionCompaneros` (comentado,
+  // 2026-09-07). No borrar, reactivar junto con ese bloque.
+  // SkeletonLines,
+  SkeletonProfileCard,
+} from '@/components/alumno/ui/Skeleton';
 
 /**
  * Perfil de alumno — Fase 5, Día 16.
@@ -36,9 +47,14 @@ import { IconCandado, IconPerfil } from '@/components/alumno/ui/shell/icons';
  * el layout de una sola tarjeta con secciones apiladas se reemplazó por un
  * encabezado (`EncabezadoPerfil`, banner + avatar + badges) y un sidebar de
  * navegación (`SidebarSecciones` + `PanelSeccion`) que muestra una sección a
- * la vez (Datos personales, Sede, Carrera, Contactos), más 4 secciones
- * "próximamente" deshabilitadas. Los datos y el contrato con el backend no
- * cambiaron, solo cómo se presentan.
+ * la vez (Datos personales, Sede, Carrera, Contactos, Compañeros), más 4
+ * secciones "próximamente" deshabilitadas. Los datos y el contrato con el
+ * backend no cambiaron, solo cómo se presentan.
+ *
+ * "Compañeros" está oculta (comentada, no borrada) a pedido del usuario
+ * desde 2026-09-07 — ver el bloque comentado de `SeccionCompaneros`/
+ * `GrupoCompaneros` más abajo para reactivarla. El backend
+ * (`GET /perfil/grupo/companeros`) sigue intacto, esto es solo UI.
  */
 export default function AlumnoPerfilPage() {
   const {
@@ -64,7 +80,7 @@ export default function AlumnoPerfilPage() {
     return (
       <div className="mx-auto max-w-6xl rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm">
         <h1 className="font-display text-2xl font-semibold text-navy">Mi perfil</h1>
-        <p className="mt-4 text-sm text-slate/60">Cargando…</p>
+        <SkeletonProfileCard sections={1} fieldsPerSection={6} />
       </div>
     );
   }
@@ -195,6 +211,14 @@ function EncabezadoPerfil({ alumno }: { alumno: PerfilAlumno }) {
   );
 }
 
+// `'companeros'` se quitó de este union type para que el guard de
+// exhaustividad de `PanelSeccion` siga compilando sin ese `case` (comentado
+// más abajo) — oculto a pedido del usuario, 2026-09-07. El id sigue
+// existiendo tal cual en las funciones comentadas (`SeccionCompaneros`,
+// `GrupoCompaneros`) y en `SECCIONES_REALES` (también comentado); reactivar
+// es: descomentar la entrada de `SECCIONES_REALES`, el `case` de
+// `PanelSeccion`, las funciones, los imports de arriba, y agregar
+// `'companeros'` de vuelta aquí.
 type SeccionId = 'datos' | 'sede' | 'carrera' | 'contactos';
 
 const SECCIONES_REALES: { id: SeccionId; etiqueta: string }[] = [
@@ -202,6 +226,8 @@ const SECCIONES_REALES: { id: SeccionId; etiqueta: string }[] = [
   { id: 'sede', etiqueta: 'Sede' },
   { id: 'carrera', etiqueta: 'Carrera' },
   { id: 'contactos', etiqueta: 'Contactos' },
+  // Compañeros — oculto a pedido del usuario, 2026-09-07. No borrar.
+  // { id: 'companeros', etiqueta: 'Compañeros' },
 ];
 
 /**
@@ -275,8 +301,11 @@ function PanelSeccion({
       return <SeccionCarrera alumno={alumno} />;
     case 'contactos':
       return <SeccionContactos alumno={alumno} />;
+    // Compañeros — oculto a pedido del usuario, 2026-09-07. No borrar.
+    // case 'companeros':
+    //   return <SeccionCompaneros />;
     default: {
-      // Guard de exhaustividad — si se agrega un 5to `SeccionId` sin
+      // Guard de exhaustividad — si se agrega un 6to `SeccionId` sin
       // actualizar este switch, esto deja de compilar en vez de devolver
       // `undefined` en silencio (hallazgo de la revisión final del
       // rediseño, 2026-08-21).
@@ -314,7 +343,7 @@ function SeccionDatosPersonales({
           valor={ESTATUS_ACADEMICO_LABEL[alumno.estatusAcademico]}
         />
         <Campo etiqueta="Periodo de ingreso" valor={alumno.periodoIngreso} />
-        <Campo etiqueta="Semestre actual" valor={String(alumno.semestreActual)} />
+        <Campo etiqueta="Cuatrimestre actual" valor={String(alumno.cuatrimestreActual)} />
       </dl>
     </section>
   );
@@ -375,9 +404,10 @@ function SeccionCarrera({ alumno }: { alumno: PerfilAlumno }) {
         <Campo etiqueta="Carrera" valor={carrera.nombre} />
         <Campo etiqueta="Clave" valor={carrera.clave} />
         <Campo etiqueta="RVOE" valor={carrera.rvoe} />
+        <Campo etiqueta="Procedencia del RVOE" valor={carrera.procedenciaRvoe} />
         <Campo
           etiqueta="Duración"
-          valor={`${carrera.duracion} ${carrera.duracion === 1 ? 'semestre' : 'semestres'}`}
+          valor={`${carrera.duracion} ${carrera.duracion === 1 ? 'cuatrimestre' : 'cuatrimestres'}`}
         />
         <Campo etiqueta="Nivel" valor={NIVEL_CARRERA_LABEL[carrera.nivel]} />
         <Campo
@@ -469,6 +499,102 @@ function ContactoItem({ contacto }: { contacto: ContactoAlumno }) {
   );
 }
 
+// Compañeros de salón — oculto a pedido del usuario, 2026-09-07. No borrar,
+// listo para reactivar (descomentar este bloque completo + los imports de
+// arriba + la entrada de `SECCIONES_REALES` + el `case` de `PanelSeccion` +
+// agregar `'companeros'` de vuelta a `SeccionId`).
+//
+// /**
+//  * Compañeros de salón — Fase 11, Día 32. Sección propia con su `useQuery`
+//  * (dispara al montarse). El `QueryClient` de `app/providers.tsx` no fija
+//  * `staleTime`, así que al re-montar la sección (o al volver el foco a la
+//  * ventana) React Query re-valida en background: el dato cacheado se
+//  * pinta al instante, sin parpadeo de "Cargando…", y el refetch corre
+//  * detrás. Consume `GET /perfil/grupo/companeros` — ver
+//  * `lib/api/perfil.ts`. Solo lectura, datos mínimos (nombre + matrícula +
+//  * cuatrimestre). Regla 11: árbol propio de alumno, sin componentes de admin.
+//  */
+// function SeccionCompaneros() {
+//   const {
+//     data: grupos,
+//     isLoading,
+//     isError,
+//     error,
+//   } = useQuery({
+//     queryKey: ['alumno', 'companeros'],
+//     queryFn: async () => {
+//       try {
+//         return await obtenerCompaneros();
+//       } catch (err) {
+//         // Regla 12 de CLAUDE.md raíz — loguear antes de que la UI muestre
+//         // el mensaje genérico.
+//         console.error('[SeccionCompaneros] Error al obtener compañeros:', err);
+//         throw err;
+//       }
+//     },
+//   });
+//
+//   return (
+//     <section className="rounded-lg border border-mist p-5">
+//       <h2 className="text-sm font-semibold text-navy">Compañeros de salón</h2>
+//
+//       {isLoading && <SkeletonLines count={3} />}
+//
+//       {isError && (
+//         <p className="mt-3 rounded-lg border border-error-border bg-error-bg px-4 py-3 text-sm text-crimson">
+//           {error instanceof ApiError
+//             ? error.message
+//             : 'No se pudieron cargar tus compañeros. Intenta de nuevo más tarde.'}
+//         </p>
+//       )}
+//
+//       {!isLoading && !isError && grupos && grupos.length === 0 && (
+//         <p className="mt-3 text-sm text-slate/60">
+//           No estás matriculado en ningún grupo todavía.
+//         </p>
+//       )}
+//
+//       {!isLoading && !isError && grupos && grupos.length > 0 && (
+//         <div className="mt-3 space-y-4">
+//           {grupos.map((grupo) => (
+//             <GrupoCompaneros key={grupo.grupoId} grupo={grupo} />
+//           ))}
+//         </div>
+//       )}
+//     </section>
+//   );
+// }
+//
+// function GrupoCompaneros({ grupo }: { grupo: GrupoConCompaneros }) {
+//   return (
+//     <div className="rounded-lg border border-mist bg-bone/60 p-4">
+//       <h3 className="text-sm font-semibold text-navy">{grupo.nombre}</h3>
+//       <p className="mt-0.5 text-xs text-slate/60">
+//         {grupo.carrera.nombre} · {grupo.anioInicio}-{grupo.cicloActual} · Salón{' '}
+//         {grupo.salon.nombre}
+//       </p>
+//       {grupo.companeros.length === 0 ? (
+//         <p className="mt-3 text-sm text-slate/60">
+//           Aún no hay más alumnos en este grupo.
+//         </p>
+//       ) : (
+//         <ul className="mt-3 divide-y divide-mist">
+//           {grupo.companeros.map((companero: CompaneroItem) => (
+//             <li key={companero.usuarioId} className="py-2 first:pt-0 last:pb-0">
+//               <p className="text-sm font-medium text-slate">
+//                 {apellidosNombreDe(companero)}
+//               </p>
+//               <p className="text-xs text-slate/50">
+//                 {companero.matricula} · Cuatrimestre {companero.cuatrimestreActual}
+//               </p>
+//             </li>
+//           ))}
+//         </ul>
+//       )}
+//     </div>
+//   );
+// }
+
 function Campo({
   etiqueta,
   valor,
@@ -485,15 +611,41 @@ function Campo({
 }
 
 /**
- * Nombre completo del alumno — helper compartido entre `EncabezadoPerfil` y
- * `SeccionDatosPersonales` (antes duplicado en ambos, extraído en la ronda
- * final de fixes del rediseño de 2026-08-21).
+ * Nombre completo del alumno, en formato "Nombres ApellidoPaterno
+ * ApellidoMaterno" — helper para mostrar el nombre de una sola persona
+ * (encabezado, ficha de datos personales). Extraído en la ronda final de
+ * fixes del rediseño de 2026-08-21 para no duplicarlo.
  */
-function nombreCompletoDe(alumno: PerfilAlumno): string {
-  return [alumno.nombres, alumno.apellidoPaterno, alumno.apellidoMaterno]
+function nombreCompletoDe(persona: {
+  nombres: string;
+  apellidoPaterno: string;
+  apellidoMaterno: string | null;
+}): string {
+  return [persona.nombres, persona.apellidoPaterno, persona.apellidoMaterno]
     .filter(Boolean)
     .join(' ');
 }
+
+// `apellidosNombreDe` — solo la usaba `GrupoCompaneros` (comentado arriba,
+// 2026-09-07). Se comenta también para no dejar una función sin uso (lint).
+// No borrar, reactivar junto con el bloque de Compañeros.
+//
+// /**
+//  * Nombre en formato "Apellidos, Nombres" — para listados ordenados por
+//  * apellido en el backend (compañeros de salón, Día 32), donde el token
+//  * líder visible debe coincidir con el criterio de orden. Mismo formato que
+//  * la lista de alumnos del detalle de grupo en admin, copiado — no
+//  * compartido (regla 11: sin componentes entre `app/admin/` y `app/alumno/`).
+//  */
+// function apellidosNombreDe(persona: {
+//   nombres: string;
+//   apellidoPaterno: string;
+//   apellidoMaterno: string | null;
+// }): string {
+//   return `${[persona.apellidoPaterno, persona.apellidoMaterno]
+//     .filter(Boolean)
+//     .join(' ')}, ${persona.nombres}`;
+// }
 
 /** Fechas del backend vienen ISO 8601 completo (regla de `CLAUDE.md` raíz) —
  * se formatea solo la parte de fecha (`YYYY-MM-DD`), sin hora, para lectura

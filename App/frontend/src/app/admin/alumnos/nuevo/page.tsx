@@ -87,10 +87,10 @@ const alumnoSchema = z.object({
       .email('Formato de correo inválido'),
     carreraId: z.string().min(1, 'Selecciona una carrera'),
     periodoIngreso: z.string().min(1, 'El periodo de ingreso es requerido'),
-    semestreActual: z.coerce
+    cuatrimestreActual: z.coerce
       .number()
-      .int('El semestre debe ser un número entero')
-      .min(1, 'El semestre debe ser al menos 1'),
+      .int('El cuatrimestre debe ser un número entero')
+      .min(1, 'El cuatrimestre debe ser al menos 1'),
     telefono: z.string().optional(),
     contactos: contactosAlumnoSchema,
     infoMedica: infoMedicaSchema,
@@ -98,14 +98,14 @@ const alumnoSchema = z.object({
 });
 
 /**
- * `z.coerce.number()` (campo `semestreActual`) hace que el tipo de ENTRADA
+ * `z.coerce.number()` (campo `cuatrimestreActual`) hace que el tipo de ENTRADA
  * del schema (antes de que el resolver transforme/coerza) difiera del tipo
  * de SALIDA (`number`, después del coerce) — friction conocida de
  * zod v4 + `@hookform/resolvers`. `useForm` necesita el tipo de entrada
  * (`AlumnoFormInput`, lo que RHF guarda mientras el usuario escribe) como su
  * genérico principal, y el tipo de salida (`AlumnoFormOutput`) como tercer
  * genérico (`TTransformedValues`) — así `handleSubmit(onSubmit)` recibe ya
- * `semestreActual: number`, no el valor crudo del input.
+ * `cuatrimestreActual: number`, no el valor crudo del input.
  */
 type AlumnoFormInput = z.input<typeof alumnoSchema>;
 type AlumnoFormOutput = z.output<typeof alumnoSchema>;
@@ -121,7 +121,7 @@ const DEFAULT_VALUES: AlumnoFormInput = {
     correoPersonal: '',
     carreraId: '',
     periodoIngreso: '',
-    semestreActual: 1,
+    cuatrimestreActual: 1,
     telefono: '',
     contactos: [
       {
@@ -137,6 +137,7 @@ const DEFAULT_VALUES: AlumnoFormInput = {
     ],
     infoMedica: {
       tieneCondicionMedica: false,
+      tipoSangre: '' as AlumnoFormInput['perfilAlumno']['infoMedica']['tipoSangre'],
       padecimiento: '',
       medicamentos: '',
       alergias: '',
@@ -196,16 +197,19 @@ export default function NuevoAlumnoPage() {
             ...contacto,
             correo: contacto.correo || undefined,
           })),
-          infoMedica: values.perfilAlumno.infoMedica.tieneCondicionMedica
-            ? {
-                tieneCondicionMedica: true,
-                padecimiento: values.perfilAlumno.infoMedica.padecimiento || undefined,
-                medicamentos: values.perfilAlumno.infoMedica.medicamentos || undefined,
-                alergias: values.perfilAlumno.infoMedica.alergias || undefined,
-                tratamientoAdicional:
-                  values.perfilAlumno.infoMedica.tratamientoAdicional || undefined,
-              }
-            : { tieneCondicionMedica: false },
+          infoMedica: {
+            tipoSangre: values.perfilAlumno.infoMedica.tipoSangre,
+            ...(values.perfilAlumno.infoMedica.tieneCondicionMedica
+              ? {
+                  tieneCondicionMedica: true,
+                  padecimiento: values.perfilAlumno.infoMedica.padecimiento || undefined,
+                  medicamentos: values.perfilAlumno.infoMedica.medicamentos || undefined,
+                  alergias: values.perfilAlumno.infoMedica.alergias || undefined,
+                  tratamientoAdicional:
+                    values.perfilAlumno.infoMedica.tratamientoAdicional || undefined,
+                }
+              : { tieneCondicionMedica: false }),
+          },
         },
       }),
     onSuccess: (data) => {
@@ -245,6 +249,7 @@ export default function NuevoAlumnoPage() {
           <CuentaFieldset register={register} errors={errors} disabled={mutation.isPending} />
 
           <InfoMedicaFieldset
+            control={control}
             register={register}
             errors={errors}
             disabled={mutation.isPending}
@@ -322,19 +327,19 @@ export default function NuevoAlumnoPage() {
               <FieldError message={errors.perfilAlumno?.periodoIngreso?.message} />
             </div>
             <div>
-              <label htmlFor="semestreActual" className={LABEL_CLASS}>
-                Semestre actual
+              <label htmlFor="cuatrimestreActual" className={LABEL_CLASS}>
+                Cuatrimestre actual
               </label>
               <input
-                id="semestreActual"
+                id="cuatrimestreActual"
                 type="number"
                 min={1}
                 step={1}
                 disabled={mutation.isPending}
                 className={INPUT_CLASS}
-                {...register('perfilAlumno.semestreActual')}
+                {...register('perfilAlumno.cuatrimestreActual')}
               />
-              <FieldError message={errors.perfilAlumno?.semestreActual?.message} />
+              <FieldError message={errors.perfilAlumno?.cuatrimestreActual?.message} />
             </div>
           </div>
         </fieldset>

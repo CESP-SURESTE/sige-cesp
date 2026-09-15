@@ -36,6 +36,27 @@ enum EstatusEmpleado {
   LICENCIA
 }
 
+enum TipoLicencia {
+  VACACIONES
+  INCAPACIDAD_ENFERMEDAD_GENERAL
+  INCAPACIDAD_RIESGO_TRABAJO
+  MATERNIDAD
+  PATERNIDAD
+  ADOPCION
+  PERMISO_CON_GOCE_SUELDO
+  PERMISO_SIN_GOCE_SUELDO
+  OTRO
+}
+
+enum MotivoBaja {
+  RENUNCIA
+  DESPIDO
+  BAJA_TEMPORAL_SALUD
+  FALLECIMIENTO // art. 53 fr. II LFT — muerte del trabajador
+  TERMINACION_INCAPACIDAD_PERMANENTE // art. 53 fr. IV LFT — incapacidad/inhabilidad permanente
+  OTRO
+}
+
 enum PuestoAdministrativo {
   DIRECTOR
   COORDINADOR_ACADEMICO
@@ -58,6 +79,7 @@ enum AccionAuditoria {
   CAMBIO_PERMISO
   CAMBIO_ESTATUS
   ELIMINACION
+  CONSULTA_EMERGENCIA
 }
 
 enum NivelCarrera {
@@ -86,6 +108,51 @@ enum AreaPersonalServicios {
   OTRO
 }
 
+enum TipoNotificacion {
+  AVISO
+  RECORDATORIO_EVENTO
+  EVENTO_NUEVO
+}
+
+enum CategoriaEvento {
+  EXAMEN
+  SOCIAL
+  ADMINISTRATIVO
+  SUSPENSION_CLASES
+  OTRO
+}
+
+/// Compartido con Aviso (Fase 16) — mismo shape de "a quién le toca esto".
+enum AlcanceDestino {
+  SEDE
+  CARRERA
+  GRUPO
+}
+
+/// Tipo de sangre, capturado en InfoMedica* — 2026-09-07. Prisma no permite
+/// `+`/`-` en nombres de enum; el label legible (`A+`, `O-`, etc.) vive solo
+/// en el frontend.
+enum TipoSangre {
+  A_POSITIVO
+  A_NEGATIVO
+  B_POSITIVO
+  B_NEGATIVO
+  AB_POSITIVO
+  AB_NEGATIVO
+  O_POSITIVO
+  O_NEGATIVO
+}
+
+/// Tipo de contratación del maestro, capturado en PerfilMaestro — 2026-09-07.
+/// - BASE: plaza de base, sin fecha de término
+/// - TEMPORAL: contrato por tiempo determinado, medido en días (`diasTemporal`)
+/// - CONTRATO: contrato con fechas explícitas (`contratoFechaInicio`/`contratoFechaFin`)
+enum TipoContratacion {
+  BASE
+  TEMPORAL
+  CONTRATO
+}
+
 // ============================
 // SEDE / INFRAESTRUCTURA
 // ============================
@@ -97,6 +164,7 @@ model Sede {
   ubicacionReferencia String   @map("ubicacion_referencia")
   telefono            String
   costoRenta          Decimal? @map("costo_renta") @db.Decimal(10, 2)
+  activa              Boolean  @default(true)
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
 
@@ -107,6 +175,10 @@ model Sede {
   grupos              Grupo[]
   responsables        SedeResponsable[]
   registrosAuditoria  RegistroAuditoria[]
+  notificaciones      Notificacion[]
+  eventosCalendario   EventoCalendario[]
+  avisos              Aviso[]
+  telefonosEmergencia TelefonoEmergenciaSede[]
 
   @@map("sedes")
 }
@@ -152,24 +224,39 @@ model Salon {
   @@map("salones")
 }
 
+model TelefonoEmergenciaSede {
+  id        String   @id @default(uuid())
+  sedeId    String   @map("sede_id")
+  sede      Sede     @relation(fields: [sedeId], references: [id], onDelete: Cascade)
+  etiqueta  String
+  telefono  String
+  orden     Int
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([sedeId])
+  @@map("telefonos_emergencia_sede")
+}
+
 // ============================
 // CARRERA / MALLA
 // ============================
 
 model Carrera {
-  id          String           @id @default(uuid())
-  nombre      String
-  clave       String           @unique
-  sedeId      String           @map("sede_id")
-  sede        Sede             @relation(fields: [sedeId], references: [id])
-  duracion    Int
-  nivel       NivelCarrera
-  modalidad   ModalidadCarrera
-  estatus     EstatusCarrera   @default(ACTIVA)
-  rvoe        String
-  descripcion String
-  createdAt   DateTime         @default(now()) @map("created_at")
-  updatedAt   DateTime         @updatedAt @map("updated_at")
+  id              String           @id @default(uuid())
+  nombre          String
+  clave           String           @unique
+  sedeId          String           @map("sede_id")
+  sede            Sede             @relation(fields: [sedeId], references: [id])
+  duracion        Int
+  nivel           NivelCarrera
+  modalidad       ModalidadCarrera
+  estatus         EstatusCarrera   @default(ACTIVA)
+  rvoe            String?
+  procedenciaRvoe String?          @map("procedencia_rvoe")
+  descripcion     String
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
 
   mallaCurricular MallaCurricular?
   materias        Materia[]
@@ -211,7 +298,8 @@ model Grupo {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  alumnos GrupoAlumno[]
+  alumnos      GrupoAlumno[]
+  asignaciones GrupoMateriaMaestro[]
 
   @@map("grupos")
 }
@@ -229,14 +317,29 @@ model GrupoAlumno {
 }
 
 model Materia {
-  id        String   @id @default(uuid())
-  nombre    String
-  carreraId String   @map("carrera_id")
-  carrera   Carrera  @relation(fields: [carreraId], references: [id])
-  ciclo     Int
-  createdAt DateTime @default(now()) @map("created_at")
+  id           String                @id @default(uuid())
+  nombre       String
+  carreraId    String                @map("carrera_id")
+  carrera      Carrera               @relation(fields: [carreraId], references: [id])
+  ciclo        Int
+  createdAt    DateTime              @default(now()) @map("created_at")
+  asignaciones GrupoMateriaMaestro[]
 
   @@map("materias")
+}
+
+model GrupoMateriaMaestro {
+  id         String        @id @default(uuid())
+  grupoId    String        @map("grupo_id")
+  grupo      Grupo         @relation(fields: [grupoId], references: [id])
+  materiaId  String        @map("materia_id")
+  materia    Materia       @relation(fields: [materiaId], references: [id])
+  maestroId  String        @map("maestro_id")
+  maestro    PerfilMaestro @relation(fields: [maestroId], references: [id])
+  asignadoEn DateTime      @default(now()) @map("asignado_en")
+
+  @@unique([grupoId, materiaId, maestroId])
+  @@map("grupo_materia_maestro")
 }
 
 // ============================
@@ -262,6 +365,9 @@ model Usuario {
   perfilAdministrativo PerfilAdministrativo?
   mallasSubidas        MallaCurricular[]
   registrosAuditoria   RegistroAuditoria[]
+  notificaciones       Notificacion[]
+  eventosCreados       EventoCalendario[]
+  avisosCreados        Aviso[]
 
   @@map("usuarios")
 }
@@ -290,24 +396,24 @@ model ContadorMatricula {
 // ============================
 
 model PerfilAlumno {
-  id               String           @id @default(uuid())
-  usuarioId        String           @unique @map("usuario_id")
-  usuario          Usuario          @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
-  nombres          String
-  apellidoPaterno  String           @map("apellido_paterno")
-  apellidoMaterno  String?          @map("apellido_materno")
-  curp             String?
-  fechaNacimiento  DateTime         @map("fecha_nacimiento")
-  matricula        String           @unique
-  correoPersonal   String           @map("correo_personal")
-  carreraId        String           @map("carrera_id")
-  carrera          Carrera          @relation(fields: [carreraId], references: [id])
-  estatusAcademico EstatusAcademico @map("estatus_academico")
-  periodoIngreso   String           @map("periodo_ingreso")
-  semestreActual   Int              @map("semestre_actual")
-  telefono         String?
-  createdAt        DateTime         @default(now()) @map("created_at")
-  updatedAt        DateTime         @updatedAt @map("updated_at")
+  id                 String           @id @default(uuid())
+  usuarioId          String           @unique @map("usuario_id")
+  usuario            Usuario          @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  nombres            String
+  apellidoPaterno    String           @map("apellido_paterno")
+  apellidoMaterno    String?          @map("apellido_materno")
+  curp               String?
+  fechaNacimiento    DateTime         @map("fecha_nacimiento")
+  matricula          String           @unique
+  correoPersonal     String           @map("correo_personal")
+  carreraId          String           @map("carrera_id")
+  carrera            Carrera          @relation(fields: [carreraId], references: [id])
+  estatusAcademico   EstatusAcademico @map("estatus_academico")
+  periodoIngreso     String           @map("periodo_ingreso")
+  cuatrimestreActual Int              @map("cuatrimestre_actual")
+  telefono           String?
+  createdAt          DateTime         @default(now()) @map("created_at")
+  updatedAt          DateTime         @updatedAt @map("updated_at")
 
   contactos  ContactoAlumno[]
   infoMedica InfoMedicaAlumno?
@@ -339,6 +445,7 @@ model InfoMedicaAlumno {
   medicamentos         String?
   alergias             String?
   tratamientoAdicional String?      @map("tratamiento_adicional")
+  tipoSangre           TipoSangre?  @map("tipo_sangre")
 
   @@map("info_medica_alumno")
 }
@@ -348,23 +455,30 @@ model InfoMedicaAlumno {
 // ============================
 
 model PerfilMaestro {
-  id                String          @id @default(uuid())
-  usuarioId         String          @unique @map("usuario_id")
-  usuario           Usuario         @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
-  nombres           String
-  apellidoPaterno   String          @map("apellido_paterno")
-  apellidoMaterno   String?         @map("apellido_materno")
-  curp              String
-  cedulaProfesional String?         @map("cedula_profesional")
-  correoPersonal    String          @map("correo_personal")
-  telefono          String
-  fechaContratacion DateTime        @map("fecha_contratacion")
-  estatus           EstatusEmpleado
-  createdAt         DateTime        @default(now()) @map("created_at")
-  updatedAt         DateTime        @updatedAt @map("updated_at")
+  id                  String            @id @default(uuid())
+  usuarioId           String            @unique @map("usuario_id")
+  usuario             Usuario           @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  nombres             String
+  apellidoPaterno     String            @map("apellido_paterno")
+  apellidoMaterno     String?           @map("apellido_materno")
+  curp                String
+  cedulaProfesional   String?           @map("cedula_profesional")
+  correoPersonal      String            @map("correo_personal")
+  telefono            String
+  fechaContratacion   DateTime          @map("fecha_contratacion")
+  estatus             EstatusEmpleado
+  tipoLicencia        TipoLicencia?     @map("tipo_licencia")
+  motivoBaja          MotivoBaja?       @map("motivo_baja")
+  tipoContratacion    TipoContratacion? @map("tipo_contratacion")
+  diasTemporal        Int?              @map("dias_temporal")
+  contratoFechaInicio DateTime?         @map("contrato_fecha_inicio")
+  contratoFechaFin    DateTime?         @map("contrato_fecha_fin")
+  createdAt           DateTime          @default(now()) @map("created_at")
+  updatedAt           DateTime          @updatedAt @map("updated_at")
 
-  contactos  ContactoMaestro[]
-  infoMedica InfoMedicaMaestro?
+  contactos    ContactoMaestro[]
+  infoMedica   InfoMedicaMaestro?
+  asignaciones GrupoMateriaMaestro[]
 
   @@map("perfiles_maestro")
 }
@@ -391,6 +505,7 @@ model InfoMedicaMaestro {
   medicamentos         String?
   alergias             String?
   tratamientoAdicional String?       @map("tratamiento_adicional")
+  tipoSangre           TipoSangre?   @map("tipo_sangre")
 
   @@map("info_medica_maestro")
 }
@@ -411,6 +526,8 @@ model PerfilAdministrativo {
   telefono          String
   fechaContratacion DateTime             @map("fecha_contratacion")
   estatus           EstatusEmpleado
+  tipoLicencia      TipoLicencia?        @map("tipo_licencia")
+  motivoBaja        MotivoBaja?          @map("motivo_baja")
   puesto            PuestoAdministrativo
   nivelPermiso      NivelPermiso         @map("nivel_permiso")
   createdAt         DateTime             @default(now()) @map("created_at")
@@ -446,6 +563,7 @@ model InfoMedicaAdministrativo {
   medicamentos         String?
   alergias             String?
   tratamientoAdicional String?              @map("tratamiento_adicional")
+  tipoSangre           TipoSangre?          @map("tipo_sangre")
 
   @@map("info_medica_administrativo")
 }
@@ -498,6 +616,7 @@ model InfoMedicaPersonalServicios {
   medicamentos         String?
   alergias             String?
   tratamientoAdicional String?           @map("tratamiento_adicional")
+  tipoSangre           TipoSangre?       @map("tipo_sangre")
 
   @@map("info_medica_personal_servicios")
 }
@@ -521,6 +640,104 @@ model RegistroAuditoria {
   fecha             DateTime         @default(now())
 
   @@map("registro_auditoria")
+}
+
+/// Notificación in-app para un usuario — Fase 14, Día 38. Capa compartida:
+/// la crean el fan-out de avisos (Fase 16) y el job de recordatorios de
+/// calendario (Fase 15). NO se audita (regla 5 aplica a acciones de
+/// negocio; esto es estado de entrega derivado, alto volumen). `leidoEn`
+/// null = no leída; el badge cuenta esas. `referenciaId` apunta a
+/// `Aviso.id` o `EventoCalendario.id` según `tipo` — sin FK (las entidades
+/// referidas no existen todavía en la Fase 14 y el borrado en cascada lo
+/// maneja cada módulo dueño al borrar su entidad).
+model Notificacion {
+  id           String           @id @default(uuid())
+  usuarioId    String           @map("usuario_id")
+  usuario      Usuario          @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  sedeId       String           @map("sede_id")
+  sede         Sede             @relation(fields: [sedeId], references: [id])
+  tipo         TipoNotificacion
+  referenciaId String           @map("referencia_id")
+  titulo       String
+  cuerpoCorto  String           @map("cuerpo_corto")
+  leidoEn      DateTime?        @map("leido_en")
+  createdAt    DateTime         @default(now()) @map("created_at")
+
+  @@index([usuarioId, leidoEn])
+  @@index([usuarioId, createdAt])
+  @@index([referenciaId, tipo])
+  @@map("notificaciones")
+}
+
+/// Evento de calendario escolar — Fase 15, Día 40. `alcanceId` apunta a
+/// `Carrera.id` o `Grupo.id` según `alcanceTipo`, o es null si `SEDE` — sin
+/// FK (el alcance se valida en `validarAlcancePublicacion`, no vía
+/// constraint de DB, mismo criterio que `Notificacion.referenciaId`).
+/// `recurrenciaRegla` es `Json?` (shape `ReglaRecurrencia` de
+/// `recurrencia.util.ts`, validado en el DTO — no en la DB); las
+/// ocurrencias NUNCA se persisten (regla 1), se expanden al vuelo.
+/// `fechaFin` es informativo (ver Global Constraints) — no genera
+/// ocurrencias adicionales.
+model EventoCalendario {
+  id               String          @id @default(uuid())
+  sedeId           String          @map("sede_id")
+  sede             Sede            @relation(fields: [sedeId], references: [id])
+  autorUsuarioId   String          @map("autor_usuario_id")
+  autor            Usuario         @relation(fields: [autorUsuarioId], references: [id])
+  titulo           String
+  descripcion      String?
+  fechaInicio      DateTime        @map("fecha_inicio") @db.Date
+  horaInicio       String?         @map("hora_inicio")
+  fechaFin         DateTime?       @map("fecha_fin") @db.Date
+  categoria        CategoriaEvento
+  alcanceTipo      AlcanceDestino  @map("alcance_tipo")
+  alcanceId        String?         @map("alcance_id")
+  recurrenciaRegla Json?           @map("recurrencia_regla")
+  recurrenciaHasta DateTime?       @map("recurrencia_hasta") @db.Date
+  createdAt        DateTime        @default(now()) @map("created_at")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
+
+  recordatoriosEnviados RecordatorioEnviado[]
+
+  @@map("eventos_calendario")
+}
+
+/// Idempotencia del job de recordatorios — Fase 15, Día 42. Una fila por
+/// ocurrencia ya notificada (`@@unique` la hace segura ante corridas
+/// solapadas del cron). `onDelete: Cascade` — si se borra el evento, sus
+/// recordatorios enviados dejan de tener sentido (no son historial de
+/// negocio, regla 5 no aplica).
+model RecordatorioEnviado {
+  id              String           @id @default(uuid())
+  eventoId        String           @map("evento_id")
+  evento          EventoCalendario @relation(fields: [eventoId], references: [id], onDelete: Cascade)
+  fechaOcurrencia DateTime         @map("fecha_ocurrencia") @db.Date
+  enviadoEn       DateTime         @default(now()) @map("enviado_en")
+
+  @@unique([eventoId, fechaOcurrencia])
+  @@map("recordatorio_enviado")
+}
+
+/// Aviso — Fase 16, Día 45. Broadcast de una vía con recibo de lectura.
+/// El recibo NO vive acá: es la fila `Notificacion` (`tipo: AVISO`,
+/// `referenciaId: aviso.id`) de cada destinatario, con su `leidoEn`.
+/// `alcanceId` apunta a `Carrera.id` o `Grupo.id` según `alcanceTipo`, o
+/// es null si `SEDE` — sin FK (el alcance se valida en
+/// `validarAlcancePublicacion`, mismo criterio que `EventoCalendario`).
+model Aviso {
+  id             String         @id @default(uuid())
+  sedeId         String         @map("sede_id")
+  sede           Sede           @relation(fields: [sedeId], references: [id])
+  autorUsuarioId String         @map("autor_usuario_id")
+  autor          Usuario        @relation(fields: [autorUsuarioId], references: [id])
+  titulo         String
+  cuerpo         String
+  alcanceTipo    AlcanceDestino @map("alcance_tipo")
+  alcanceId      String?        @map("alcance_id")
+  createdAt      DateTime       @default(now()) @map("created_at")
+
+  @@index([sedeId, createdAt])
+  @@map("avisos")
 }
 
 model Seccion {

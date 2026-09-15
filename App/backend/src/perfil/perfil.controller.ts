@@ -19,11 +19,17 @@ import { PerfilService } from './perfil.service';
  * (JWT `sub`, ver `PerfilService.obtenerPerfilPropio`) — no hay `:id` ni
  * query param por el que se pueda pedir el perfil de otra persona.
  *
- * `GET /perfil/malla` (Fase 7, Día 24) es la excepción — sí restringida a
- * `ALUMNO`, `RolesGuard` declarado a nivel de MÉTODO (no de clase, para no
- * afectar `GET /perfil`), mismo criterio de composición de guards que
+ * `GET /perfil/malla` (Fase 7, Día 24) y `GET /perfil/grupo/companeros`
+ * (Fase 11, Día 32) son las excepciones — sí restringidas a `ALUMNO`,
+ * `RolesGuard` declarado a nivel de MÉTODO (no de clase, para no afectar
+ * `GET /perfil`), mismo criterio de composición de guards que
  * `SedesController` (Día 20: guard declarado por método cuando la clase
  * sirve rutas con requisitos distintos).
+ *
+ * `GET /perfil/asignaciones` (Fase 12, Día 34) es el equivalente del lado
+ * MAESTRO — mismo patrón de `RolesGuard` a nivel de MÉTODO, pero
+ * `@Roles(MAESTRO)`: el maestro autenticado ve sus grupos y materias
+ * asignados (`GrupoMateriaMaestro`).
  */
 @Controller('perfil')
 @UseGuards(SedeGuard)
@@ -44,7 +50,27 @@ export class PerfilController {
   @Roles(RolUsuario.ALUMNO)
   async obtenerUrlDescargaMalla(@ActorUsuarioId() actorUsuarioId: string) {
     const data =
-      await this.mallaCurricularService.obtenerUrlDescargaPropia(actorUsuarioId);
+      await this.mallaCurricularService.obtenerUrlDescargaPropia(
+        actorUsuarioId,
+      );
+    return { data };
+  }
+
+  @Get('grupo/companeros')
+  @UseGuards(RolesGuard)
+  @Roles(RolUsuario.ALUMNO)
+  async obtenerCompaneros(@ActorUsuarioId() actorUsuarioId: string) {
+    const data =
+      await this.perfilService.obtenerCompanerosDeGrupo(actorUsuarioId);
+    return { data };
+  }
+
+  @Get('asignaciones')
+  @UseGuards(RolesGuard)
+  @Roles(RolUsuario.MAESTRO)
+  async obtenerAsignaciones(@ActorUsuarioId() actorUsuarioId: string) {
+    const data =
+      await this.perfilService.obtenerAsignacionesPropias(actorUsuarioId);
     return { data };
   }
 }

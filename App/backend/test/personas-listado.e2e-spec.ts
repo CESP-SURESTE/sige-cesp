@@ -3,7 +3,13 @@ import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import type { App } from 'supertest/types';
-import { EstatusEmpleado, RolUsuario } from '@prisma/client';
+import {
+  EstatusEmpleado,
+  NivelPermiso,
+  PuestoAdministrativo,
+  RolUsuario,
+  TipoContratacion,
+} from '@prisma/client';
 import { AppModule } from '../src/app.module';
 import { SEDE_GUARD_ENV_OVERRIDE } from '../src/common/guards/sede.guard';
 import { loadEnv } from '../src/load-env';
@@ -25,7 +31,7 @@ interface AlumnoListItem {
   matricula: string;
   carrera: { id: string; nombre: string };
   estatusAcademico: string;
-  semestreActual: number;
+  cuatrimestreActual: number;
   activo: boolean;
 }
 
@@ -35,6 +41,22 @@ interface MaestroListItem {
   apellidoPaterno: string;
   apellidoMaterno: string | null;
   cedulaProfesional: string | null;
+  estatus: string;
+  tipoLicencia: string | null;
+  tipoContratacion: string | null;
+  diasTemporal: number | null;
+  contratoFechaInicio: string | null;
+  contratoFechaFin: string | null;
+  activo: boolean;
+}
+
+interface AdministrativoListItem {
+  usuarioId: string;
+  nombres: string;
+  apellidoPaterno: string;
+  apellidoMaterno: string | null;
+  puesto: string;
+  nivelPermiso: string;
   estatus: string;
   activo: boolean;
 }
@@ -62,9 +84,10 @@ interface ListadoBody<T> {
  * Cada fixture usa un `marker` único (`randomUUID().slice(0, 8)`) embebido
  * en `nombres`/`cedulaProfesional` para que las aserciones de `buscar` y
  * `total` sean exactas sin importar cuántas otras filas ya existan en la
- * sede por corridas previas de este u otros specs (este proyecto no limpia
- * fixtures en `afterAll`, mismo criterio ya establecido en
- * `test/personas.e2e-spec.ts`).
+ * sede por corridas previas de OTROS specs (este archivo SÍ limpia sus
+ * propios fixtures en `afterAll` desde 2026-08-25 — corrección real, antes
+ * no lo hacía, ver `usuarioIdsCreados` abajo y `documentacion_de_agentes/
+ * ESTADO.md`; `test/personas.e2e-spec.ts` tiene el mismo mecanismo).
  */
 describe('PersonasController — GET /personas (e2e)', () => {
   let app: INestApplication<App>;
@@ -79,10 +102,22 @@ describe('PersonasController — GET /personas (e2e)', () => {
   let alumnoValladolidMatricula: string;
   let markerMerida: string;
   let markerValladolid: string;
+  let markerAdminMerida: string;
+  let markerAdminValladolid: string;
   let privateKey: CryptoKey;
   let jose: typeof import('jose');
   const kid = 'test-key-1';
   const alg = 'ES256';
+
+  // Cleanup real (corrección 2026-08-25 — este spec acumulaba usuarios de
+  // prueba reales sin límite en la DB de dev, ver `documentacion_de_agentes/
+  // ESTADO.md`). Cada `usuarioId` real creado directo por `prisma.usuario
+  // .create()` en este archivo (fixtures MAESTRO/ADMINISTRATIVO, tanto los
+  // del `beforeAll` como los del describe de `GET /personas/resumen`) se
+  // agrega aquí; `afterAll` los borra al final. NUNCA incluye a los actores
+  // REALES del seed (`ana.canul`, `jorge.ek`, `luis.chan`,
+  // `mariajose.pech`) — esos no los crea este archivo, solo los consulta.
+  const usuarioIdsCreados: string[] = [];
 
   async function firmarToken(
     sub: string,
@@ -171,6 +206,10 @@ describe('PersonasController — GET /personas (e2e)', () => {
       nombres: string;
       estatus: EstatusEmpleado;
       cedulaProfesional?: string;
+      tipoContratacion?: TipoContratacion;
+      diasTemporal?: number;
+      contratoFechaInicio?: Date;
+      contratoFechaFin?: Date;
     }) {
       const usuario = await prisma.usuario.create({
         data: {
@@ -191,8 +230,13 @@ describe('PersonasController — GET /personas (e2e)', () => {
           telefono: '9990009999',
           fechaContratacion: new Date('2024-01-01'),
           estatus: params.estatus,
+          tipoContratacion: params.tipoContratacion,
+          diasTemporal: params.diasTemporal,
+          contratoFechaInicio: params.contratoFechaInicio,
+          contratoFechaFin: params.contratoFechaFin,
         },
       });
+      usuarioIdsCreados.push(usuario.id);
       return usuario.id;
     }
 
@@ -234,20 +278,102 @@ describe('PersonasController — GET /personas (e2e)', () => {
       nombres: `Fixture ${markerValladolid}`,
       estatus: EstatusEmpleado.ACTIVO,
     });
+
+    // --- Fixtures ADMINISTRATIVO en Mérida (búsqueda/estatus/paginación) ---
+    // Fase 10 (unificación CRUD admin) — mismo patrón de fixtures que
+    // MAESTRO arriba, sin un campo tipo `cedulaProfesional`
+    // (`PerfilAdministrativo` no tiene un identificador externo
+    // equivalente, `buscar` solo cubre nombres/apellidos acá).
+    markerAdminMerida = `QA28MID${randomUUID().slice(0, 8)}`;
+
+    async function crearAdministrativoFixture(params: {
+      sedeId: string;
+      apellidoPaterno: string;
+      nombres: string;
+      estatus: EstatusEmpleado;
+      nivelPermiso?: NivelPermiso;
+    }) {
+      const usuario = await prisma.usuario.create({
+        data: {
+          id: randomUUID(),
+          email: `fixture.listado.admin.${randomUUID()}@example.com`,
+          rol: RolUsuario.ADMINISTRATIVO,
+          sedeId: params.sedeId,
+        },
+      });
+      await prisma.perfilAdministrativo.create({
+        data: {
+          usuarioId: usuario.id,
+          nombres: params.nombres,
+          apellidoPaterno: params.apellidoPaterno,
+          curp: `FX${randomUUID().slice(0, 16).toUpperCase()}`,
+          correoPersonal: `fixture.listado.admin.personal.${randomUUID()}@example.com`,
+          telefono: '9990009999',
+          fechaContratacion: new Date('2024-01-01'),
+          estatus: params.estatus,
+          puesto: PuestoAdministrativo.AUXILIAR,
+          nivelPermiso: params.nivelPermiso ?? NivelPermiso.AUXILIAR,
+        },
+      });
+      usuarioIdsCreados.push(usuario.id);
+      return usuario.id;
+    }
+
+    // 3 administrativos con el mismo marker en `nombres`, apellidoPaterno
+    // distinto (orden esperado ascendente: Aaron, Beltran, Castro) y estatus
+    // variado.
+    await crearAdministrativoFixture({
+      sedeId: sedeMeridaId,
+      apellidoPaterno: 'Aaron',
+      nombres: `Fixture ${markerAdminMerida}`,
+      estatus: EstatusEmpleado.ACTIVO,
+    });
+    await crearAdministrativoFixture({
+      sedeId: sedeMeridaId,
+      apellidoPaterno: 'Beltran',
+      nombres: `Fixture ${markerAdminMerida}`,
+      estatus: EstatusEmpleado.BAJA,
+    });
+    await crearAdministrativoFixture({
+      sedeId: sedeMeridaId,
+      apellidoPaterno: 'Castro',
+      nombres: `Fixture ${markerAdminMerida}`,
+      estatus: EstatusEmpleado.LICENCIA,
+    });
+
+    // --- Fixture ADMINISTRATIVO en Valladolid (aislamiento por sede) ---
+    markerAdminValladolid = `QA28VLD${randomUUID().slice(0, 8)}`;
+    await crearAdministrativoFixture({
+      sedeId: sedeValladolidId,
+      apellidoPaterno: 'Uno',
+      nombres: `Fixture ${markerAdminValladolid}`,
+      estatus: EstatusEmpleado.ACTIVO,
+    });
     // Timeout explícito (default de Jest, 5000 ms, no alcanza) — este
     // `beforeAll` hace más round-trips de DB que el resto de los specs de
-    // este dominio (5 lookups + 5 fixtures de MAESTRO, cada una con su
-    // propio `Usuario` + `PerfilMaestro`), sobre la DB real de Supabase.
+    // este dominio (5 lookups + 9 fixtures entre MAESTRO/ADMINISTRATIVO,
+    // cada una con su propio `Usuario` + perfil), sobre la DB real de
+    // Supabase.
   }, 30000);
 
   afterAll(async () => {
+    if (usuarioIdsCreados.length > 0) {
+      await prisma.registroAuditoria.deleteMany({
+        where: { usuarioId: { in: usuarioIdsCreados } },
+      });
+      await prisma.usuario.deleteMany({
+        where: { id: { in: usuarioIdsCreados } },
+      });
+    }
     await app.close();
   });
 
   it('rol=ALUMNO -> 200, solo alumnos (seed real, luis.chan) con el shape esperado', async () => {
     // `buscar` por matrícula exacta — aísla el resultado de cualquier otro
-    // alumno acumulado en la sede por corridas previas de este u otros
-    // specs (este proyecto no limpia fixtures en `afterAll`).
+    // alumno acumulado en la sede por corridas previas de este u otros specs
+    // (fixtures de este archivo sí se limpian en `afterAll`, pero fixtures
+    // de OTROS specs que también siembren alumnos en Mérida podrían seguir
+    // presentes).
     const res = await request(app.getHttpServer())
       .get('/personas')
       .query({ rol: 'ALUMNO', buscar: 'MID-2026-0001' })
@@ -267,7 +393,7 @@ describe('PersonasController — GET /personas (e2e)', () => {
       nombre: 'Licenciatura en Administración',
     });
     expect(luis?.estatusAcademico).toBe('INSCRITO');
-    expect(luis?.semestreActual).toBe(1);
+    expect(luis?.cuatrimestreActual).toBe(1);
     expect(luis?.activo).toBe(true);
     expect(Object.keys(luis!).sort()).toEqual(
       [
@@ -278,7 +404,7 @@ describe('PersonasController — GET /personas (e2e)', () => {
         'matricula',
         'carrera',
         'estatusAcademico',
-        'semestreActual',
+        'cuatrimestreActual',
         'activo',
       ].sort(),
     );
@@ -321,6 +447,11 @@ describe('PersonasController — GET /personas (e2e)', () => {
           'apellidoMaterno',
           'cedulaProfesional',
           'estatus',
+          'tipoLicencia',
+          'tipoContratacion',
+          'diasTemporal',
+          'contratoFechaInicio',
+          'contratoFechaFin',
           'activo',
         ].sort(),
       );
@@ -341,6 +472,111 @@ describe('PersonasController — GET /personas (e2e)', () => {
     expect(body.total).toBe(1);
     expect(body.data[0].apellidoPaterno).toBe('Zeta');
     expect(body.data[0].cedulaProfesional).toBe(`CED-${markerMerida}`);
+  });
+
+  it('rol=MAESTRO -> el listado expone tipoContratacion + campos de contrato (CONTRATO con fechas, BASE en null)', async () => {
+    // Fixtures propios para este caso (2026-09-07 — `tipoContratacion` en el
+    // listado del admin). Se limpian vía `usuarioIdsCreados` en `afterAll`.
+    const markerContrat = `QACONTR${randomUUID().slice(0, 8)}`;
+
+    const usuarioContrato = await prisma.usuario.create({
+      data: {
+        id: randomUUID(),
+        email: `fixture.listado.${randomUUID()}@example.com`,
+        rol: RolUsuario.MAESTRO,
+        sedeId: sedeMeridaId,
+      },
+    });
+    usuarioIdsCreados.push(usuarioContrato.id);
+    await prisma.perfilMaestro.create({
+      data: {
+        usuarioId: usuarioContrato.id,
+        nombres: `Fixture ${markerContrat}`,
+        apellidoPaterno: 'Aaa',
+        curp: `FX${randomUUID().slice(0, 16).toUpperCase()}`,
+        correoPersonal: `fixture.listado.personal.${randomUUID()}@example.com`,
+        telefono: '9990009999',
+        fechaContratacion: new Date('2024-01-01'),
+        estatus: EstatusEmpleado.ACTIVO,
+        tipoContratacion: TipoContratacion.CONTRATO,
+        contratoFechaInicio: new Date('2026-02-01T00:00:00.000Z'),
+        contratoFechaFin: new Date('2026-11-30T00:00:00.000Z'),
+      },
+    });
+
+    const usuarioBase = await prisma.usuario.create({
+      data: {
+        id: randomUUID(),
+        email: `fixture.listado.${randomUUID()}@example.com`,
+        rol: RolUsuario.MAESTRO,
+        sedeId: sedeMeridaId,
+      },
+    });
+    usuarioIdsCreados.push(usuarioBase.id);
+    await prisma.perfilMaestro.create({
+      data: {
+        usuarioId: usuarioBase.id,
+        nombres: `Fixture ${markerContrat}`,
+        apellidoPaterno: 'Bbb',
+        curp: `FX${randomUUID().slice(0, 16).toUpperCase()}`,
+        correoPersonal: `fixture.listado.personal.${randomUUID()}@example.com`,
+        telefono: '9990009999',
+        fechaContratacion: new Date('2024-01-01'),
+        estatus: EstatusEmpleado.ACTIVO,
+        tipoContratacion: TipoContratacion.BASE,
+      },
+    });
+
+    const res = await request(app.getHttpServer())
+      .get('/personas')
+      .query({ rol: 'MAESTRO', buscar: markerContrat, limit: 100 })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(adminMeridaId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+
+    expect(res.status).toBe(200);
+    const body = res.body as ListadoBody<MaestroListItem>;
+    expect(body.total).toBe(2);
+
+    const contrato = body.data.find((m) => m.apellidoPaterno === 'Aaa');
+    expect(contrato).toMatchObject({
+      tipoContratacion: 'CONTRATO',
+      diasTemporal: null,
+      contratoFechaInicio: '2026-02-01',
+      contratoFechaFin: '2026-11-30',
+    });
+
+    const base = body.data.find((m) => m.apellidoPaterno === 'Bbb');
+    expect(base).toMatchObject({
+      tipoContratacion: 'BASE',
+      diasTemporal: null,
+      contratoFechaInicio: null,
+      contratoFechaFin: null,
+    });
+  });
+
+  it('rol=MAESTRO -> maestro de alta anterior al cambio (sin tipoContratacion) trae los 4 campos en null', async () => {
+    // Los fixtures del `beforeAll` se crean sin `tipoContratacion` — replican
+    // a un maestro dado de alta antes del 2026-09-07 (columnas nullable, sin
+    // backfill).
+    const res = await request(app.getHttpServer())
+      .get('/personas')
+      .query({ rol: 'MAESTRO', buscar: markerMerida, limit: 100 })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(adminMeridaId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+
+    expect(res.status).toBe(200);
+    const body = res.body as ListadoBody<MaestroListItem>;
+    expect(body.data.length).toBeGreaterThan(0);
+    for (const maestro of body.data) {
+      expect(maestro.tipoContratacion).toBeNull();
+      expect(maestro.diasTemporal).toBeNull();
+      expect(maestro.contratoFechaInicio).toBeNull();
+      expect(maestro.contratoFechaFin).toBeNull();
+    }
   });
 
   it('filtro estatus válido (rol=MAESTRO) -> 200, solo el maestro con ese estatus', async () => {
@@ -461,10 +697,68 @@ describe('PersonasController — GET /personas (e2e)', () => {
     expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
   });
 
-  it('rol=ADMINISTRATIVO (no válido para este endpoint, Día 19 excluye administrativos) -> 400 VALIDATION_ERROR', async () => {
+  it('rol=ADMINISTRATIVO -> 200, solo trae los administrativos del marker (búsqueda + orden alfabético apellidoPaterno asc)', async () => {
     const res = await request(app.getHttpServer())
       .get('/personas')
-      .query({ rol: 'ADMINISTRATIVO' })
+      .query({ rol: 'ADMINISTRATIVO', buscar: markerAdminMerida, limit: 100 })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(adminMeridaId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+
+    expect(res.status).toBe(200);
+    const body = res.body as ListadoBody<AdministrativoListItem>;
+    expect(body.total).toBe(3);
+    expect(body.data.map((a) => a.apellidoPaterno)).toEqual([
+      'Aaron',
+      'Beltran',
+      'Castro',
+    ]);
+    expect(body.data.map((a) => a.estatus)).toEqual([
+      'ACTIVO',
+      'BAJA',
+      'LICENCIA',
+    ]);
+    for (const administrativo of body.data) {
+      expect(Object.keys(administrativo).sort()).toEqual(
+        [
+          'usuarioId',
+          'nombres',
+          'apellidoPaterno',
+          'apellidoMaterno',
+          'puesto',
+          'nivelPermiso',
+          'estatus',
+          'tipoLicencia',
+          'activo',
+        ].sort(),
+      );
+    }
+  });
+
+  it('filtro estatus válido (rol=ADMINISTRATIVO) -> 200, solo el administrativo con ese estatus', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/personas')
+      .query({
+        rol: 'ADMINISTRATIVO',
+        buscar: markerAdminMerida,
+        estatus: 'BAJA',
+      })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(adminMeridaId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+
+    expect(res.status).toBe(200);
+    const body = res.body as ListadoBody<AdministrativoListItem>;
+    expect(body.total).toBe(1);
+    expect(body.data[0].apellidoPaterno).toBe('Beltran');
+  });
+
+  it('estatus inválido para rol=ADMINISTRATIVO (valor de EstatusAcademico, no de EstatusEmpleado) -> 400 VALIDATION_ERROR', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/personas')
+      .query({ rol: 'ADMINISTRATIVO', estatus: 'INSCRITO' })
       .set(
         'Authorization',
         `Bearer ${await firmarToken(adminMeridaId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
@@ -472,6 +766,93 @@ describe('PersonasController — GET /personas (e2e)', () => {
 
     expect(res.status).toBe(400);
     expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+  });
+
+  it('paginación (rol=ADMINISTRATIVO, limit=2) -> page 1 y page 2 correctas, mismo total', async () => {
+    const resPagina1 = await request(app.getHttpServer())
+      .get('/personas')
+      .query({
+        rol: 'ADMINISTRATIVO',
+        buscar: markerAdminMerida,
+        page: 1,
+        limit: 2,
+      })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(adminMeridaId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+
+    expect(resPagina1.status).toBe(200);
+    const body1 = resPagina1.body as ListadoBody<AdministrativoListItem>;
+    expect(body1.page).toBe(1);
+    expect(body1.limit).toBe(2);
+    expect(body1.total).toBe(3);
+    expect(body1.data.map((a) => a.apellidoPaterno)).toEqual([
+      'Aaron',
+      'Beltran',
+    ]);
+
+    const resPagina2 = await request(app.getHttpServer())
+      .get('/personas')
+      .query({
+        rol: 'ADMINISTRATIVO',
+        buscar: markerAdminMerida,
+        page: 2,
+        limit: 2,
+      })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(adminMeridaId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+
+    expect(resPagina2.status).toBe(200);
+    const body2 = resPagina2.body as ListadoBody<AdministrativoListItem>;
+    expect(body2.page).toBe(2);
+    expect(body2.total).toBe(3);
+    expect(body2.data.map((a) => a.apellidoPaterno)).toEqual(['Castro']);
+  });
+
+  it('aislamiento por sede (rol=ADMINISTRATIVO) -> admin de Valladolid no ve los fixtures sembrados en Mérida', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/personas')
+      .query({ rol: 'ADMINISTRATIVO', buscar: markerAdminMerida })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(adminValladolidId, RolUsuario.ADMINISTRATIVO, sedeValladolidId)}`,
+      );
+
+    expect(res.status).toBe(200);
+    const body = res.body as ListadoBody<AdministrativoListItem>;
+    expect(body.total).toBe(0);
+  });
+
+  it('aislamiento por sede (rol=ADMINISTRATIVO) -> admin de Mérida no ve el fixture sembrado en Valladolid', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/personas')
+      .query({ rol: 'ADMINISTRATIVO', buscar: markerAdminValladolid })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(adminMeridaId, RolUsuario.ADMINISTRATIVO, sedeMeridaId)}`,
+      );
+
+    expect(res.status).toBe(200);
+    const body = res.body as ListadoBody<AdministrativoListItem>;
+    expect(body.total).toBe(0);
+  });
+
+  it('aislamiento por sede (rol=ADMINISTRATIVO) -> admin de Valladolid SÍ ve su propio fixture (confirma el filtro, no solo la ausencia)', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/personas')
+      .query({ rol: 'ADMINISTRATIVO', buscar: markerAdminValladolid })
+      .set(
+        'Authorization',
+        `Bearer ${await firmarToken(adminValladolidId, RolUsuario.ADMINISTRATIVO, sedeValladolidId)}`,
+      );
+
+    expect(res.status).toBe(200);
+    const body = res.body as ListadoBody<AdministrativoListItem>;
+    expect(body.total).toBe(1);
+    expect(body.data[0].apellidoPaterno).toBe('Uno');
   });
 
   it('aislamiento por sede -> admin de Valladolid no ve los fixtures sembrados en Mérida', async () => {
@@ -534,9 +915,9 @@ describe('PersonasController — GET /personas (e2e)', () => {
 
     expect(res.status).toBe(200);
     const body = res.body as ListadoBody<AlumnoListItem>;
-    expect(
-      body.data.some((a) => a.usuarioId === alumnoValladolidId),
-    ).toBe(false);
+    expect(body.data.some((a) => a.usuarioId === alumnoValladolidId)).toBe(
+      false,
+    );
     expect(
       body.data.some((a) => a.matricula === alumnoValladolidMatricula),
     ).toBe(false);
@@ -589,9 +970,10 @@ describe('PersonasController — GET /personas (e2e)', () => {
    * en Mérida (`luis.chan`/`ana.canul`, usados arriba); los conteos de este
    * describe se comparan contra lo que el propio endpoint reporta al inicio
    * de esta suite en vez de contra números fijos, para no quedar frágiles
-   * ante fixtures de otras corridas (mismo criterio de "no limpiar en
-   * afterAll" ya documentado arriba en este archivo) — solo se valida que
-   * agregar un maestro nuevo en Mérida SUMA exactamente 1 al conteo previo.
+   * ante fixtures de OTROS specs que no limpian los suyos — solo se valida
+   * que agregar un maestro nuevo en Mérida SUMA exactamente 1 al conteo
+   * previo. Los fixtures que este describe crea (`nuevoUsuario`/`maestro`
+   * abajo) sí se limpian en el `afterAll` de este archivo (2026-08-25).
    */
   describe('GET /personas/resumen', () => {
     interface ResumenBody {
@@ -633,6 +1015,7 @@ describe('PersonasController — GET /personas (e2e)', () => {
           sedeId: sedeMeridaId,
         },
       });
+      usuarioIdsCreados.push(nuevoUsuario.id);
       const marcaNueva = `QARESUMEN${randomUUID().slice(0, 8)}`;
       await prisma.perfilMaestro.create({
         data: {
@@ -754,9 +1137,7 @@ describe('PersonasController — GET /personas (e2e)', () => {
       expect(bodyMerida.totalAdministrativosActivos).toBe(
         administrativosMeridaDirecto,
       );
-      expect(bodyValladolid.totalAlumnosActivos).toBe(
-        alumnosValladolidDirecto,
-      );
+      expect(bodyValladolid.totalAlumnosActivos).toBe(alumnosValladolidDirecto);
       expect(bodyValladolid.totalMaestrosActivos).toBe(
         maestrosValladolidDirecto,
       );
@@ -767,10 +1148,10 @@ describe('PersonasController — GET /personas (e2e)', () => {
       // Confirma que las 2 sedes tienen datos reales (no ambas en 0, lo que
       // haría la comparación de arriba trivial/sin valor). No se compara
       // que los totales sean DISTINTOS entre sedes a propósito — en una DB
-      // recién sembrada (antes de que otros specs de este dominio acumulen
-      // fixtures, ver nota de "no limpiar en afterAll" arriba) ambas sedes
-      // parten con el mismo número de alumnos reales de `seed.ts` (8 y 8),
-      // así que esa igualdad sería un falso negativo, no un bug.
+      // recién sembrada (antes de que otros specs de este dominio agreguen
+      // fixtures propios que tampoco tocan este archivo) ambas sedes parten
+      // con el mismo número de alumnos reales de `seed.ts` (8 y 8), así que
+      // esa igualdad sería un falso negativo, no un bug.
       expect(alumnosMeridaDirecto).toBeGreaterThan(0);
       expect(alumnosValladolidDirecto).toBeGreaterThan(0);
     });
@@ -784,6 +1165,7 @@ describe('PersonasController — GET /personas (e2e)', () => {
           sedeId: sedeMeridaId,
         },
       });
+      usuarioIdsCreados.push(maestro.id);
 
       const res = await request(app.getHttpServer())
         .get('/personas/resumen')

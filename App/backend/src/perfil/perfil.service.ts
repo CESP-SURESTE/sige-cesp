@@ -138,7 +138,7 @@ export class PerfilService {
             correoPersonal: true,
             estatusAcademico: true,
             periodoIngreso: true,
-            semestreActual: true,
+            cuatrimestreActual: true,
             telefono: true,
             carrera: {
               select: {
@@ -150,6 +150,7 @@ export class PerfilService {
                 modalidad: true,
                 estatus: true,
                 rvoe: true,
+                procedenciaRvoe: true,
                 descripcion: true,
               },
             },
@@ -184,6 +185,14 @@ export class PerfilService {
             telefono: true,
             fechaContratacion: true,
             estatus: true,
+            // Tipo de contratación (2026-09-07) — mismo nivel que
+            // `cedulaProfesional`/`fechaContratacion`. Los 3 campos
+            // condicionales son `null` salvo cuando el tipo lo amerita
+            // (TEMPORAL -> `diasTemporal`; CONTRATO -> `contratoFecha*`).
+            tipoContratacion: true,
+            diasTemporal: true,
+            contratoFechaInicio: true,
+            contratoFechaFin: true,
             contactos: {
               select: {
                 id: true,
@@ -350,6 +359,194 @@ export class PerfilService {
             }
           : null,
     };
+  }
+
+  /**
+   * `GET /perfil/grupo/companeros` — Fase 11, Día 32.
+   *
+   * El alumno autenticado ve a sus compañeros de salón: todos los grupos en
+   * los que está matriculado, cada uno con la lista de los OTROS alumnos
+   * inscritos (se excluye a sí mismo). Solo `ALUMNO` (el `RolesGuard` a
+   * nivel de método en `PerfilController` ya lo garantiza).
+   *
+   * La regla 4 de CLAUDE.md raíz (contactos/infoMedica como sub-recurso
+   * anidado al perfil) NO aplica literalmente acá: esto no es el sub-recurso
+   * de un perfil ajeno, es la vista que el propio alumno tiene de su(s)
+   * grupo(s). El aislamiento por sede es implícito y total — se parte del
+   * `PerfilAlumno` del actor y se navega solo por sus `GrupoAlumno`; nunca
+   * se consulta `Grupo` por `nombre`/`sedeId` desde afuera, así que un grupo
+   * homónimo en otra sede jamás entra al resultado.
+   *
+   * NO filtra por `Usuario.activo` ni `estatusAcademico` de los compañeros
+   * — mismo criterio que `POST /grupos/:id/alumnos` (Día 30): la matrícula
+   * en el grupo es el único predicado.
+   *
+   * Orden: grupos por `anioInicio desc, cicloActual desc, nombre asc`;
+   * `companeros` por `apellidoPaterno asc, apellidoMaterno asc, nombres asc`.
+   */
+  async obtenerCompanerosDeGrupo(actorUsuarioId: string) {
+    const perfilAlumno = await this.prisma.perfilAlumno.findUnique({
+      where: { usuarioId: actorUsuarioId },
+      select: { id: true },
+    });
+
+    if (!perfilAlumno) {
+      // Defensivo — el `RolesGuard(@Roles(ALUMNO))` ya garantizó rol ALUMNO,
+      // y la alta transaccional (regla 9) garantiza que un ALUMNO siempre
+      // tiene su PerfilAlumno. Si llega acá es inconsistencia de datos.
+      // Regla 12 — loguear antes de responder.
+      console.error(
+        '[PerfilService.obtenerCompanerosDeGrupo] Actor ALUMNO sin PerfilAlumno — inconsistencia de datos:',
+        { actorUsuarioId },
+      );
+      throw new NotFoundException({
+        error: 'No se encontró el perfil de alumno del usuario autenticado',
+        code: 'NOT_FOUND',
+      });
+    }
+
+    const inscripciones = await this.prisma.grupoAlumno.findMany({
+      where: { alumnoId: perfilAlumno.id },
+      orderBy: [
+        { grupo: { anioInicio: 'desc' } },
+        { grupo: { cicloActual: 'desc' } },
+        { grupo: { nombre: 'asc' } },
+      ],
+      select: {
+        grupo: {
+          select: {
+            id: true,
+            nombre: true,
+            anioInicio: true,
+            cicloActual: true,
+            carrera: { select: { id: true, nombre: true } },
+            salon: { select: { id: true, nombre: true } },
+            alumnos: {
+              where: { alumnoId: { not: perfilAlumno.id } },
+              orderBy: [
+                { alumno: { apellidoPaterno: 'asc' } },
+                { alumno: { apellidoMaterno: 'asc' } },
+                { alumno: { nombres: 'asc' } },
+              ],
+              select: {
+                alumno: {
+                  select: {
+                    usuarioId: true,
+                    nombres: true,
+                    apellidoPaterno: true,
+                    apellidoMaterno: true,
+                    matricula: true,
+                    cuatrimestreActual: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    return inscripciones.map(({ grupo }) => ({
+      grupoId: grupo.id,
+      nombre: grupo.nombre,
+      anioInicio: grupo.anioInicio,
+      cicloActual: grupo.cicloActual,
+      carrera: grupo.carrera,
+      salon: grupo.salon,
+      companeros: grupo.alumnos.map((ga) => ga.alumno),
+    }));
+  }
+
+  /**
+   * `GET /perfil/asignaciones` — Fase 12, Día 34. Grupos y materias que el
+   * maestro autenticado tiene asignados (`GrupoMateriaMaestro`), agrupados
+   * por grupo. Solo `MAESTRO` (el `RolesGuard(@Roles(MAESTRO))` a nivel de
+   * método en `PerfilController` ya lo garantiza).
+   *
+   * Aislamiento por sede: implícito y total — se parte del `PerfilMaestro`
+   * del actor y se navega solo por sus `GrupoMateriaMaestro`; nunca se
+   * consulta `Grupo` por `sedeId` desde afuera.
+   *
+   * Orden: grupos por `anioInicio desc, cicloActual desc, nombre asc`;
+   * `materias` por `nombre asc`.
+   */
+  async obtenerAsignacionesPropias(actorUsuarioId: string) {
+    const perfilMaestro = await this.prisma.perfilMaestro.findUnique({
+      where: { usuarioId: actorUsuarioId },
+      select: { id: true },
+    });
+
+    if (!perfilMaestro) {
+      // Defensivo — el `RolesGuard` ya garantizó rol MAESTRO, y la alta
+      // transaccional (regla 9) garantiza que un MAESTRO siempre tiene su
+      // PerfilMaestro. Si llega acá es inconsistencia de datos. Regla 12 —
+      // loguear antes de responder.
+      console.error(
+        '[PerfilService.obtenerAsignacionesPropias] Actor MAESTRO sin PerfilMaestro — inconsistencia de datos:',
+        { actorUsuarioId },
+      );
+      throw new NotFoundException({
+        error: 'No se encontró el perfil de maestro del usuario autenticado',
+        code: 'NOT_FOUND',
+      });
+    }
+
+    const filas = await this.prisma.grupoMateriaMaestro.findMany({
+      where: { maestroId: perfilMaestro.id },
+      orderBy: [
+        { grupo: { anioInicio: 'desc' } },
+        { grupo: { cicloActual: 'desc' } },
+        { grupo: { nombre: 'asc' } },
+        { materia: { nombre: 'asc' } },
+      ],
+      select: {
+        grupo: {
+          select: {
+            id: true,
+            nombre: true,
+            anioInicio: true,
+            cicloActual: true,
+            carrera: { select: { id: true, nombre: true } },
+            salon: { select: { id: true, nombre: true } },
+          },
+        },
+        materia: { select: { id: true, nombre: true, ciclo: true } },
+      },
+    });
+
+    // Agrupar por grupo preservando el orden de llegada (ya ordenado por
+    // grupo y luego por materia.nombre).
+    const porGrupo = new Map<
+      string,
+      {
+        grupoId: string;
+        nombre: string;
+        anioInicio: number;
+        cicloActual: number;
+        carrera: { id: string; nombre: string };
+        salon: { id: string; nombre: string };
+        materias: { id: string; nombre: string; ciclo: number }[];
+      }
+    >();
+
+    for (const { grupo, materia } of filas) {
+      let entrada = porGrupo.get(grupo.id);
+      if (!entrada) {
+        entrada = {
+          grupoId: grupo.id,
+          nombre: grupo.nombre,
+          anioInicio: grupo.anioInicio,
+          cicloActual: grupo.cicloActual,
+          carrera: grupo.carrera,
+          salon: grupo.salon,
+          materias: [],
+        };
+        porGrupo.set(grupo.id, entrada);
+      }
+      entrada.materias.push(materia);
+    }
+
+    return [...porGrupo.values()];
   }
 }
 

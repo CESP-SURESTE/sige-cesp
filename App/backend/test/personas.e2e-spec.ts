@@ -68,6 +68,14 @@ describe('PersonasController — POST /personas (e2e)', () => {
   const kid = 'test-key-1';
   const alg = 'ES256';
 
+  // Cleanup real (corrección 2026-08-25 — este spec acumulaba usuarios de
+  // prueba reales sin límite en la DB de dev, ver `documentacion_de_agentes/
+  // ESTADO.md`). Cada `usuarioId` real creado en este archivo (tanto los 3
+  // fixtures de `beforeAll` como cada alta exitosa vía `POST /personas`) se
+  // agrega aquí; `afterAll` los borra al final. Acotado a los ids que ESTE
+  // archivo crea — nunca un `deleteMany` amplio por patrón de email/nombre.
+  const usuarioIdsCreados: string[] = [];
+
   async function firmarToken(
     claims: Record<string, unknown>,
     sub: string,
@@ -153,6 +161,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
   function infoMedicaValida(overrides: Record<string, unknown> = {}) {
     return {
       tieneCondicionMedica: false,
+      tipoSangre: 'O_POSITIVO',
       ...overrides,
     };
   }
@@ -180,7 +189,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
       correoPersonal: `alumno.personal.${randomUUID()}@example.com`,
       carreraId: carreraMeridaId,
       periodoIngreso: '2026-1',
-      semestreActual: 1,
+      cuatrimestreActual: 1,
       contactos: [contactoAlumnoValido()],
       infoMedica: infoMedicaValida(),
       ...overrides,
@@ -195,6 +204,10 @@ describe('PersonasController — POST /personas (e2e)', () => {
       correoPersonal: `maestro.personal.${randomUUID()}@example.com`,
       telefono: '9990005555',
       fechaContratacion: '2026-01-01',
+      // `tipoContratacion` es requerido desde 2026-09-07 — default BASE para
+      // que los payloads existentes no se rompan (mismo patrón que
+      // `tipoSangre` en `infoMedicaValida`).
+      tipoContratacion: 'BASE',
       contactos: [contactoValido()],
       infoMedica: infoMedicaValida(),
       ...overrides,
@@ -299,9 +312,9 @@ describe('PersonasController — POST /personas (e2e)', () => {
     // Fixtures nuevos (observación A de QA — Día 11): actores reales con
     // `nivelPermiso` AUXILIAR y SUPER_ADMIN — el seed no trae ninguno de los
     // dos. `usuarioId` con email aleatorio (`randomUUID()`), no chocan entre
-    // corridas repetidas del suite; no se limpian en `afterAll` porque el
-    // resto de este archivo tampoco limpia lo que crea (ej. los alumnos de
-    // "alta exitosa"), mismo criterio ya establecido en este spec.
+    // corridas repetidas del suite; se limpian en `afterAll` junto con el
+    // resto de lo que este archivo crea (ver `usuarioIdsCreados` arriba —
+    // corrección 2026-08-25, antes no se limpiaban).
     const auxiliar = await prisma.usuario.create({
       data: {
         id: randomUUID(),
@@ -325,6 +338,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
       },
     });
     actorAuxiliarId = auxiliar.id;
+    usuarioIdsCreados.push(actorAuxiliarId);
 
     const superAdmin = await prisma.usuario.create({
       data: {
@@ -349,6 +363,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
       },
     });
     actorSuperAdminId = superAdmin.id;
+    usuarioIdsCreados.push(actorSuperAdminId);
 
     // Fixture nuevo (pendiente de QA — Día 11, re-auditoría de correcciones:
     // "el branch actor ADMINISTRATIVO SIN fila en PerfilAdministrativo no
@@ -367,6 +382,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
       },
     });
     actorSinPerfilId = sinPerfil.id;
+    usuarioIdsCreados.push(actorSinPerfilId);
   });
 
   afterEach(() => {
@@ -375,6 +391,14 @@ describe('PersonasController — POST /personas (e2e)', () => {
   });
 
   afterAll(async () => {
+    if (usuarioIdsCreados.length > 0) {
+      await prisma.registroAuditoria.deleteMany({
+        where: { usuarioId: { in: usuarioIdsCreados } },
+      });
+      await prisma.usuario.deleteMany({
+        where: { id: { in: usuarioIdsCreados } },
+      });
+    }
     await app.close();
   });
 
@@ -393,7 +417,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
           correoPersonal: 'prueba.alumno.personal@example.com',
           carreraId: carreraMeridaId,
           periodoIngreso: '2026-1',
-          semestreActual: 1,
+          cuatrimestreActual: 1,
           contactos: [contactoAlumnoValido()],
           infoMedica: infoMedicaValida(),
         },
@@ -403,6 +427,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
     const body = res.body as AltaPersonaBody;
     expect(body.data.usuario.rol).toBe(RolUsuario.ALUMNO);
     expect(body.data.usuario.sedeId).toBe(sedeMeridaId);
+    usuarioIdsCreados.push(body.data.usuario.id);
     expect(typeof body.data.temporaryPassword).toBe('string');
     expect(body.data.temporaryPassword.length).toBeGreaterThanOrEqual(16);
 
@@ -498,6 +523,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
 
     const body1 = res1.body as AltaPersonaBody;
     const body2 = res2.body as AltaPersonaBody;
+    usuarioIdsCreados.push(body1.data.usuario.id, body2.data.usuario.id);
 
     expect(body1.data.matricula).toMatch(/^A\d{9}$/);
     expect(body2.data.matricula).toMatch(/^A\d{9}$/);
@@ -527,7 +553,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
           correoPersonal: 'x@example.com',
           carreraId: carreraMeridaId,
           periodoIngreso: '2026-1',
-          semestreActual: 1,
+          cuatrimestreActual: 1,
           contactos: [contactoAlumnoValido()],
           infoMedica: infoMedicaValida(),
         },
@@ -608,7 +634,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
           correoPersonal: 'rollback@example.com',
           carreraId: carreraMeridaId,
           periodoIngreso: '2026-1',
-          semestreActual: 1,
+          cuatrimestreActual: 1,
           contactos: [contactoAlumnoValido()],
           infoMedica: infoMedicaValida(),
         },
@@ -658,7 +684,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
             correoPersonal: 'rollback.reject@example.com',
             carreraId: carreraMeridaId,
             periodoIngreso: '2026-1',
-            semestreActual: 1,
+            cuatrimestreActual: 1,
             contactos: [contactoAlumnoValido()],
             infoMedica: infoMedicaValida(),
           },
@@ -740,6 +766,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
     expect(res.status).toBe(201);
     const body = res.body as AltaPersonaBody;
     expect(body.data.usuario.rol).toBe(RolUsuario.ADMINISTRATIVO);
+    usuarioIdsCreados.push(body.data.usuario.id);
     expect(createUser).toHaveBeenCalledTimes(1);
   });
 
@@ -772,6 +799,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
 
       expect(res.status).toBe(201);
       const body = res.body as AltaPersonaBody;
+      usuarioIdsCreados.push(body.data.usuario.id);
       // Contador SIEMPRE presente desde el primer registro (nunca
       // `${base}@...` sin número).
       expect(body.data.email).toBe(`${baseEsperada}1@acceso.cesp.edu.mx`);
@@ -798,6 +826,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
         });
       expect(res1.status).toBe(201);
       const body1 = res1.body as AltaPersonaBody;
+      usuarioIdsCreados.push(body1.data.usuario.id);
       expect(body1.data.email).toBe(`${baseEsperada}1@acceso.cesp.edu.mx`);
 
       // Segunda alta, MISMO nombre+apellidoPaterno exacto (mismo caso que
@@ -816,6 +845,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
         });
       expect(res2.status).toBe(201);
       const body2 = res2.body as AltaPersonaBody;
+      usuarioIdsCreados.push(body2.data.usuario.id);
       expect(body2.data.email).toBe(`${baseEsperada}2@acceso.cesp.edu.mx`);
       expect(body2.data.email).not.toBe(body1.data.email);
     });
@@ -837,6 +867,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
 
       expect(res.status).toBe(201);
       const body = res.body as AltaPersonaBody;
+      usuarioIdsCreados.push(body.data.usuario.id);
       expect(body.data.email).toMatch(/^[a-z]+\d+@acceso\.cesp\.edu\.mx$/);
       // "José..." -> "jose..." (sin tilde), primera letra de
       // "Bustamante..." -> "b".
@@ -869,6 +900,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
 
       expect(res.status).toBe(201);
       const body = res.body as AltaPersonaBody;
+      usuarioIdsCreados.push(body.data.usuario.id);
 
       const perfilAlumno = await prisma.perfilAlumno.findUniqueOrThrow({
         where: { usuarioId: body.data.usuario.id },
@@ -902,6 +934,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
 
       expect(res.status).toBe(201);
       const body = res.body as AltaPersonaBody;
+      usuarioIdsCreados.push(body.data.usuario.id);
 
       const perfilAlumno = await prisma.perfilAlumno.findUniqueOrThrow({
         where: { usuarioId: body.data.usuario.id },
@@ -969,6 +1002,29 @@ describe('PersonasController — POST /personas (e2e)', () => {
       expect(createUser).not.toHaveBeenCalled();
     });
 
+    it('alta sin tipoSangre en infoMedica -> 400 VALIDATION_ERROR (2026-09-07, requerido)', async () => {
+      const perfil = perfilAlumnoValido();
+      const infoMedicaSinTipoSangre = infoMedicaValida() as Record<
+        string,
+        unknown
+      >;
+      delete infoMedicaSinTipoSangre.tipoSangre;
+      (perfil as Record<string, unknown>).infoMedica =
+        infoMedicaSinTipoSangre;
+
+      const res = await request(app.getHttpServer())
+        .post('/personas')
+        .set('Authorization', `Bearer ${await tokenAdmin()}`)
+        .send({
+          rol: RolUsuario.ALUMNO,
+          perfilAlumno: perfil,
+        });
+
+      expect(res.status).toBe(400);
+      expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+      expect(createUser).not.toHaveBeenCalled();
+    });
+
     it('datos de salud (infoMedica) guardados correctamente -> ALUMNO', async () => {
       mockCreateUserExitoso();
 
@@ -984,12 +1040,14 @@ describe('PersonasController — POST /personas (e2e)', () => {
               medicamentos: 'Salbutamol',
               alergias: 'Polen',
               tratamientoAdicional: 'Ninguno',
+              tipoSangre: 'AB_NEGATIVO',
             }),
           }),
         });
 
       expect(res.status).toBe(201);
       const body = res.body as AltaPersonaBody;
+      usuarioIdsCreados.push(body.data.usuario.id);
 
       const perfilAlumno = await prisma.perfilAlumno.findUniqueOrThrow({
         where: { usuarioId: body.data.usuario.id },
@@ -1000,6 +1058,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
       expect(perfilAlumno.infoMedica?.medicamentos).toBe('Salbutamol');
       expect(perfilAlumno.infoMedica?.alergias).toBe('Polen');
       expect(perfilAlumno.infoMedica?.tratamientoAdicional).toBe('Ninguno');
+      expect(perfilAlumno.infoMedica?.tipoSangre).toBe('AB_NEGATIVO');
     });
 
     it('datos de salud (infoMedica) + contactos guardados correctamente -> MAESTRO', async () => {
@@ -1024,6 +1083,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
 
       expect(res.status).toBe(201);
       const body = res.body as AltaPersonaBody;
+      usuarioIdsCreados.push(body.data.usuario.id);
 
       const perfilMaestro = await prisma.perfilMaestro.findUniqueOrThrow({
         where: { usuarioId: body.data.usuario.id },
@@ -1054,6 +1114,7 @@ describe('PersonasController — POST /personas (e2e)', () => {
 
       expect(res.status).toBe(201);
       const body = res.body as AltaPersonaBody;
+      usuarioIdsCreados.push(body.data.usuario.id);
 
       const perfilAdministrativo =
         await prisma.perfilAdministrativo.findUniqueOrThrow({
@@ -1065,6 +1126,163 @@ describe('PersonasController — POST /personas (e2e)', () => {
         'Contacto Administrativo',
       );
       expect(perfilAdministrativo.infoMedica?.tieneCondicionMedica).toBe(false);
+    });
+  });
+
+  /**
+   * Tipo de contratación del maestro (2026-09-07, sin día de roadmap
+   * asignado) — `tipoContratacion` requerido en toda alta de MAESTRO
+   * (`@IsEnum` sin `@IsOptional`, mismo patrón que `tipoSangre`); campos
+   * condicionales `diasTemporal` (TEMPORAL) / `contratoFecha*` (CONTRATO) con
+   * `@ValidateIf` en el DTO y la regla cruzada de fechas en
+   * `PersonasService`. Columnas NULLABLE en DB, sin backfill.
+   */
+  describe('tipoContratacion del maestro (2026-09-07)', () => {
+    it('alta de MAESTRO sin tipoContratacion -> 400 VALIDATION_ERROR', async () => {
+      const perfil = perfilMaestroValido() as Record<string, unknown>;
+      delete perfil.tipoContratacion;
+
+      const res = await request(app.getHttpServer())
+        .post('/personas')
+        .set('Authorization', `Bearer ${await tokenAdmin()}`)
+        .send({ rol: RolUsuario.MAESTRO, perfilMaestro: perfil });
+
+      expect(res.status).toBe(400);
+      expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+      expect(createUser).not.toHaveBeenCalled();
+    });
+
+    it('alta TEMPORAL sin diasTemporal -> 400 VALIDATION_ERROR', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/personas')
+        .set('Authorization', `Bearer ${await tokenAdmin()}`)
+        .send({
+          rol: RolUsuario.MAESTRO,
+          perfilMaestro: perfilMaestroValido({ tipoContratacion: 'TEMPORAL' }),
+        });
+
+      expect(res.status).toBe(400);
+      expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+      expect(createUser).not.toHaveBeenCalled();
+    });
+
+    it('alta CONTRATO con contratoFechaFin anterior a contratoFechaInicio -> 400 VALIDATION_ERROR', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/personas')
+        .set('Authorization', `Bearer ${await tokenAdmin()}`)
+        .send({
+          rol: RolUsuario.MAESTRO,
+          perfilMaestro: perfilMaestroValido({
+            tipoContratacion: 'CONTRATO',
+            contratoFechaInicio: '2026-06-01',
+            contratoFechaFin: '2026-01-01',
+          }),
+        });
+
+      expect(res.status).toBe(400);
+      expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+      expect(createUser).not.toHaveBeenCalled();
+    });
+
+    it('alta CONTRATO con contratoFechaFin igual a contratoFechaInicio -> 400 VALIDATION_ERROR (anterior o igual)', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/personas')
+        .set('Authorization', `Bearer ${await tokenAdmin()}`)
+        .send({
+          rol: RolUsuario.MAESTRO,
+          perfilMaestro: perfilMaestroValido({
+            tipoContratacion: 'CONTRATO',
+            contratoFechaInicio: '2026-01-01',
+            contratoFechaFin: '2026-01-01',
+          }),
+        });
+
+      expect(res.status).toBe(400);
+      expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+      expect(createUser).not.toHaveBeenCalled();
+    });
+
+    it('alta CONTRATO válida -> 201, persiste tipoContratacion + ambas fechas, diasTemporal null', async () => {
+      mockCreateUserExitoso();
+
+      const res = await request(app.getHttpServer())
+        .post('/personas')
+        .set('Authorization', `Bearer ${await tokenAdmin()}`)
+        .send({
+          rol: RolUsuario.MAESTRO,
+          perfilMaestro: perfilMaestroValido({
+            tipoContratacion: 'CONTRATO',
+            contratoFechaInicio: '2026-01-01',
+            contratoFechaFin: '2026-12-31',
+          }),
+        });
+
+      expect(res.status).toBe(201);
+      const body = res.body as AltaPersonaBody;
+      usuarioIdsCreados.push(body.data.usuario.id);
+
+      const perfilMaestro = await prisma.perfilMaestro.findUniqueOrThrow({
+        where: { usuarioId: body.data.usuario.id },
+      });
+      expect(perfilMaestro.tipoContratacion).toBe('CONTRATO');
+      expect(perfilMaestro.diasTemporal).toBeNull();
+      expect(perfilMaestro.contratoFechaInicio?.toISOString()).toBe(
+        new Date('2026-01-01').toISOString(),
+      );
+      expect(perfilMaestro.contratoFechaFin?.toISOString()).toBe(
+        new Date('2026-12-31').toISOString(),
+      );
+    });
+
+    it('alta TEMPORAL válida -> 201, persiste diasTemporal, contratoFecha* null', async () => {
+      mockCreateUserExitoso();
+
+      const res = await request(app.getHttpServer())
+        .post('/personas')
+        .set('Authorization', `Bearer ${await tokenAdmin()}`)
+        .send({
+          rol: RolUsuario.MAESTRO,
+          perfilMaestro: perfilMaestroValido({
+            tipoContratacion: 'TEMPORAL',
+            diasTemporal: 90,
+          }),
+        });
+
+      expect(res.status).toBe(201);
+      const body = res.body as AltaPersonaBody;
+      usuarioIdsCreados.push(body.data.usuario.id);
+
+      const perfilMaestro = await prisma.perfilMaestro.findUniqueOrThrow({
+        where: { usuarioId: body.data.usuario.id },
+      });
+      expect(perfilMaestro.tipoContratacion).toBe('TEMPORAL');
+      expect(perfilMaestro.diasTemporal).toBe(90);
+      expect(perfilMaestro.contratoFechaInicio).toBeNull();
+      expect(perfilMaestro.contratoFechaFin).toBeNull();
+    });
+
+    it('alta BASE válida -> 201, campos condicionales quedan null', async () => {
+      mockCreateUserExitoso();
+
+      const res = await request(app.getHttpServer())
+        .post('/personas')
+        .set('Authorization', `Bearer ${await tokenAdmin()}`)
+        .send({
+          rol: RolUsuario.MAESTRO,
+          perfilMaestro: perfilMaestroValido({ tipoContratacion: 'BASE' }),
+        });
+
+      expect(res.status).toBe(201);
+      const body = res.body as AltaPersonaBody;
+      usuarioIdsCreados.push(body.data.usuario.id);
+
+      const perfilMaestro = await prisma.perfilMaestro.findUniqueOrThrow({
+        where: { usuarioId: body.data.usuario.id },
+      });
+      expect(perfilMaestro.tipoContratacion).toBe('BASE');
+      expect(perfilMaestro.diasTemporal).toBeNull();
+      expect(perfilMaestro.contratoFechaInicio).toBeNull();
+      expect(perfilMaestro.contratoFechaFin).toBeNull();
     });
   });
 });

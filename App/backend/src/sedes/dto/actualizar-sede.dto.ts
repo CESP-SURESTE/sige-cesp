@@ -1,4 +1,10 @@
-import { IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
+import {
+  IsBoolean,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+} from 'class-validator';
 
 export class ActualizarSedeDto {
   @IsOptional()
@@ -24,4 +30,8 @@ export class ActualizarSedeDto {
   @IsOptional()
   @IsNumber({}, { message: 'costoRenta debe ser un número' })
   costoRenta?: number;
+
+  @IsOptional()
+  @IsBoolean({ message: 'activa debe ser booleano' })
+  activa?: boolean;
 }

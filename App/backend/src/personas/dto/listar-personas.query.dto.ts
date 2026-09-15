@@ -3,17 +3,19 @@ import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 import { RolUsuario } from '@prisma/client';
 
 /**
- * Query params de `GET /personas` — Fase 5, Día 19.
+ * Query params de `GET /personas` — Fase 5, Día 19, extendido a
+ * ADMINISTRATIVO (Fase 10, unificación CRUD admin).
  *
  * "Listados PARA administrativos" = listados que un ADMINISTRATIVO consulta,
- * de ALUMNO y MAESTRO — NO un listado de ADMINISTRATIVO mismos (fuera de
- * alcance de este día, ver encargo).
+ * de ALUMNO, MAESTRO y (desde hoy) ADMINISTRATIVO mismos — el alcance que
+ * Día 19 dejaba fuera explícitamente ("NO un listado de ADMINISTRATIVO
+ * mismos") se cierra en esta extensión.
  *
- * `rol` es requerido y SOLO acepta `ALUMNO`/`MAESTRO` — `ADMINISTRATIVO` (o
- * cualquier otro valor, o ausente) cae en 400 `VALIDATION_ERROR` vía
- * `@IsIn(...)` (reutiliza el código fijo existente, no se inventó uno
- * nuevo). `@IsIn` sin `@IsOptional` valida incluso cuando el query param no
- * viene (queda `undefined`, que tampoco pertenece al array permitido).
+ * `rol` es requerido y acepta `ALUMNO`/`MAESTRO`/`ADMINISTRATIVO` — cualquier
+ * otro valor, o ausente, cae en 400 `VALIDATION_ERROR` vía `@IsIn(...)`
+ * (reutiliza el código fijo existente, no se inventó uno nuevo). `@IsIn` sin
+ * `@IsOptional` valida incluso cuando el query param no viene (queda
+ * `undefined`, que tampoco pertenece al array permitido).
  *
  * `estatus` se deja como `string` simple acá — su validación real depende de
  * `rol` (otro campo de este mismo DTO: `EstatusAcademico` si
@@ -29,8 +31,8 @@ import { RolUsuario } from '@prisma/client';
  * los DTOs de body; acá se aplica igual a query params.
  */
 export class ListarPersonasQueryDto {
-  @IsIn([RolUsuario.ALUMNO, RolUsuario.MAESTRO], {
-    message: 'rol es requerido y debe ser ALUMNO o MAESTRO',
+  @IsIn([RolUsuario.ALUMNO, RolUsuario.MAESTRO, RolUsuario.ADMINISTRATIVO], {
+    message: 'rol es requerido y debe ser ALUMNO, MAESTRO o ADMINISTRATIVO',
   })
   rol!: RolUsuario;
 

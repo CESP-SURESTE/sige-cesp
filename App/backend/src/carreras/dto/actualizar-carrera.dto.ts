@@ -50,6 +50,11 @@ export class ActualizarCarreraDto {
 
   @IsOptional()
   @IsString()
+  @IsNotEmpty({ message: 'procedenciaRvoe no puede ser vacío' })
+  procedenciaRvoe?: string;
+
+  @IsOptional()
+  @IsString()
   @IsNotEmpty({ message: 'descripcion no puede ser vacía' })
   descripcion?: string;
 

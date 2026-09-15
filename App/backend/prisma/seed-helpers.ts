@@ -180,7 +180,7 @@ export async function seedAlumno(params: {
       carreraId: params.carreraId,
       estatusAcademico: params.estatusAcademico ?? EstatusAcademico.INSCRITO,
       periodoIngreso: '2026-1',
-      semestreActual: 1,
+      cuatrimestreActual: 1,
       contactos: {
         create: [
           {
@@ -215,7 +215,17 @@ export async function seedMaestro(params: {
     RolUsuario.MAESTRO,
     params.sedeId,
   );
-  if (yaExistia) return;
+  if (yaExistia) {
+    // El `Usuario` puede existir sin su `PerfilMaestro` si un reseed
+    // anterior se truncó a mitad de camino (visto en producción/dev el
+    // 2026-09-10: `reset-db.ts` limpia todo, pero un reseed parcial deja
+    // `Usuario` creado y el perfil sin crear todavía) — self-healing en
+    // vez de asumir "Usuario existe ⇒ ya está completo".
+    const existente = await prisma.perfilMaestro.findUnique({
+      where: { usuarioId },
+    });
+    if (existente) return existente;
+  }
 
   await prisma.perfilMaestro.create({
     data: {
@@ -263,7 +273,18 @@ export async function seedAdministrativo(params: {
     RolUsuario.ADMINISTRATIVO,
     params.sedeId,
   );
-  if (yaExistia) return;
+  if (yaExistia) {
+    // Mismo self-healing que `seedMaestro` — un `Usuario` sin
+    // `PerfilAdministrativo` es el síntoma real encontrado el 2026-09-10:
+    // los 6 administrativos ancla (2 por sede × 3 sedes) quedaron así tras
+    // un reseed parcial, rompiendo `perfil.e2e-spec.ts`/
+    // `emergencia.e2e-spec.ts` con 500 en vez de asumir que ya estaban
+    // completos.
+    const existente = await prisma.perfilAdministrativo.findUnique({
+      where: { usuarioId },
+    });
+    if (existente) return existente;
+  }
 
   await prisma.perfilAdministrativo.create({
     data: {
@@ -442,6 +463,28 @@ export async function seedSede(config: SedeSeedConfig) {
     carreras.push(carrera);
   }
 
+  // Materias de ciclo 1 por carrera — Día 33 (Fase 12). 3 por carrera, todas
+  // `ciclo: 1` para emparejar con los grupos sembrados (`cicloActual: 1`).
+  // Sin `@@unique` en `Materia`, así que se usa findFirst + create (mismo
+  // patrón que los grupos más abajo en esta función).
+  const NOMBRES_MATERIAS_CICLO_1 = [
+    'Fundamentos de Investigación',
+    'Matemáticas I',
+    'Comunicación Oral y Escrita',
+  ];
+  for (const carrera of carreras) {
+    for (const nombreMateria of NOMBRES_MATERIAS_CICLO_1) {
+      const existente = await prisma.materia.findFirst({
+        where: { carreraId: carrera.id, nombre: nombreMateria, ciclo: 1 },
+      });
+      if (!existente) {
+        await prisma.materia.create({
+          data: { carreraId: carrera.id, nombre: nombreMateria, ciclo: 1 },
+        });
+      }
+    }
+  }
+
   const salones: Salon[] = [];
   for (const nombreSalon of config.salones) {
     const salon = await prisma.salon.upsert({
@@ -537,6 +580,44 @@ export async function seedSede(config: SedeSeedConfig) {
         alumnoId: perfilAlumno.id,
       },
     });
+  }
+
+  // Asignación de maestros a las materias de ciclo 1 de cada grupo — para que
+  // la vista de asignaciones del admin y el dashboard del maestro no salgan
+  // vacíos. Reparte las materias del grupo entre los maestros de la sede de
+  // forma determinística (materia i → maestro i % N). Idempotente por el
+  // `@@unique([grupoId, materiaId, maestroId])` (findFirst + create, mismo
+  // patrón que grupos/materias más arriba en esta función).
+  const maestrosSede = await prisma.perfilMaestro.findMany({
+    where: { usuario: { sedeId: sede.id } },
+    orderBy: { usuario: { email: 'asc' } },
+  });
+  if (maestrosSede.length > 0) {
+    for (const grupo of grupos) {
+      const materiasGrupo = await prisma.materia.findMany({
+        where: { carreraId: grupo.carreraId, ciclo: grupo.cicloActual },
+        orderBy: { nombre: 'asc' },
+      });
+      for (let i = 0; i < materiasGrupo.length; i++) {
+        const maestro = maestrosSede[i % maestrosSede.length];
+        const yaAsignado = await prisma.grupoMateriaMaestro.findFirst({
+          where: {
+            grupoId: grupo.id,
+            materiaId: materiasGrupo[i].id,
+            maestroId: maestro.id,
+          },
+        });
+        if (!yaAsignado) {
+          await prisma.grupoMateriaMaestro.create({
+            data: {
+              grupoId: grupo.id,
+              materiaId: materiasGrupo[i].id,
+              maestroId: maestro.id,
+            },
+          });
+        }
+      }
+    }
   }
 
   for (const personal of config.personalServicios) {

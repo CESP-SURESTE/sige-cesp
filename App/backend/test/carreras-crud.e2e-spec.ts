@@ -24,7 +24,8 @@ interface CarreraBody {
     nivel: string;
     modalidad: string;
     estatus: string;
-    rvoe: string;
+    rvoe: string | null;
+    procedenciaRvoe: string | null;
     descripcion: string;
     sedeId: string;
   };
@@ -190,6 +191,46 @@ describe('CarrerasController — POST/PATCH /carreras (e2e)', () => {
 
     expect(res.status).toBe(201);
     expect((res.body as CarreraBody).data.sedeId).toBe(sedeValladolidId);
+  });
+
+  it('POST /carreras sin rvoe -> 201 (RVOE opcional desde 2026-09-07)', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+
+    const { rvoe, ...sinRvoe } = bodyValido;
+    void rvoe;
+
+    const res = await request(app.getHttpServer())
+      .post('/carreras')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ...sinRvoe, clave: `${clavePrueba}-SIN-RVOE`, nombre: `${nombrePrueba} sin rvoe` });
+
+    expect(res.status).toBe(201);
+    expect((res.body as CarreraBody).data.rvoe).toBeNull();
+  });
+
+  it('POST /carreras con procedenciaRvoe -> 201, se guarda tal cual', async () => {
+    const token = await firmarToken({
+      role: 'authenticated',
+      sede_id: sedeMeridaId,
+      rol: RolUsuario.ADMINISTRATIVO,
+    });
+
+    const res = await request(app.getHttpServer())
+      .post('/carreras')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        ...bodyValido,
+        clave: `${clavePrueba}-PROC-RVOE`,
+        nombre: `${nombrePrueba} con procedencia`,
+        procedenciaRvoe: 'Yucatán',
+      });
+
+    expect(res.status).toBe(201);
+    expect((res.body as CarreraBody).data.procedenciaRvoe).toBe('Yucatán');
   });
 
   it('POST /carreras sin nombre -> 400 VALIDATION_ERROR', async () => {

@@ -6,10 +6,15 @@ import type { ComponentType } from 'react';
 import {
   IconAdministrativos,
   IconAlumnos,
+  IconAvisos,
+  IconCalendario,
   IconCarreras,
+  IconEmergencia,
+  IconGrupos,
   IconMaestros,
   IconPanel,
   IconPerfil,
+  IconSalones,
 } from './icons';
 
 type NavItem = {
@@ -21,22 +26,31 @@ type NavItem = {
   match: 'exacto' | 'prefijo';
 };
 
-// Funciones principales del admin (Fase 4/5) — Alumnos y Maestros llevan al
-// listado (Día 19, su "función" principal es verlos); Administrativos
-// todavía no tiene listado propio (fuera de alcance de Día 19 a propósito,
-// ver CLAUDE.md raíz), así que por ahora apunta a la única pantalla que
-// existe para ese rol (alta). Cuando exista `/admin/administrativos`
-// (listado), este href se actualiza — no antes, no se inventa una ruta
-// vacía.
+// Funciones principales del admin (Fase 4/5/10) — todos los items llevan al
+// listado de su dominio (Día 19 para Alumnos/Maestros; Fase 10, Task 5, para
+// Administrativos — antes apuntaba directo a `/admin/administrativos/nuevo`
+// porque ese rol todavía no tenía listado propio, ver `CLAUDE.md` raíz; ese
+// motivo ya no aplica desde que `GET /personas?rol=ADMINISTRATIVO` y su UI
+// existen).
 const NAV_PRINCIPAL: NavItem[] = [
   { href: '/admin', label: 'Panel', Icon: IconPanel, match: 'exacto' },
   { href: '/admin/alumnos', label: 'Alumnos', Icon: IconAlumnos, match: 'prefijo' },
   { href: '/admin/maestros', label: 'Maestros', Icon: IconMaestros, match: 'prefijo' },
   { href: '/admin/carreras', label: 'Carreras', Icon: IconCarreras, match: 'prefijo' },
+  { href: '/admin/salones', label: 'Salones', Icon: IconSalones, match: 'prefijo' },
+  { href: '/admin/grupos', label: 'Grupos', Icon: IconGrupos, match: 'prefijo' },
+  { href: '/admin/calendario', label: 'Calendario', Icon: IconCalendario, match: 'prefijo' },
+  { href: '/admin/avisos', label: 'Avisos', Icon: IconAvisos, match: 'prefijo' },
   {
-    href: '/admin/administrativos/nuevo',
+    href: '/admin/administrativos',
     label: 'Administrativos',
     Icon: IconAdministrativos,
+    match: 'prefijo',
+  },
+  {
+    href: '/admin/emergencia',
+    label: 'Emergencia',
+    Icon: IconEmergencia,
     match: 'prefijo',
   },
 ];

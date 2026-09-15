@@ -26,6 +26,7 @@ function hayCambiosReales(
     'nivel',
     'modalidad',
     'rvoe',
+    'procedenciaRvoe',
     'descripcion',
     'estatus',
   ] as const;
@@ -128,6 +129,7 @@ export class CarrerasService {
             nivel: dto.nivel,
             modalidad: dto.modalidad,
             rvoe: dto.rvoe,
+            procedenciaRvoe: dto.procedenciaRvoe,
             descripcion: dto.descripcion,
           },
         });
@@ -204,6 +206,7 @@ export class CarrerasService {
             nivel: dto.nivel,
             modalidad: dto.modalidad,
             rvoe: dto.rvoe,
+            procedenciaRvoe: dto.procedenciaRvoe,
             descripcion: dto.descripcion,
             estatus: dto.estatus,
           },

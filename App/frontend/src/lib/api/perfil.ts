@@ -93,6 +93,10 @@ export interface ContactoAlumno {
  * `administrativo`. */
 export type EstatusEmpleado = 'ACTIVO' | 'BAJA' | 'LICENCIA';
 
+/** Espejo de `TipoContratacion` (`schema.prisma`) — solo `maestro`.
+ * `null` para maestros dados de alta antes de 2026-09-07. */
+export type TipoContratacion = 'BASE' | 'TEMPORAL' | 'CONTRATO';
+
 /** Igual que `ContactoAlumno` pero sin `tipo` — `ContactoMaestro` no
  * distingue tutor/emergencia, es un contacto genérico. */
 export interface ContactoMaestro {
@@ -145,7 +149,12 @@ export interface PerfilCarrera {
   nivel: NivelCarrera;
   modalidad: ModalidadCarrera;
   estatus: EstatusCarrera;
-  rvoe: string;
+  /** Opcional desde 2026-09-07 (`Carrera.rvoe` pasó a `String?`) — no todas
+   * las carreras tienen RVOE emitido. */
+  rvoe: string | null;
+  /** Nuevo 2026-09-07 — estado de procedencia del RVOE cuando fue emitido
+   * en otro estado distinto a Yucatán (texto libre, sin catálogo cerrado). */
+  procedenciaRvoe: string | null;
   descripcion: string;
 }
 
@@ -161,7 +170,7 @@ export interface PerfilAlumno {
   correoPersonal: string;
   estatusAcademico: EstatusAcademico;
   periodoIngreso: string;
-  semestreActual: number;
+  cuatrimestreActual: number;
   telefono: string | null;
   carrera: PerfilCarrera;
   /** Derivado al vuelo por el backend desde `fechaNacimiento` — nunca
@@ -185,6 +194,16 @@ export interface PerfilMaestro {
   /** ISO 8601 (`Date` de Prisma serializado por Express). */
   fechaContratacion: string;
   estatus: EstatusEmpleado;
+  /** `null` para maestros dados de alta antes de 2026-09-07 (columna
+   * nullable, sin backfill — mismo criterio que `tipoLicencia`/`motivoBaja`). */
+  tipoContratacion: TipoContratacion | null;
+  /** Solo relevante cuando `tipoContratacion === 'TEMPORAL'` — días del
+   * contrato por tiempo determinado. `null` en cualquier otro caso. */
+  diasTemporal: number | null;
+  /** ISO 8601. Solo relevante cuando `tipoContratacion === 'CONTRATO'`. */
+  contratoFechaInicio: string | null;
+  /** ISO 8601. Solo relevante cuando `tipoContratacion === 'CONTRATO'`. */
+  contratoFechaFin: string | null;
   /** Ordenados por `orden` ascendente. Sin rango 1-3 documentado a
    * propósito distinto al de alumno — el alta de maestro también exige
    * 1 a 3, pero no hay un tipo obligatorio como el tutor de un menor. */
@@ -250,4 +269,67 @@ export function obtenerUrlDescargaMalla(): Promise<{
   nombreArchivo: string;
 } | null> {
   return apiFetchAuth('/perfil/malla');
+}
+
+/**
+ * `GET /perfil/grupo/companeros` — Fase 11, Día 32.
+ *
+ * Compañeros matriculados en el/los grupo(s) del propio alumno, agrupados
+ * por grupo. Shape espejo exacto de `PerfilService.obtenerCompanerosDeGrupo`
+ * (`App/backend/src/perfil/perfil.service.ts`) — mismo criterio de "mantener
+ * en sync a mano" que el resto de este archivo. Excluye al propio alumno.
+ * NO filtra por estatus/activo (consistente con Día 30). Array vacío si el
+ * alumno no está en ningún grupo; un grupo puede venir con `companeros: []`
+ * si es el único inscrito.
+ */
+export interface CompaneroItem {
+  usuarioId: string;
+  nombres: string;
+  apellidoPaterno: string;
+  apellidoMaterno: string | null;
+  matricula: string;
+  cuatrimestreActual: number;
+}
+
+export interface GrupoConCompaneros {
+  grupoId: string;
+  nombre: string;
+  anioInicio: number;
+  cicloActual: number;
+  carrera: { id: string; nombre: string };
+  salon: { id: string; nombre: string };
+  companeros: CompaneroItem[];
+}
+
+export function obtenerCompaneros(): Promise<GrupoConCompaneros[]> {
+  return apiFetchAuth<GrupoConCompaneros[]>('/perfil/grupo/companeros');
+}
+
+/**
+ * `GET /perfil/asignaciones` — Fase 12, Día 34.
+ *
+ * Grupos y materias que el maestro autenticado tiene asignados, agrupados
+ * por grupo. Shape espejo exacto de `PerfilService.obtenerAsignacionesPropias`
+ * (`App/backend/src/perfil/perfil.service.ts`) — mismo criterio de "mantener
+ * en sync a mano" que el resto de este archivo. Solo `MAESTRO`. Array vacío
+ * si el maestro no tiene asignaciones.
+ */
+export interface MateriaAsignada {
+  id: string;
+  nombre: string;
+  ciclo: number;
+}
+
+export interface GrupoConMaterias {
+  grupoId: string;
+  nombre: string;
+  anioInicio: number;
+  cicloActual: number;
+  carrera: { id: string; nombre: string };
+  salon: { id: string; nombre: string };
+  materias: MateriaAsignada[];
+}
+
+export function obtenerMisAsignaciones(): Promise<GrupoConMaterias[]> {
+  return apiFetchAuth<GrupoConMaterias[]>('/perfil/asignaciones');
 }

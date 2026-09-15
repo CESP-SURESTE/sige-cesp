@@ -479,7 +479,7 @@ describe('MallaCurricularController — POST /carreras/:id/malla (e2e)', () => {
           carreraId: carreraMeridaId,
           estatusAcademico: 'INSCRITO',
           periodoIngreso: '2026-1',
-          semestreActual: 1,
+          cuatrimestreActual: 1,
         },
       });
       alumnoConMallaUsuarioId = alumnoConMalla.id;
@@ -504,7 +504,7 @@ describe('MallaCurricularController — POST /carreras/:id/malla (e2e)', () => {
           carreraId: carreraSinMalla.id,
           estatusAcademico: 'INSCRITO',
           periodoIngreso: '2026-1',
-          semestreActual: 1,
+          cuatrimestreActual: 1,
         },
       });
       alumnoSinMallaUsuarioId = alumnoSinMalla.id;

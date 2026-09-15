@@ -4,10 +4,12 @@ import {
   Get,
   HttpCode,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { LoginThrottlerGuard } from '../auth/guards/login-throttler.guard';
 import { PlatformAdminGuard } from '../common/guards/platform-admin.guard';
+import { ListarAuditoriaQueryDto } from './dto/listar-auditoria-query.dto';
 import { LoginPlatformAdminDto } from './dto/login-platform-admin.dto';
 import { PlatformAdminService } from './platform-admin.service';
 
@@ -43,5 +45,13 @@ export class PlatformAdminController {
   async resumen() {
     const data = await this.platformAdminService.resumenGlobal();
     return { data };
+  }
+
+  @Get('auditoria')
+  @UseGuards(PlatformAdminGuard)
+  async auditoria(@Query() query: ListarAuditoriaQueryDto) {
+    const { data, page, limit, total } =
+      await this.platformAdminService.listarAuditoria(query);
+    return { data, page, limit, total };
   }
 }

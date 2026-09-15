@@ -203,4 +203,61 @@ describe('MailService', () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe('enviarNotificacion', () => {
+    it('con el flag apagado -> no llama fetch, resuelve', async () => {
+      process.env.MAILGUN_ENVIOS_HABILITADO = 'false';
+      const fetchMock = jest.fn();
+      const service = new MailService(fetchMock);
+      await expect(
+        service.enviarNotificacion({
+          correoDestino: 'x@example.com',
+          asunto: 'Hola',
+          cuerpoTexto: 'Cuerpo',
+        }),
+      ).resolves.toBeUndefined();
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('con el flag prendido -> hace POST a Mailgun con to/subject/text', async () => {
+      process.env.MAILGUN_ENVIOS_HABILITADO = 'true';
+      process.env.MAILGUN_API_KEY = 'key-test';
+      process.env.MAILGUN_DOMAIN = 'sandbox.mailgun.org';
+      const fetchMock = jest.fn().mockResolvedValue({ ok: true });
+      const service = new MailService(fetchMock);
+
+      await service.enviarNotificacion({
+        correoDestino: 'dest@example.com',
+        asunto: 'Nuevo aviso',
+        cuerpoTexto: 'Tienes un aviso nuevo',
+      });
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(url).toContain('/v3/sandbox.mailgun.org/messages');
+      const body = new URLSearchParams(init.body as string);
+      expect(body.get('to')).toBe('dest@example.com');
+      expect(body.get('subject')).toBe('Nuevo aviso');
+    });
+
+    it('si Mailgun responde no-ok -> lanza', async () => {
+      process.env.MAILGUN_ENVIOS_HABILITADO = 'true';
+      process.env.MAILGUN_API_KEY = 'key-test';
+      process.env.MAILGUN_DOMAIN = 'sandbox.mailgun.org';
+      const fetchMock = jest.fn().mockResolvedValue({
+        ok: false,
+        status: 401,
+        statusText: 'Unauthorized',
+        text: () => Promise.resolve('forbidden'),
+      });
+      const service = new MailService(fetchMock);
+      await expect(
+        service.enviarNotificacion({
+          correoDestino: 'd@example.com',
+          asunto: 'x',
+          cuerpoTexto: 'y',
+        }),
+      ).rejects.toThrow('Mailgun respondió 401');
+    });
+  });
 });
