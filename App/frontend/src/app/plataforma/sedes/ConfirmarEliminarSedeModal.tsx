@@ -29,8 +29,11 @@ export function ConfirmarEliminarSedeModal({
           Eliminar sede
         </h2>
         <p className="mt-2 text-sm text-slate/80">
-          ¿Seguro que quieres eliminar <strong>{sede.nombre}</strong>? Esta
-          acción no se puede deshacer.
+          ¿Seguro que quieres eliminar <strong>{sede.nombre}</strong>? Si la
+          sede tiene datos asociados (cuentas, carreras, grupos) se marcará
+          como inactiva en vez de eliminarse, y podrás reactivarla después.
+          Solo una sede sin ningún dato asociado se elimina de forma
+          permanente.
         </p>
         <div className="mt-6 flex justify-end gap-3">
           <button

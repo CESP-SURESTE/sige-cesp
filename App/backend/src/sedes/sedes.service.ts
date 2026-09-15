@@ -372,18 +372,26 @@ export class SedesService {
     sede: Sede,
     actorPlatformAdminId: string,
   ): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
-      await tx.sede.update({ where: { id: sede.id }, data: { activa: false } });
-      await tx.registroAuditoria.create({
-        data: {
-          adminPlataformaId: actorPlatformAdminId,
-          sedeId: sede.id,
-          accion: AccionAuditoria.CAMBIO_ESTATUS,
-          entidad: 'Sede',
-          entidadId: sede.id,
-          detalle: { nombre: sede.nombre, activa: false },
-        },
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.sede.update({
+          where: { id: sede.id },
+          data: { activa: false },
+        });
+        await tx.registroAuditoria.create({
+          data: {
+            adminPlataformaId: actorPlatformAdminId,
+            sedeId: sede.id,
+            accion: AccionAuditoria.CAMBIO_ESTATUS,
+            entidad: 'Sede',
+            entidadId: sede.id,
+            detalle: { nombre: sede.nombre, activa: false },
+          },
+        });
       });
-    });
+    } catch (err) {
+      console.error('[SedesService.darDeBajaLogica] error inesperado:', err);
+      throw err;
+    }
   }
 }
