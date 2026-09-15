@@ -14,16 +14,25 @@ function SkeletonBlock({ className = '' }: { className?: string }) {
   return <div className={`animate-pulse rounded bg-mist ${className}`} />;
 }
 
-/** Fila de tiles de KPI (dashboard global). */
-export function SkeletonStatTiles({ count = 3 }: { count?: number }) {
+/** Bloque hero + cifras del dashboard global (número grande + 3 KPI). Único
+ * consumidor: `../page.tsx` — su forma sigue exactamente el layout real para
+ * que no haya salto de tamaño al terminar de cargar. */
+export function SkeletonHeroStats() {
   return (
-    <div className="grid grid-cols-4 gap-4">
-      {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="rounded-lg border-l-4 border-mist bg-white p-4 shadow-sm">
-          <SkeletonBlock className="h-7 w-12" />
-          <SkeletonBlock className="mt-2 h-3 w-20" />
-        </div>
-      ))}
+    <div className="grid grid-cols-1 gap-8 border-b border-mist pb-8 lg:grid-cols-[1.7fr_1fr]">
+      <div>
+        <SkeletonBlock className="h-4 w-44" />
+        <SkeletonBlock className="mt-3 h-14 w-36" />
+        <SkeletonBlock className="mt-5 h-1 w-14" />
+      </div>
+      <div className="grid grid-cols-3 border-t border-mist pt-6 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-10">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} className="pl-4 first:pl-0">
+            <SkeletonBlock className="h-7 w-12" />
+            <SkeletonBlock className="mt-2 h-3 w-16" />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

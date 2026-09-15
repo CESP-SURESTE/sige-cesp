@@ -31,13 +31,13 @@ export function PlataformaNav({
   }
 
   return (
-    <div className="flex items-start justify-between">
+    <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
       <div>
         <p className="font-display text-sm font-semibold tracking-[0.14em] text-navy uppercase">
           SIGE · Plataforma
         </p>
         <h1 className="mt-1 font-display text-2xl font-semibold text-slate">{titulo}</h1>
-        <nav className="mt-3 flex gap-4 text-sm">
+        <nav className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm">
           {LINKS.map((l) => (
             <Link
               key={l.id}
