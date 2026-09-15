@@ -545,7 +545,7 @@ describe('CRUD /sedes con PlatformAdminGuard (e2e)', () => {
       expect(registroEliminacion!.detalle).toEqual({ nombre });
     });
 
-    it('sede con alumno activo -> 409 CONFLICT, no se borra', async () => {
+    it('sede con alumno activo -> baja lógica, no se borra', async () => {
       const id = await crearSedeDePrueba(
         `Sede E2E Delete AlumnoActivo ${Date.now()}`,
       );
@@ -563,18 +563,19 @@ describe('CRUD /sedes con PlatformAdminGuard (e2e)', () => {
         .delete(`/sedes/${id}`)
         .set('Authorization', `Bearer ${token}`);
 
-      expect(res.status).toBe(409);
-      expect((res.body as ErrorBody).code).toBe('CONFLICT');
-      expect((res.body as ErrorBody).error).toMatch(/alumno/i);
-      expect((res.body as ErrorBody).error).toMatch(/1 alumno/);
+      expect(res.status).toBe(200);
+      const body = res.body as { data: { ok: boolean; eliminacionReal: boolean } };
+      expect(body.data.ok).toBe(true);
+      expect(body.data.eliminacionReal).toBe(false);
 
       const sedeEnDb = await prisma.sede.findUnique({ where: { id } });
       expect(sedeEnDb).not.toBeNull();
+      expect(sedeEnDb!.activa).toBe(false);
 
       await prisma.usuario.delete({ where: { id: usuario.id } });
     });
 
-    it('sede con alumno dado de baja (activo=false) -> 409 CONFLICT igual (Usuario.sedeId sigue siendo FK sin onDelete)', async () => {
+    it('sede con alumno dado de baja (activo=false) -> baja lógica igual (Usuario.sedeId sigue siendo FK sin onDelete)', async () => {
       const id = await crearSedeDePrueba(
         `Sede E2E Delete AlumnoBaja ${Date.now()}`,
       );
@@ -592,17 +593,17 @@ describe('CRUD /sedes con PlatformAdminGuard (e2e)', () => {
         .delete(`/sedes/${id}`)
         .set('Authorization', `Bearer ${token}`);
 
-      expect(res.status).toBe(409);
-      expect((res.body as ErrorBody).code).toBe('CONFLICT');
-      expect((res.body as ErrorBody).error).toMatch(
-        /otros datos asociados|datos asociados/,
-      );
+      expect(res.status).toBe(200);
+      const body = res.body as { data: { ok: boolean; eliminacionReal: boolean } };
+      expect(body.data.ok).toBe(true);
+      expect(body.data.eliminacionReal).toBe(false);
 
       const sedeEnDb = await prisma.sede.findUnique({ where: { id } });
       expect(sedeEnDb).not.toBeNull();
+      expect(sedeEnDb!.activa).toBe(false);
     });
 
-    it('sede con maestro activo -> 409 CONFLICT (protegido por el FK de Usuario, no por el chequeo explícito de alumnos)', async () => {
+    it('sede con maestro activo -> baja lógica (protegido por el FK de Usuario)', async () => {
       const id = await crearSedeDePrueba(
         `Sede E2E Delete MaestroActivo ${Date.now()}`,
       );
@@ -620,14 +621,17 @@ describe('CRUD /sedes con PlatformAdminGuard (e2e)', () => {
         .delete(`/sedes/${id}`)
         .set('Authorization', `Bearer ${token}`);
 
-      expect(res.status).toBe(409);
-      expect((res.body as ErrorBody).code).toBe('CONFLICT');
+      expect(res.status).toBe(200);
+      const body = res.body as { data: { ok: boolean; eliminacionReal: boolean } };
+      expect(body.data.ok).toBe(true);
+      expect(body.data.eliminacionReal).toBe(false);
 
       const sedeEnDb = await prisma.sede.findUnique({ where: { id } });
       expect(sedeEnDb).not.toBeNull();
+      expect(sedeEnDb!.activa).toBe(false);
     });
 
-    it('sede con una carrera asociada (sin alumnos) -> 409 CONFLICT por datos asociados', async () => {
+    it('sede con una carrera asociada (sin alumnos) -> baja lógica por datos asociados', async () => {
       const id = await crearSedeDePrueba(
         `Sede E2E Delete Carrera ${Date.now()}`,
       );
@@ -648,13 +652,85 @@ describe('CRUD /sedes con PlatformAdminGuard (e2e)', () => {
         .delete(`/sedes/${id}`)
         .set('Authorization', `Bearer ${token}`);
 
-      expect(res.status).toBe(409);
-      expect((res.body as ErrorBody).code).toBe('CONFLICT');
+      expect(res.status).toBe(200);
+      const body = res.body as { data: { ok: boolean; eliminacionReal: boolean } };
+      expect(body.data.ok).toBe(true);
+      expect(body.data.eliminacionReal).toBe(false);
 
       const sedeEnDb = await prisma.sede.findUnique({ where: { id } });
       expect(sedeEnDb).not.toBeNull();
+      expect(sedeEnDb!.activa).toBe(false);
 
       await prisma.carrera.delete({ where: { id: carrera.id } });
+    });
+
+    it('sede con fundadores intactos -> baja lógica (no se borra ni la sede ni los fundadores)', async () => {
+      mockCreateUserExitoso();
+      const nombre = `Sede E2E Delete ConFundadores ${Date.now()}`;
+      const res1 = await request(app.getHttpServer())
+        .post('/sedes')
+        .set('Authorization', `Bearer ${token}`)
+        .send(bodySedeConFundadores(nombre));
+      const { sede, director, administrativo } = (res1.body as {
+        data: {
+          sede: { id: string };
+          director: { usuario: { id: string } };
+          administrativo: { usuario: { id: string } } | null;
+        };
+      }).data;
+
+      const res = await request(app.getHttpServer())
+        .delete(`/sedes/${sede.id}`)
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(res.status).toBe(200);
+      const body = res.body as { data: { ok: boolean; eliminacionReal: boolean } };
+      expect(body.data.ok).toBe(true);
+      expect(body.data.eliminacionReal).toBe(false);
+
+      const sedeEnDb = await prisma.sede.findUnique({ where: { id: sede.id } });
+      expect(sedeEnDb).not.toBeNull();
+      expect(sedeEnDb!.activa).toBe(false);
+
+      // regla 3 — los fundadores siguen existiendo, intactos
+      const directorEnDb = await prisma.usuario.findUnique({
+        where: { id: director.usuario.id },
+      });
+      expect(directorEnDb).not.toBeNull();
+      if (administrativo) {
+        const administrativoEnDb = await prisma.usuario.findUnique({
+          where: { id: administrativo.usuario.id },
+        });
+        expect(administrativoEnDb).not.toBeNull();
+      }
+    });
+
+    it('PATCH /sedes/:id con activa: true reactiva una sede dada de baja lógica', async () => {
+      const id = await crearSedeDePrueba(
+        `Sede E2E Reactivar ${Date.now()}`,
+      );
+      // Fuerza baja lógica creando un alumno activo, luego DELETE
+      await prisma.usuario.create({
+        data: {
+          id: randomUUID(),
+          email: `fixture.reactivar-sede.${randomUUID()}@example.com`,
+          rol: RolUsuario.ALUMNO,
+          sedeId: id,
+          activo: true,
+        },
+      });
+      await request(app.getHttpServer())
+        .delete(`/sedes/${id}`)
+        .set('Authorization', `Bearer ${token}`);
+
+      const res = await request(app.getHttpServer())
+        .patch(`/sedes/${id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ activa: true });
+
+      expect(res.status).toBe(200);
+      const sedeEnDb = await prisma.sede.findUnique({ where: { id } });
+      expect(sedeEnDb!.activa).toBe(true);
     });
 
     it('id inexistente -> 404 NOT_FOUND', async () => {

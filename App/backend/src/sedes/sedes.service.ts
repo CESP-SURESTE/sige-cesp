@@ -53,6 +53,10 @@ function hayCambiosReales(dto: ActualizarSedeDto, existente: Sede): boolean {
     }
   }
 
+  if (dto.activa !== undefined && dto.activa !== existente.activa) {
+    return true;
+  }
+
   return false;
 }
 
@@ -262,6 +266,7 @@ export class SedesService {
             ubicacionReferencia: dto.ubicacionReferencia,
             telefono: dto.telefono,
             costoRenta: dto.costoRenta,
+            activa: dto.activa,
           },
         });
 
@@ -295,27 +300,22 @@ export class SedesService {
   }
 
   /**
-   * `DELETE /sedes/:id` — Fase 6, Día 22. Actor `AdminPlataforma`, mismo
-   * patrón que `crear`/`actualizar`. DELETE real (Sede sigue en el patrón
-   * "CRUD completo" de CLAUDE.md, no baja lógica) — no soft delete.
-   *
-   * Chequeo de negocio explícito: no se puede eliminar una sede con alumnos
-   * `activo: true` (mismo campo de baja lógica que usa todo el sistema,
-   * regla 3 — un alumno dado de baja no bloquea, sin importar su
-   * `estatusAcademico`). Cualquier otro dato asociado (carreras, salones,
-   * grupos, personal, maestros/administrativos) cae en el catch de `P2003`
-   * de abajo — enumerar cada tabla posible acá sería frágil y se
-   * desactualizaría con cada tabla nueva que referencie `Sede` a futuro.
-   *
-   * El `RegistroAuditoria` de `ELIMINACION` se crea ANTES del `tx.sede.delete`
-   * dentro de la misma transacción — el `onDelete: SetNull` de la migración
-   * de este día nulifica `sedeId` en ese registro (y en cualquier otro
-   * histórico de esta sede) automáticamente al borrar el padre, sin que la
-   * app ejecute ningún UPDATE/DELETE sobre `registro_auditoria` (regla 5).
-   * `detalle: { nombre: sede.nombre }` es un snapshot — después del delete,
-   * `entidadId` es lo único que queda para identificar qué sede era.
+   * `DELETE /sedes/:id` — Fase 6, Día 22, EXTENDIDO 2026-09-11 (ver
+   * `docs/superpowers/specs/2026-09-11-sede-baja-logica-design.md`). Desde
+   * que `POST /sedes` siempre crea 2 fundadores `ADMINISTRATIVO`, ninguna
+   * sede nueva queda vacía nunca — el `409 CONFLICT` de antes se volvía un
+   * callejón sin salida permanente. Ahora: intenta el DELETE real de
+   * siempre; si bloquearía por cualquiera de los 2 motivos (alumnos
+   * activos, o cualquier dato asociado vía P2003 — incluidos los propios
+   * fundadores), hace baja lógica (`activa: false`) en su lugar y responde
+   * éxito igual. Nunca hay ya un 409 de "datos asociados" — ese caso pasó
+   * de ser un error a ser un camino de éxito distinto, señalizado por
+   * `eliminacionReal`.
    */
-  async eliminar(id: string, actorPlatformAdminId: string) {
+  async eliminar(
+    id: string,
+    actorPlatformAdminId: string,
+  ): Promise<{ ok: true; eliminacionReal: boolean }> {
     const sede = await this.prisma.sede.findUnique({ where: { id } });
     if (!sede) {
       throw new NotFoundException({
@@ -327,11 +327,10 @@ export class SedesService {
     const alumnosActivos = await this.prisma.usuario.count({
       where: { sedeId: id, rol: RolUsuario.ALUMNO, activo: true },
     });
+
     if (alumnosActivos > 0) {
-      throw new ConflictException({
-        error: `No se puede eliminar: la sede tiene ${alumnosActivos} alumno(s) activo(s)`,
-        code: 'CONFLICT',
-      });
+      await this.darDeBajaLogica(sede, actorPlatformAdminId);
+      return { ok: true, eliminacionReal: false };
     }
 
     try {
@@ -349,21 +348,42 @@ export class SedesService {
 
         await tx.sede.delete({ where: { id } });
       });
+      return { ok: true, eliminacionReal: true };
     } catch (err) {
       if (
         err instanceof Prisma.PrismaClientKnownRequestError &&
         err.code === 'P2003'
       ) {
-        throw new ConflictException({
-          error:
-            'No se puede eliminar: la sede tiene datos asociados (cuentas de usuario, carreras, salones, grupos, personal). Debe quedar vacía para poder eliminarse.',
-          code: 'CONFLICT',
-        });
+        await this.darDeBajaLogica(sede, actorPlatformAdminId);
+        return { ok: true, eliminacionReal: false };
       }
       console.error('[SedesService.eliminar] error inesperado:', err);
       throw err;
     }
+  }
 
-    return { ok: true as const };
+  /**
+   * Baja lógica de una sede — fallback de `eliminar` cuando el borrado
+   * real bloquearía. Auditar `CAMBIO_ESTATUS` (mismo valor de enum que
+   * `PATCH /personas/:id/estatus` usa para el mismo concepto — un cambio
+   * de estatus, no una edición de campos ni una eliminación real).
+   */
+  private async darDeBajaLogica(
+    sede: Sede,
+    actorPlatformAdminId: string,
+  ): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.sede.update({ where: { id: sede.id }, data: { activa: false } });
+      await tx.registroAuditoria.create({
+        data: {
+          adminPlataformaId: actorPlatformAdminId,
+          sedeId: sede.id,
+          accion: AccionAuditoria.CAMBIO_ESTATUS,
+          entidad: 'Sede',
+          entidadId: sede.id,
+          detalle: { nombre: sede.nombre, activa: false },
+        },
+      });
+    });
   }
 }

@@ -164,6 +164,7 @@ model Sede {
   ubicacionReferencia String   @map("ubicacion_referencia")
   telefono            String
   costoRenta          Decimal? @map("costo_renta") @db.Decimal(10, 2)
+  activa              Boolean  @default(true)
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
 
