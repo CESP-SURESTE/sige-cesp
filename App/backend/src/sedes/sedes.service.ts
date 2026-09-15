@@ -324,15 +324,6 @@ export class SedesService {
       });
     }
 
-    const alumnosActivos = await this.prisma.usuario.count({
-      where: { sedeId: id, rol: RolUsuario.ALUMNO, activo: true },
-    });
-
-    if (alumnosActivos > 0) {
-      await this.darDeBajaLogica(sede, actorPlatformAdminId);
-      return { ok: true, eliminacionReal: false };
-    }
-
     try {
       await this.prisma.$transaction(async (tx) => {
         await tx.registroAuditoria.create({
