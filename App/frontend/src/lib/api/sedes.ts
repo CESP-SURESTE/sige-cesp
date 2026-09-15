@@ -8,6 +8,7 @@ export interface Sede {
   ubicacionReferencia: string;
   telefono: string;
   costoRenta: string | null; // Prisma Decimal serializa como string en JSON
+  activa: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -103,9 +104,15 @@ export function crearSede(input: SedeInput): Promise<Sede> {
   });
 }
 
+/**
+ * `activa` no es parte de `SedeInput` (ese tipo son los campos capturables
+ * al crear/editar una sede) — es un flag de estado separado, editable desde
+ * `SedeModal` para reactivar una sede sin pasar por el flujo de
+ * alumnos/personal de `DELETE /sedes/:id`.
+ */
 export function actualizarSede(
   id: string,
-  input: Partial<SedeInput>,
+  input: Partial<SedeInput> & { activa?: boolean },
 ): Promise<Sede> {
   return platformFetch<Sede>(`/sedes/${id}`, {
     method: 'PATCH',
@@ -113,8 +120,14 @@ export function actualizarSede(
   });
 }
 
-export function eliminarSede(id: string): Promise<{ ok: true }> {
-  return platformFetch<{ ok: true }>(`/sedes/${id}`, {
+/**
+ * `eliminacionReal` (2026-09-11, `DELETE /sedes/:id` deja de bloquear con
+ * 409 cuando la sede tiene datos asociados) distingue el borrado real
+ * (`true`, sin datos asociados) de la baja lógica (`false`, `Sede.activa`
+ * pasó a `false` en vez de borrarse la fila).
+ */
+export function eliminarSede(id: string): Promise<{ ok: true; eliminacionReal: boolean }> {
+  return platformFetch<{ ok: true; eliminacionReal: boolean }>(`/sedes/${id}`, {
     method: 'DELETE',
   });
 }

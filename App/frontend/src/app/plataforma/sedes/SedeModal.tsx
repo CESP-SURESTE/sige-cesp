@@ -36,6 +36,7 @@ interface FormSede {
   telefono: string;
   direccion: string;
   ubicacionReferencia: string;
+  activa: boolean;
 }
 
 function formDesdeSede(sede: Sede): FormSede {
@@ -44,12 +45,21 @@ function formDesdeSede(sede: Sede): FormSede {
     telefono: sede.telefono,
     direccion: sede.direccion,
     ubicacionReferencia: sede.ubicacionReferencia,
+    activa: sede.activa,
   };
 }
 
-/** Solo incluye en el `PATCH` los campos que el admin sí llenó; en blanco = sin cambio. */
-function construirPayloadEdicion(form: FormSede): Partial<SedeInput> {
-  const payload: Partial<SedeInput> = {};
+/**
+ * Solo incluye en el `PATCH` los campos que el admin sí llenó; en blanco =
+ * sin cambio. `activa` es un boolean, no un string — el criterio "en blanco"
+ * no aplica, se compara contra el valor original de `sede` (pasado aparte,
+ * no vive en `FormSede` fuera de este chequeo) y solo se manda si cambió.
+ */
+function construirPayloadEdicion(
+  form: FormSede,
+  sede: Sede,
+): Partial<SedeInput> & { activa?: boolean } {
+  const payload: Partial<SedeInput> & { activa?: boolean } = {};
 
   if (form.nombre.trim()) payload.nombre = form.nombre.trim();
   if (form.telefono.trim()) payload.telefono = form.telefono.trim();
@@ -57,6 +67,7 @@ function construirPayloadEdicion(form: FormSede): Partial<SedeInput> {
   if (form.ubicacionReferencia.trim()) {
     payload.ubicacionReferencia = form.ubicacionReferencia.trim();
   }
+  if (form.activa !== sede.activa) payload.activa = form.activa;
 
   return payload;
 }
@@ -64,7 +75,7 @@ function construirPayloadEdicion(form: FormSede): Partial<SedeInput> {
 export interface SedeModalProps {
   sede: Sede;
   guardando: boolean;
-  onEditar: (payload: Partial<SedeInput>) => void;
+  onEditar: (payload: Partial<SedeInput> & { activa?: boolean }) => void;
   onCancelar: () => void;
 }
 
@@ -78,7 +89,7 @@ export function SedeModal({
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    onEditar(construirPayloadEdicion(form));
+    onEditar(construirPayloadEdicion(form, sede));
   }
 
   return (
@@ -127,6 +138,22 @@ export function SedeModal({
                 disabled={guardando}
                 className="mt-1 w-full rounded-lg border border-mist px-3 py-2 text-sm text-slate focus:border-navy focus:ring-2 focus:ring-navy/20 focus:outline-none"
               />
+            </div>
+            <div className="col-span-2">
+              <label className="flex items-center gap-2 text-sm font-medium text-slate/80">
+                <input
+                  type="checkbox"
+                  checked={form.activa}
+                  onChange={(e) => setForm((f) => ({ ...f, activa: e.target.checked }))}
+                  disabled={guardando}
+                  className="h-4 w-4 rounded border-mist text-navy focus:ring-2 focus:ring-navy/20"
+                />
+                Activa
+              </label>
+              <p className="mt-1 text-xs text-slate/60">
+                Desmarcar da de baja lógica a la sede (mismo efecto que &quot;Eliminar&quot;
+                cuando tiene datos asociados). Marcar reactiva una sede dada de baja.
+              </p>
             </div>
           </div>
 

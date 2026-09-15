@@ -51,7 +51,7 @@ export default function PlataformaSedesPage() {
   });
 
   const actualizarMutation = useMutation({
-    mutationFn: (vars: { id: string; input: Partial<SedeInput> }) =>
+    mutationFn: (vars: { id: string; input: Partial<SedeInput> & { activa?: boolean } }) =>
       actualizarSede(vars.id, vars.input),
     onSuccess: () => {
       toast.success('Sede actualizada');
@@ -70,8 +70,12 @@ export default function PlataformaSedesPage() {
 
   const eliminarMutation = useMutation({
     mutationFn: (id: string) => eliminarSede(id),
-    onSuccess: (_data, id) => {
-      toast.success('Sede eliminada');
+    onSuccess: (data, id) => {
+      toast.success(
+        data.eliminacionReal
+          ? 'Sede eliminada'
+          : 'La sede tenía datos asociados — se marcó como inactiva en vez de eliminarse',
+      );
       setSedeAEliminar(null);
       if (sedeAEditar?.id === id) {
         setSedeAEditar(null);
@@ -111,14 +115,15 @@ export default function PlataformaSedesPage() {
               <th className="px-4 py-3 font-medium">Nombre</th>
               <th className="px-4 py-3 font-medium">Dirección</th>
               <th className="px-4 py-3 font-medium">Teléfono</th>
+              <th className="px-4 py-3 font-medium">Estado</th>
               <th className="px-4 py-3 font-medium"></th>
             </tr>
           </thead>
           <tbody>
-            {sedesQuery.isLoading && <SkeletonTableRows columns={4} />}
+            {sedesQuery.isLoading && <SkeletonTableRows columns={5} />}
             {sedesQuery.isError && (
               <tr>
-                <td colSpan={4} className="px-4 py-6 text-center text-crimson">
+                <td colSpan={5} className="px-4 py-6 text-center text-crimson">
                   {sedesQuery.error instanceof ApiError
                     ? sedesQuery.error.message
                     : 'No se pudo cargar el listado de sedes. Intenta de nuevo más tarde.'}
@@ -129,7 +134,7 @@ export default function PlataformaSedesPage() {
               !sedesQuery.isError &&
               sedesQuery.data?.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-4 py-6 text-center text-slate/60">
+                  <td colSpan={5} className="px-4 py-6 text-center text-slate/60">
                     Todavía no hay sedes registradas.
                   </td>
                 </tr>
@@ -139,6 +144,17 @@ export default function PlataformaSedesPage() {
                 <td className="px-4 py-3 text-slate">{sede.nombre}</td>
                 <td className="px-4 py-3 text-slate/80">{sede.direccion}</td>
                 <td className="px-4 py-3 text-slate/80">{sede.telefono}</td>
+                <td className="px-4 py-3">
+                  {sede.activa ? (
+                    <span className="inline-flex items-center rounded-full border border-success-border bg-success-bg px-2.5 py-0.5 text-xs font-medium text-success">
+                      Activa
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center rounded-full border border-warning-border bg-warning-bg px-2.5 py-0.5 text-xs font-medium text-warning">
+                      Inactiva
+                    </span>
+                  )}
+                </td>
                 <td className="px-4 py-3 text-right">
                   <button
                     onClick={() => setSedeAEditar(sede)}
