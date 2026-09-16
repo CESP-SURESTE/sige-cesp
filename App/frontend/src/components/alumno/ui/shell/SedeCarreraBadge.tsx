@@ -39,6 +39,7 @@ export function SedeCarreraBadge() {
         throw err;
       }
     },
+    staleTime: 5 * 60 * 1000,
   });
 
   const { data: grupos } = useQuery({
@@ -51,6 +52,7 @@ export function SedeCarreraBadge() {
         throw err;
       }
     },
+    staleTime: 5 * 60 * 1000,
   });
 
   const grupo = grupos?.[0];
@@ -58,7 +60,7 @@ export function SedeCarreraBadge() {
   if (!perfil) return null;
 
   return (
-    <div className="hidden items-center gap-2 sm:flex">
+    <div className="hidden min-w-0 items-center gap-2 sm:flex">
       <span className="flex items-center gap-1.5 rounded-full bg-mist/50 px-3 py-1.5 text-xs font-medium text-slate">
         <IconUbicacion className="size-3.5 shrink-0 text-navy" />
         <span className="truncate">{perfil.sede.nombre}</span>
@@ -66,13 +68,13 @@ export function SedeCarreraBadge() {
       {perfil.alumno && (
         <span className="hidden items-center gap-1.5 rounded-full bg-mist/50 px-3 py-1.5 text-xs font-medium text-slate md:flex">
           <IconCarrera className="size-3.5 shrink-0 text-navy" />
-          <span className="truncate">{perfil.alumno.carrera.nombre}</span>
+          <span className="max-w-[9rem] truncate">{perfil.alumno.carrera.nombre}</span>
         </span>
       )}
       {grupo && (
         <span className="hidden items-center gap-1.5 rounded-full bg-mist/50 px-3 py-1.5 text-xs font-medium text-slate md:flex">
           <IconGrupo className="size-3.5 shrink-0 text-navy" />
-          <span className="truncate">
+          <span className="max-w-[9rem] truncate">
             {grupo.nombre} · Cuatrimestre {grupo.cicloActual}
           </span>
         </span>
