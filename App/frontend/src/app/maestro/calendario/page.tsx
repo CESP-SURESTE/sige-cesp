@@ -16,6 +16,7 @@ import {
 import { SkeletonCalendarGrid } from '@/components/maestro/ui/Skeleton';
 import { COLOR_POR_CATEGORIA, EventoModal } from './EventoModal';
 import { ConfirmarEliminarEventoModal } from './ConfirmarEliminarEventoModal';
+import { DetalleEventoModal } from './DetalleEventoModal';
 import { generarGridMensual, rangoDelGrid } from './mes-grid.util';
 
 /**
@@ -36,14 +37,19 @@ import { generarGridMensual, rangoDelGrid } from './mes-grid.util';
  * autor del evento: `OcurrenciaEvento` trae `puedeEditar: boolean` (Fase 15,
  * hallazgo Important — backend: `true` si el actor es autor del evento o un
  * ADMINISTRATIVO de la sede). Un maestro que ve un evento de sede/carrera/de
- * otro maestro lo recibe con `puedeEditar: false`: su chip se renderiza como
- * elemento inerte (no `<button>`), sin acceso al `EventoModal` en modo
- * edición ni, por transición, al `ConfirmarEliminarEventoModal`. Con
+ * otro maestro lo recibe con `puedeEditar: false`: su chip abre
+ * `DetalleEventoModal` (solo lectura, sin acceso al `EventoModal` de
+ * edición ni, por transición, al `ConfirmarEliminarEventoModal`). Con
  * `puedeEditar: true` el chip abre el modal de edición igual que en admin.
- * La capa de seguridad real sigue en el backend
- * (`CalendarioService.actualizar`/`eliminar` rechazan con `403
+ * El chip SIEMPRE es un `<button>` real (foco de teclado + accesible),
+ * nunca un elemento inerte — corregido 2026-09-15, pendiente no bloqueante
+ * que había quedado del fix wave de Fase 15 (`ESTADO.md`, 2026-09-02): antes
+ * de esto un evento sin permiso de edición se mostraba como `<div>` con solo
+ * `title` en hover, perdiendo descripción/fecha fin y sin ser navegable por
+ * teclado pese a parecer accionable. La capa de seguridad real sigue en el
+ * backend (`CalendarioService.actualizar`/`eliminar` rechazan con `403
  * ROL_NO_AUTORIZADO` a un maestro no-autor, que cae en
- * `MENSAJES_ERROR_EVENTO.ROL_NO_AUTORIZADO`) — ocultar el acceso es solo UX.
+ * `MENSAJES_ERROR_EVENTO.ROL_NO_AUTORIZADO`) — el modal de detalle es solo UX.
  *
  * `mesActual` es el único estado de navegación; `rangoDelGrid` siempre
  * cubre 42 días (6 semanas), muy por debajo del tope de 62 días que valida
@@ -108,6 +114,7 @@ export default function MaestroCalendarioPage() {
   const [mesActual, setMesActual] = useState<MesActual>(mesActualDeHoy);
   const [modalEvento, setModalEvento] = useState<EstadoModalEvento>(MODAL_CERRADO);
   const [eventoAEliminar, setEventoAEliminar] = useState<OcurrenciaEvento | null>(null);
+  const [eventoDetalle, setEventoDetalle] = useState<OcurrenciaEvento | null>(null);
 
   const rango = rangoDelGrid(mesActual.anio, mesActual.mesIndiceCero);
 
@@ -294,19 +301,21 @@ export default function MaestroCalendarioPage() {
 
                       // `puedeEditar` (backend, Fase 15): solo el autor del
                       // evento o un ADMINISTRATIVO de la sede pueden
-                      // editarlo/eliminarlo. Sin permiso, el chip se muestra
-                      // pero no abre el modal de edición (ni, por transición,
-                      // el de borrado). El backend igual rechaza con 403 —
-                      // esto es solo UX.
+                      // editarlo/eliminarlo. Sin permiso, el chip abre el
+                      // detalle de solo lectura en vez del modal de edición
+                      // (ni, por transición, el de borrado). El backend
+                      // igual rechaza con 403 — esto es solo UX.
                       if (!ocurrencia.puedeEditar) {
                         return (
-                          <div
+                          <button
                             key={`${ocurrencia.eventoId}-${ocurrencia.fecha}`}
+                            type="button"
+                            onClick={() => setEventoDetalle(ocurrencia)}
                             title={ocurrencia.titulo}
                             className={claseChip}
                           >
                             {contenidoChip}
-                          </div>
+                          </button>
                         );
                       }
 
@@ -364,6 +373,10 @@ export default function MaestroCalendarioPage() {
           onConfirmar={() => eliminarMutation.mutate(eventoAEliminar.eventoId)}
           onCancelar={() => setEventoAEliminar(null)}
         />
+      )}
+
+      {eventoDetalle && (
+        <DetalleEventoModal evento={eventoDetalle} onCerrar={() => setEventoDetalle(null)} />
       )}
     </div>
   );
