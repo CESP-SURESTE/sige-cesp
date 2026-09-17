@@ -10,10 +10,12 @@ import {
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { SkeletonTableRows } from '@/components/admin/ui/Skeleton';
+import { obtenerPerfil } from '@/lib/api/perfil';
 import { ApiError } from '@/lib/api/http';
 import {
   cambiarEstatusPersona,
   listarMaestros,
+  resetearPasswordPersona,
   type EstatusEmpleado,
   type MotivoBaja,
   type PersonaListItemMaestro,
@@ -25,8 +27,10 @@ import { Paginacion } from '@/components/admin/ui/personas-listado/Paginacion';
 import { EstadoActivoBadge } from '@/components/admin/ui/personas-listado/EstadoActivoBadge';
 import { EstatusEmpleadoBadge } from '@/components/admin/ui/personas-listado/EstatusEmpleadoBadge';
 import { CambiarEstatusModal } from '@/components/admin/ui/personas-listado/CambiarEstatusModal';
+import { ResetearPasswordModal } from '@/components/admin/ui/personas-listado/ResetearPasswordModal';
 import { useBuscarDebounced } from '@/components/admin/ui/personas-listado/useBuscarDebounced';
 import { usePaginacionFiltrada } from '@/components/admin/ui/personas-listado/usePaginacionFiltrada';
+import { useCooldownReseteo } from '@/components/admin/ui/personas-listado/useCooldownReseteo';
 
 /**
  * Listado de maestros — Fase 5, Día 19; acción "Cambiar estatus" agregada en
@@ -51,6 +55,23 @@ export default function AdminMaestrosPage() {
     usePaginacionFiltrada(buscar);
   const [maestroAEditar, setMaestroAEditar] =
     useState<PersonaListItemMaestro | null>(null);
+  const [maestroAResetear, setMaestroAResetear] =
+    useState<PersonaListItemMaestro | null>(null);
+
+  const perfilActorQuery = useQuery({
+    queryKey: ['admin', 'perfil'],
+    queryFn: async () => {
+      try {
+        return await obtenerPerfil();
+      } catch (err) {
+        console.error(
+          '[AdminMaestrosPage] Error al obtener el perfil del actor:',
+          err,
+        );
+        throw err;
+      }
+    },
+  });
 
   const {
     data: resultado,
@@ -102,6 +123,27 @@ export default function AdminMaestrosPage() {
         err instanceof ApiError
           ? err.message
           : 'No se pudo cambiar el estatus. Intenta de nuevo más tarde.';
+      toast.error(mensaje);
+    },
+  });
+
+  const { estaEnCooldown, minutosRestantes, iniciarCooldown } =
+    useCooldownReseteo(perfilActorQuery.data?.id);
+
+  const resetearMutation = useMutation({
+    mutationFn: (usuarioId: string) => resetearPasswordPersona(usuarioId),
+    onSuccess: (_data, usuarioId) => {
+      toast.success('Enlace de restablecimiento enviado.');
+      iniciarCooldown(usuarioId);
+      setMaestroAResetear(null);
+    },
+    onError: (err) => {
+      // Regla 12 de `CLAUDE.md` raíz.
+      console.error('[AdminMaestrosPage] Error al resetear contraseña:', err);
+      const mensaje =
+        err instanceof ApiError
+          ? err.message
+          : 'Ocurrió un error inesperado. Intenta de nuevo.';
       toast.error(mensaje);
     },
   });
@@ -163,6 +205,9 @@ export default function AdminMaestrosPage() {
             <TablaMaestros
               maestros={resultado.data}
               onCambiarEstatus={setMaestroAEditar}
+              estaEnCooldown={estaEnCooldown}
+              minutosRestantes={minutosRestantes}
+              onResetearPassword={setMaestroAResetear}
             />
             <div className="mt-4">
               <Paginacion
@@ -190,6 +235,23 @@ export default function AdminMaestrosPage() {
           onCancelar={() => setMaestroAEditar(null)}
         />
       )}
+
+      {maestroAResetear && (
+        <ResetearPasswordModal
+          nombreCompleto={[
+            maestroAResetear.nombres,
+            maestroAResetear.apellidoPaterno,
+            maestroAResetear.apellidoMaterno,
+          ]
+            .filter(Boolean)
+            .join(' ')}
+          enviando={resetearMutation.isPending}
+          onConfirmar={() =>
+            resetearMutation.mutate(maestroAResetear.usuarioId)
+          }
+          onCancelar={() => setMaestroAResetear(null)}
+        />
+      )}
     </div>
   );
 }
@@ -197,9 +259,16 @@ export default function AdminMaestrosPage() {
 function TablaMaestros({
   maestros,
   onCambiarEstatus,
+  estaEnCooldown,
+  minutosRestantes,
+  onResetearPassword,
 }: {
   maestros: PersonaListItemMaestro[];
   onCambiarEstatus: (maestro: PersonaListItemMaestro) => void;
+  /** Cooldown de reseteo de contraseña (`useCooldownReseteo`) — por fila. */
+  estaEnCooldown: (usuarioId: string) => boolean;
+  minutosRestantes: (usuarioId: string) => number;
+  onResetearPassword: (maestro: PersonaListItemMaestro) => void;
 }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-mist">
@@ -240,6 +309,19 @@ function TablaMaestros({
                   className="text-navy hover:underline"
                 >
                   Cambiar estatus
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onResetearPassword(maestro)}
+                  disabled={estaEnCooldown(maestro.usuarioId)}
+                  className="ml-3 text-navy hover:underline disabled:cursor-not-allowed disabled:text-slate/40 disabled:no-underline"
+                  title={
+                    estaEnCooldown(maestro.usuarioId)
+                      ? `Disponible en ${minutosRestantes(maestro.usuarioId)} min`
+                      : undefined
+                  }
+                >
+                  Restablecer contraseña
                 </button>
               </Td>
             </tr>

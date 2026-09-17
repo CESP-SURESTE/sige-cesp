@@ -417,3 +417,15 @@ export function cambiarEstatusPersona(
     body: JSON.stringify({ estatus, ...extra }),
   });
 }
+
+/**
+ * `POST /personas/:id/resetear-password` — dispara el envío de un enlace de
+ * restablecimiento al correo personal de la persona (`usuarioId`). Sin
+ * body — el backend resuelve todo desde `:id` + el JWT del actor. Sin
+ * cooldown en esta capa — lo maneja `useCooldownReseteo` en el componente.
+ */
+export function resetearPasswordPersona(usuarioId: string): Promise<{ ok: true }> {
+  return apiFetchAuth<{ ok: true }>(`/personas/${usuarioId}/resetear-password`, {
+    method: 'POST',
+  });
+}

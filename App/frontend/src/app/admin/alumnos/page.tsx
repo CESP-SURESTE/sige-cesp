@@ -1,19 +1,29 @@
 'use client';
 
 import Link from 'next/link';
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+} from '@tanstack/react-query';
+import { useState } from 'react';
+import { toast } from 'sonner';
 import { SkeletonTableRows } from '@/components/admin/ui/Skeleton';
 import { ApiError } from '@/lib/api/http';
+import { obtenerPerfil } from '@/lib/api/perfil';
 import {
   listarAlumnos,
+  resetearPasswordPersona,
   type EstatusAcademico,
   type PersonaListItemAlumno,
 } from '@/lib/api/personas';
 import { BuscadorFiltro } from '@/components/admin/ui/personas-listado/BuscadorFiltro';
 import { Paginacion } from '@/components/admin/ui/personas-listado/Paginacion';
 import { EstadoActivoBadge } from '@/components/admin/ui/personas-listado/EstadoActivoBadge';
+import { ResetearPasswordModal } from '@/components/admin/ui/personas-listado/ResetearPasswordModal';
 import { useBuscarDebounced } from '@/components/admin/ui/personas-listado/useBuscarDebounced';
 import { usePaginacionFiltrada } from '@/components/admin/ui/personas-listado/usePaginacionFiltrada';
+import { useCooldownReseteo } from '@/components/admin/ui/personas-listado/useCooldownReseteo';
 
 /**
  * Listado de alumnos — Fase 5, Día 19.
@@ -38,6 +48,23 @@ export default function AdminAlumnosPage() {
   const { inputValue, setInputValue, buscar } = useBuscarDebounced();
   const { estatus, setEstatus, page, setPage, limit } =
     usePaginacionFiltrada(buscar);
+  const [alumnoAResetear, setAlumnoAResetear] =
+    useState<PersonaListItemAlumno | null>(null);
+
+  const perfilActorQuery = useQuery({
+    queryKey: ['admin', 'perfil'],
+    queryFn: async () => {
+      try {
+        return await obtenerPerfil();
+      } catch (err) {
+        console.error(
+          '[AdminAlumnosPage] Error al obtener el perfil del actor:',
+          err,
+        );
+        throw err;
+      }
+    },
+  });
 
   const {
     data: resultado,
@@ -62,6 +89,27 @@ export default function AdminAlumnosPage() {
       }
     },
     placeholderData: keepPreviousData,
+  });
+
+  const { estaEnCooldown, minutosRestantes, iniciarCooldown } =
+    useCooldownReseteo(perfilActorQuery.data?.id);
+
+  const resetearMutation = useMutation({
+    mutationFn: (usuarioId: string) => resetearPasswordPersona(usuarioId),
+    onSuccess: (_data, usuarioId) => {
+      toast.success('Enlace de restablecimiento enviado.');
+      iniciarCooldown(usuarioId);
+      setAlumnoAResetear(null);
+    },
+    onError: (err) => {
+      // Regla 12 de `CLAUDE.md` raíz.
+      console.error('[AdminAlumnosPage] Error al resetear contraseña:', err);
+      const mensaje =
+        err instanceof ApiError
+          ? err.message
+          : 'Ocurrió un error inesperado. Intenta de nuevo.';
+      toast.error(mensaje);
+    },
   });
 
   return (
@@ -99,10 +147,11 @@ export default function AdminAlumnosPage() {
                   <Th>Cuatrimestre</Th>
                   <Th>Estatus académico</Th>
                   <Th>Cuenta</Th>
+                  <Th>Acciones</Th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-mist">
-                <SkeletonTableRows columns={6} />
+                <SkeletonTableRows columns={7} />
               </tbody>
             </table>
           </div>
@@ -118,7 +167,12 @@ export default function AdminAlumnosPage() {
           </p>
         ) : (
           <>
-            <TablaAlumnos alumnos={resultado.data} />
+            <TablaAlumnos
+              alumnos={resultado.data}
+              estaEnCooldown={estaEnCooldown}
+              minutosRestantes={minutosRestantes}
+              onResetearPassword={setAlumnoAResetear}
+            />
             <div className="mt-4">
               <Paginacion
                 page={resultado.page}
@@ -130,11 +184,39 @@ export default function AdminAlumnosPage() {
           </>
         )}
       </div>
+
+      {alumnoAResetear && (
+        <ResetearPasswordModal
+          nombreCompleto={[
+            alumnoAResetear.nombres,
+            alumnoAResetear.apellidoPaterno,
+            alumnoAResetear.apellidoMaterno,
+          ]
+            .filter(Boolean)
+            .join(' ')}
+          enviando={resetearMutation.isPending}
+          onConfirmar={() =>
+            resetearMutation.mutate(alumnoAResetear.usuarioId)
+          }
+          onCancelar={() => setAlumnoAResetear(null)}
+        />
+      )}
     </div>
   );
 }
 
-function TablaAlumnos({ alumnos }: { alumnos: PersonaListItemAlumno[] }) {
+function TablaAlumnos({
+  alumnos,
+  estaEnCooldown,
+  minutosRestantes,
+  onResetearPassword,
+}: {
+  alumnos: PersonaListItemAlumno[];
+  /** Cooldown de reseteo de contraseña (`useCooldownReseteo`) — por fila. */
+  estaEnCooldown: (usuarioId: string) => boolean;
+  minutosRestantes: (usuarioId: string) => number;
+  onResetearPassword: (alumno: PersonaListItemAlumno) => void;
+}) {
   return (
     <div className="overflow-x-auto rounded-lg border border-mist">
       <table className="min-w-full divide-y divide-mist text-sm">
@@ -146,6 +228,7 @@ function TablaAlumnos({ alumnos }: { alumnos: PersonaListItemAlumno[] }) {
             <Th>Cuatrimestre</Th>
             <Th>Estatus académico</Th>
             <Th>Cuenta</Th>
+            <Th>Acciones</Th>
           </tr>
         </thead>
         <tbody className="divide-y divide-mist">
@@ -162,6 +245,21 @@ function TablaAlumnos({ alumnos }: { alumnos: PersonaListItemAlumno[] }) {
               <Td>{ESTATUS_ACADEMICO_LABEL[alumno.estatusAcademico]}</Td>
               <Td>
                 <EstadoActivoBadge activo={alumno.activo} />
+              </Td>
+              <Td>
+                <button
+                  type="button"
+                  onClick={() => onResetearPassword(alumno)}
+                  disabled={estaEnCooldown(alumno.usuarioId)}
+                  className="text-navy hover:underline disabled:cursor-not-allowed disabled:text-slate/40 disabled:no-underline"
+                  title={
+                    estaEnCooldown(alumno.usuarioId)
+                      ? `Disponible en ${minutosRestantes(alumno.usuarioId)} min`
+                      : undefined
+                  }
+                >
+                  Restablecer contraseña
+                </button>
               </Td>
             </tr>
           ))}

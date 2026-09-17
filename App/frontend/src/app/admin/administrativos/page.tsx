@@ -10,6 +10,7 @@ import { obtenerPerfil } from '@/lib/api/perfil';
 import {
   cambiarEstatusPersona,
   listarAdministrativos,
+  resetearPasswordPersona,
   type EstatusEmpleado,
   type MotivoBaja,
   type NivelPermiso,
@@ -22,8 +23,10 @@ import { Paginacion } from '@/components/admin/ui/personas-listado/Paginacion';
 import { EstadoActivoBadge } from '@/components/admin/ui/personas-listado/EstadoActivoBadge';
 import { EstatusEmpleadoBadge } from '@/components/admin/ui/personas-listado/EstatusEmpleadoBadge';
 import { CambiarEstatusModal } from '@/components/admin/ui/personas-listado/CambiarEstatusModal';
+import { ResetearPasswordModal } from '@/components/admin/ui/personas-listado/ResetearPasswordModal';
 import { useBuscarDebounced } from '@/components/admin/ui/personas-listado/useBuscarDebounced';
 import { usePaginacionFiltrada } from '@/components/admin/ui/personas-listado/usePaginacionFiltrada';
+import { useCooldownReseteo } from '@/components/admin/ui/personas-listado/useCooldownReseteo';
 
 /**
  * Listado de administrativos — Fase 10 (unificación CRUD admin, Task 5).
@@ -73,6 +76,8 @@ export default function AdminAdministrativosPage() {
   const { estatus, setEstatus, page, setPage, limit } =
     usePaginacionFiltrada(buscar);
   const [administrativoAEditar, setAdministrativoAEditar] =
+    useState<PersonaListItemAdministrativo | null>(null);
+  const [administrativoAResetear, setAdministrativoAResetear] =
     useState<PersonaListItemAdministrativo | null>(null);
 
   const perfilActorQuery = useQuery({
@@ -160,6 +165,30 @@ export default function AdminAdministrativosPage() {
     },
   });
 
+  const { estaEnCooldown, minutosRestantes, iniciarCooldown } =
+    useCooldownReseteo(perfilActorQuery.data?.id);
+
+  const resetearMutation = useMutation({
+    mutationFn: (usuarioId: string) => resetearPasswordPersona(usuarioId),
+    onSuccess: (_data, usuarioId) => {
+      toast.success('Enlace de restablecimiento enviado.');
+      iniciarCooldown(usuarioId);
+      setAdministrativoAResetear(null);
+    },
+    onError: (err) => {
+      // Regla 12 de `CLAUDE.md` raíz.
+      console.error(
+        '[AdminAdministrativosPage] Error al resetear contraseña:',
+        err,
+      );
+      const mensaje =
+        err instanceof ApiError
+          ? err.message
+          : 'Ocurrió un error inesperado. Intenta de nuevo.';
+      toast.error(mensaje);
+    },
+  });
+
   return (
     <div className="rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -223,6 +252,9 @@ export default function AdminAdministrativosPage() {
                 perfilActorQuery.data?.administrativo?.nivelPermiso
               }
               onCambiarEstatus={setAdministrativoAEditar}
+              estaEnCooldown={estaEnCooldown}
+              minutosRestantes={minutosRestantes}
+              onResetearPassword={setAdministrativoAResetear}
             />
             <div className="mt-4">
               <Paginacion
@@ -250,6 +282,23 @@ export default function AdminAdministrativosPage() {
           onCancelar={() => setAdministrativoAEditar(null)}
         />
       )}
+
+      {administrativoAResetear && (
+        <ResetearPasswordModal
+          nombreCompleto={[
+            administrativoAResetear.nombres,
+            administrativoAResetear.apellidoPaterno,
+            administrativoAResetear.apellidoMaterno,
+          ]
+            .filter(Boolean)
+            .join(' ')}
+          enviando={resetearMutation.isPending}
+          onConfirmar={() =>
+            resetearMutation.mutate(administrativoAResetear.usuarioId)
+          }
+          onCancelar={() => setAdministrativoAResetear(null)}
+        />
+      )}
     </div>
   );
 }
@@ -259,6 +308,9 @@ function TablaAdministrativos({
   usuarioIdActor,
   nivelPermisoActor,
   onCambiarEstatus,
+  estaEnCooldown,
+  minutosRestantes,
+  onResetearPassword,
 }: {
   administrativos: PersonaListItemAdministrativo[];
   /** `id` del actor logueado (`GET /perfil`) — `undefined` mientras esa
@@ -270,6 +322,10 @@ function TablaAdministrativos({
    * — mismo `undefined`-mientras-carga que `usuarioIdActor` de arriba. */
   nivelPermisoActor: NivelPermiso | undefined;
   onCambiarEstatus: (administrativo: PersonaListItemAdministrativo) => void;
+  /** Cooldown de reseteo de contraseña (`useCooldownReseteo`) — por fila. */
+  estaEnCooldown: (usuarioId: string) => boolean;
+  minutosRestantes: (usuarioId: string) => number;
+  onResetearPassword: (administrativo: PersonaListItemAdministrativo) => void;
 }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-mist">
@@ -320,6 +376,19 @@ function TablaAdministrativos({
                       Cambiar estatus
                     </button>
                   )}
+                <button
+                  type="button"
+                  onClick={() => onResetearPassword(administrativo)}
+                  disabled={estaEnCooldown(administrativo.usuarioId)}
+                  className="ml-3 text-navy hover:underline disabled:cursor-not-allowed disabled:text-slate/40 disabled:no-underline"
+                  title={
+                    estaEnCooldown(administrativo.usuarioId)
+                      ? `Disponible en ${minutosRestantes(administrativo.usuarioId)} min`
+                      : undefined
+                  }
+                >
+                  Restablecer contraseña
+                </button>
               </Td>
             </tr>
           ))}
