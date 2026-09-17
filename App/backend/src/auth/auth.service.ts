@@ -392,4 +392,49 @@ export class AuthService {
 
     return { ok: true };
   }
+
+  /**
+   * `POST /auth/completar-reseteo` — se llama DESPUÉS de que el navegador ya
+   * cambió la contraseña real vía `supabase.auth.updateUser()` (client-side,
+   * usando la sesión de recuperación que Supabase estableció al abrir el link
+   * de `PersonasService.resetearPassword`). Este método NO toca Supabase Auth
+   * — solo limpia `primerIngreso` y deja el rastro de auditoría, mismo
+   * criterio que el paso (c)+(d) de `cambiarPassword`.
+   *
+   * Reusa `AccionAuditoria.EDICION` (mismo criterio que `cambiarPassword`: el
+   * enum no tiene un valor dedicado a "completar un reseteo", y semánticamente
+   * es una edición de la propia fila `Usuario`).
+   */
+  async completarReseteo(
+    actorUsuarioId: string,
+    sedeId: string,
+  ): Promise<{ ok: true }> {
+    try {
+      await this.prisma.usuario.update({
+        where: { id: actorUsuarioId },
+        data: { primerIngreso: false },
+      });
+
+      await this.prisma.registroAuditoria.create({
+        data: {
+          usuarioId: actorUsuarioId,
+          sedeId,
+          accion: AccionAuditoria.EDICION,
+          entidad: 'Usuario',
+          entidadId: actorUsuarioId,
+          detalle: { accion: 'completar_reseteo_password' },
+        },
+      });
+    } catch (err) {
+      // La contraseña ya es correcta en Supabase Auth en este punto (el
+      // navegador ya llamó updateUser) — no hay nada que compensar si esto
+      // falla, mismo criterio que el fallback de `cambiarPassword`.
+      console.error(
+        '[AuthService.completarReseteo] Falló primerIngreso/RegistroAuditoria tras un reseteo ya completado en Supabase Auth:',
+        err,
+      );
+    }
+
+    return { ok: true };
+  }
 }
