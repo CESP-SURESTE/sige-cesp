@@ -255,16 +255,24 @@ export class MailService {
    * try/catch silencioso — el correo es el único mecanismo de entrega del
    * link, así que un fallo de Mailgun debe propagarse como error real, no
    * tragarse como best-effort.
+   *
+   * A diferencia del resto de los métodos de esta clase, el flag
+   * `MAILGUN_ENVIOS_HABILITADO` apagado NO es un no-op silencioso aquí — este
+   * correo es el ÚNICO canal de entrega del link de recuperación (no hay
+   * `temporaryPassword` de respaldo mostrado en pantalla, como sí tiene
+   * `enviarCorreoBienvenida`); reportar éxito sin haber enviado nada
+   * contradice la restricción explícita del plan ("el correo de reseteo no
+   * es best-effort silencioso"). Por eso LANZA en vez de loguear+retornar,
+   * para que `PersonasService.resetearPassword` lo propague igual que
+   * cualquier otro fallo real de Mailgun (→ 500 SERVER_ERROR).
    */
   async enviarCorreoReseteoPassword(
     params: EnviarCorreoReseteoPasswordParams,
   ): Promise<void> {
     if (!enviosHabilitados()) {
-      console.log(
-        '[MailService] Envío deshabilitado (MAILGUN_ENVIOS_HABILITADO=false) — se hubiera enviado reseteo a:',
-        params.correoDestino,
+      throw new Error(
+        'Envío de correo deshabilitado (MAILGUN_ENVIOS_HABILITADO=false) — no se puede completar el reseteo de contraseña sin enviar el enlace',
       );
-      return;
     }
 
     await this.enviarCorreoAMailgun(

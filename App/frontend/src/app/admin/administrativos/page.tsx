@@ -341,33 +341,45 @@ function TablaAdministrativos({
           </tr>
         </thead>
         <tbody className="divide-y divide-mist">
-          {administrativos.map((administrativo) => (
-            <tr key={administrativo.usuarioId}>
-              <Td>
-                {[
-                  administrativo.nombres,
-                  administrativo.apellidoPaterno,
-                  administrativo.apellidoMaterno,
-                ]
-                  .filter(Boolean)
-                  .join(' ')}
-              </Td>
-              <Td>{PUESTO_LABEL[administrativo.puesto]}</Td>
-              <Td>{NIVEL_PERMISO_LABEL[administrativo.nivelPermiso]}</Td>
-              <Td>
-                <EstatusEmpleadoBadge
-                  estatus={administrativo.estatus}
-                  tipoLicencia={administrativo.tipoLicencia}
-                />
-              </Td>
-              <Td>
-                <EstadoActivoBadge activo={administrativo.activo} />
-              </Td>
-              <Td>
-                {administrativo.usuarioId !== usuarioIdActor &&
-                  (nivelPermisoActor === undefined ||
-                    JERARQUIA_NIVEL_PERMISO[nivelPermisoActor] >=
-                      JERARQUIA_NIVEL_PERMISO[administrativo.nivelPermiso]) && (
+          {administrativos.map((administrativo) => {
+            // Minor de la revisión final de rama (2026-09-16) — condición
+            // única reusada para AMBAS acciones: el backend aplica la MISMA
+            // jerarquía de `nivelPermiso` (regla 7) a `PATCH
+            // /personas/:id/estatus` y a `POST /personas/:id/resetear-password`
+            // cuando el target es ADMINISTRATIVO, así que mostrar
+            // "Restablecer contraseña" sin este gate garantizaba un 403 en
+            // la UI para el mismo conjunto de filas que ya ocultan "Cambiar
+            // estatus".
+            const puedeGestionarAdministrativo =
+              administrativo.usuarioId !== usuarioIdActor &&
+              (nivelPermisoActor === undefined ||
+                JERARQUIA_NIVEL_PERMISO[nivelPermisoActor] >=
+                  JERARQUIA_NIVEL_PERMISO[administrativo.nivelPermiso]);
+
+            return (
+              <tr key={administrativo.usuarioId}>
+                <Td>
+                  {[
+                    administrativo.nombres,
+                    administrativo.apellidoPaterno,
+                    administrativo.apellidoMaterno,
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                </Td>
+                <Td>{PUESTO_LABEL[administrativo.puesto]}</Td>
+                <Td>{NIVEL_PERMISO_LABEL[administrativo.nivelPermiso]}</Td>
+                <Td>
+                  <EstatusEmpleadoBadge
+                    estatus={administrativo.estatus}
+                    tipoLicencia={administrativo.tipoLicencia}
+                  />
+                </Td>
+                <Td>
+                  <EstadoActivoBadge activo={administrativo.activo} />
+                </Td>
+                <Td>
+                  {puedeGestionarAdministrativo && (
                     <button
                       type="button"
                       onClick={() => onCambiarEstatus(administrativo)}
@@ -376,22 +388,25 @@ function TablaAdministrativos({
                       Cambiar estatus
                     </button>
                   )}
-                <button
-                  type="button"
-                  onClick={() => onResetearPassword(administrativo)}
-                  disabled={estaEnCooldown(administrativo.usuarioId)}
-                  className="ml-3 text-navy hover:underline disabled:cursor-not-allowed disabled:text-slate/40 disabled:no-underline"
-                  title={
-                    estaEnCooldown(administrativo.usuarioId)
-                      ? `Disponible en ${minutosRestantes(administrativo.usuarioId)} min`
-                      : undefined
-                  }
-                >
-                  Restablecer contraseña
-                </button>
-              </Td>
-            </tr>
-          ))}
+                  {puedeGestionarAdministrativo && (
+                    <button
+                      type="button"
+                      onClick={() => onResetearPassword(administrativo)}
+                      disabled={estaEnCooldown(administrativo.usuarioId)}
+                      className="ml-3 text-navy hover:underline disabled:cursor-not-allowed disabled:text-slate/40 disabled:no-underline"
+                      title={
+                        estaEnCooldown(administrativo.usuarioId)
+                          ? `Disponible en ${minutosRestantes(administrativo.usuarioId)} min`
+                          : undefined
+                      }
+                    >
+                      Restablecer contraseña
+                    </button>
+                  )}
+                </Td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
