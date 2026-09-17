@@ -73,6 +73,14 @@ export interface EnviarCorreoBienvenidaParams {
   temporaryPassword: string;
 }
 
+export interface EnviarCorreoReseteoPasswordParams {
+  nombreCompleto: string;
+  /** Destino real (`to:`) — SIEMPRE `correoPersonal` del perfil, nunca `Usuario.email`. */
+  correoDestino: string;
+  /** Link de recuperación generado por `client.auth.admin.generateLink({ type: 'recovery' })`. */
+  linkReseteo: string;
+}
+
 export interface EnviarNotificacionParams {
   /** Destino real del envío (`to:`). Normalmente `correoPersonal` del perfil. */
   correoDestino: string;
@@ -130,6 +138,34 @@ export class MailService {
         </p>
         <p><a href="${loginUrl}">${loginUrl}</a></p>
         <p>Por seguridad, se te pedirá cambiar esta contraseña la primera vez que ingreses.</p>
+        <p>SIGE CESP</p>
+      </div>
+    `.trim();
+  }
+
+  private buildTextoReseteo(params: EnviarCorreoReseteoPasswordParams): string {
+    const { nombreCompleto, linkReseteo } = params;
+    return [
+      `Hola ${nombreCompleto},`,
+      '',
+      'Un administrativo de SIGE (Sistema de Gestión Escolar de CESP) solicitó restablecer tu contraseña.',
+      '',
+      `Da clic aquí para elegir una contraseña nueva: ${linkReseteo}`,
+      '',
+      'Si tú no solicitaste esto, puedes ignorar este correo — tu contraseña actual sigue siendo válida.',
+      '',
+      'SIGE CESP',
+    ].join('\n');
+  }
+
+  private buildHtmlReseteo(params: EnviarCorreoReseteoPasswordParams): string {
+    const { nombreCompleto, linkReseteo } = params;
+    return `
+      <div style="font-family: Arial, sans-serif; font-size: 14px; color: #1f2937;">
+        <p>Hola <strong>${nombreCompleto}</strong>,</p>
+        <p>Un administrativo de SIGE (Sistema de Gestión Escolar de CESP) solicitó restablecer tu contraseña.</p>
+        <p><a href="${linkReseteo}">Da clic aquí para elegir una contraseña nueva</a></p>
+        <p>Si tú no solicitaste esto, puedes ignorar este correo — tu contraseña actual sigue siendo válida.</p>
         <p>SIGE CESP</p>
       </div>
     `.trim();
@@ -210,6 +246,32 @@ export class MailService {
       'Bienvenido a SIGE — tu cuenta ya está lista',
       this.buildTexto(params, loginUrl),
       this.buildHtml(params, loginUrl),
+    );
+  }
+
+  /**
+   * A diferencia de `enviarCorreoBienvenida`/`enviarNotificacion`, el CALLER
+   * (`PersonasService.resetearPassword`) NO envuelve esta llamada en un
+   * try/catch silencioso — el correo es el único mecanismo de entrega del
+   * link, así que un fallo de Mailgun debe propagarse como error real, no
+   * tragarse como best-effort.
+   */
+  async enviarCorreoReseteoPassword(
+    params: EnviarCorreoReseteoPasswordParams,
+  ): Promise<void> {
+    if (!enviosHabilitados()) {
+      console.log(
+        '[MailService] Envío deshabilitado (MAILGUN_ENVIOS_HABILITADO=false) — se hubiera enviado reseteo a:',
+        params.correoDestino,
+      );
+      return;
+    }
+
+    await this.enviarCorreoAMailgun(
+      params.correoDestino,
+      'Restablece tu contraseña — SIGE CESP',
+      this.buildTextoReseteo(params),
+      this.buildHtmlReseteo(params),
     );
   }
 

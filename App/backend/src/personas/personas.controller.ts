@@ -120,4 +120,20 @@ export class PersonasController {
     );
     return { data };
   }
+
+  @Post(':id/resetear-password')
+  @HttpCode(200)
+  @Roles(RolUsuario.ADMINISTRATIVO)
+  async resetearPassword(
+    @Param('id') id: string,
+    @SedeActual() sedeId: string,
+    @ActorUsuarioId() actorUsuarioId: string,
+  ) {
+    const data = await this.personasService.resetearPassword(
+      id,
+      sedeId,
+      actorUsuarioId,
+    );
+    return { data };
+  }
 }

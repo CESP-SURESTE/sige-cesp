@@ -28,6 +28,7 @@ import {
 } from './dto/crear-persona.dto';
 import { ListarPersonasQueryDto } from './dto/listar-personas.query.dto';
 import { generateTemporaryPassword } from './temporary-password';
+import { obtenerCorreosPersonales } from '../common/publicacion/correos-destinatarios.util';
 
 export interface PersonaListItemAlumno {
   usuarioId: string;
@@ -1911,6 +1912,176 @@ export class PersonasService {
       );
       throw new InternalServerErrorException({
         error: 'Error inesperado al cambiar el estatus',
+        code: 'SERVER_ERROR',
+      });
+    }
+  }
+
+  /**
+   * `POST /personas/:id/resetear-password` — disparado por un ADMINISTRATIVO
+   * desde el CRUD (sin autoservicio, decisión explícita del usuario). Genera
+   * un link de recuperación NATIVO de Supabase Auth (`generateLink`, tipo
+   * `recovery`) y lo envía por Mailgun al `correoPersonal` de la persona — el
+   * cambio de contraseña real ocurre después, 100% client-side, cuando la
+   * persona abre ese link (`supabase.auth.updateUser()`, ver
+   * `app/restablecer-password/page.tsx`).
+   *
+   * A diferencia de `cambiarEstatus`, el correo NO es best-effort: si Mailgun
+   * falla, este método propaga el error como `500 SERVER_ERROR` (ver
+   * `MailService.enviarCorreoReseteoPassword`).
+   */
+  async resetearPassword(
+    id: string,
+    sedeId: string,
+    actorUsuarioId: string,
+  ): Promise<{ ok: true }> {
+    try {
+      const usuario = await this.prisma.usuario.findFirst({
+        where: { id, sedeId },
+        select: {
+          id: true,
+          email: true,
+          rol: true,
+          perfilAlumno: {
+            select: { nombres: true, apellidoPaterno: true, apellidoMaterno: true },
+          },
+          perfilMaestro: {
+            select: { nombres: true, apellidoPaterno: true, apellidoMaterno: true },
+          },
+          perfilAdministrativo: {
+            select: {
+              nombres: true,
+              apellidoPaterno: true,
+              apellidoMaterno: true,
+              nivelPermiso: true,
+            },
+          },
+        },
+      });
+
+      if (!usuario) {
+        throw new NotFoundException({
+          error: 'Persona no encontrada en tu sede',
+          code: 'NOT_FOUND',
+        });
+      }
+
+      if (usuario.rol === RolUsuario.ADMINISTRATIVO && usuario.perfilAdministrativo) {
+        const perfilActor = await this.prisma.perfilAdministrativo.findUnique({
+          where: { usuarioId: actorUsuarioId },
+          select: { nivelPermiso: true },
+        });
+        const nivelActor = perfilActor?.nivelPermiso ?? NivelPermiso.AUXILIAR;
+
+        if (nivelActor === NivelPermiso.AUXILIAR) {
+          throw new ForbiddenException({
+            error:
+              'Un usuario con nivel AUXILIAR no puede resetear la contraseña de personal administrativo',
+            code: 'NIVEL_PERMISO_INSUFICIENTE',
+          });
+        }
+
+        const rangoActor = PersonasService.JERARQUIA_NIVEL_PERMISO[nivelActor];
+        const rangoObjetivo =
+          PersonasService.JERARQUIA_NIVEL_PERMISO[
+            usuario.perfilAdministrativo.nivelPermiso
+          ];
+
+        if (rangoActor < rangoObjetivo) {
+          throw new ForbiddenException({
+            error:
+              'No tienes nivel de permiso suficiente para resetear la contraseña de este administrativo',
+            code: 'NIVEL_PERMISO_INSUFICIENTE',
+          });
+        }
+      }
+
+      const perfil =
+        usuario.perfilAlumno ?? usuario.perfilMaestro ?? usuario.perfilAdministrativo;
+      const nombreCompleto = perfil
+        ? [perfil.nombres, perfil.apellidoPaterno, perfil.apellidoMaterno]
+            .filter(Boolean)
+            .join(' ')
+        : usuario.email;
+
+      const correos = await obtenerCorreosPersonales(this.prisma, [id]);
+      const correoPersonal = correos[0]?.correoPersonal;
+
+      if (!correoPersonal) {
+        console.error(
+          '[PersonasService.resetearPassword] La persona no tiene correoPersonal registrado:',
+          { id },
+        );
+        throw new InternalServerErrorException({
+          error: 'Error inesperado al resetear la contraseña',
+          code: 'SERVER_ERROR',
+        });
+      }
+
+      const client = await this.getClient();
+      const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:3000';
+      const { data, error } = await client.auth.admin.generateLink({
+        type: 'recovery',
+        email: usuario.email,
+        options: { redirectTo: `${frontendUrl}/restablecer-password` },
+      });
+
+      if (error || !data?.properties?.action_link) {
+        console.error(
+          '[PersonasService.resetearPassword] Error generando el link de recuperación en Supabase Auth:',
+          error,
+        );
+        throw new InternalServerErrorException({
+          error: 'Error inesperado al resetear la contraseña',
+          code: 'SERVER_ERROR',
+        });
+      }
+
+      // El correo NO es best-effort acá (ver comentario del método) — si
+      // lanza, cae al catch de abajo y se mapea a 500 SERVER_ERROR.
+      await this.mailService.enviarCorreoReseteoPassword({
+        nombreCompleto,
+        correoDestino: correoPersonal,
+        linkReseteo: data.properties.action_link,
+      });
+
+      try {
+        await this.prisma.registroAuditoria.create({
+          data: {
+            usuarioId: actorUsuarioId,
+            sedeId,
+            accion: AccionAuditoria.RESETEO_PASSWORD,
+            entidad: 'Usuario',
+            entidadId: id,
+            detalle: { rol: usuario.rol },
+          },
+        });
+      } catch (err) {
+        // El link ya se generó y el correo ya se envió — no hay nada que
+        // compensar si solo falla la auditoría (regla 12, mismo criterio que
+        // el fallback de `AuthService.cambiarPassword`).
+        console.error(
+          '[PersonasService.resetearPassword] El correo se envió pero falló el RegistroAuditoria:',
+          err,
+        );
+      }
+
+      return { ok: true };
+    } catch (err) {
+      if (
+        err instanceof NotFoundException ||
+        err instanceof ForbiddenException ||
+        err instanceof InternalServerErrorException
+      ) {
+        throw err;
+      }
+
+      console.error(
+        '[PersonasService.resetearPassword] Error inesperado reseteando contraseña:',
+        err,
+      );
+      throw new InternalServerErrorException({
+        error: 'Error inesperado al resetear la contraseña',
         code: 'SERVER_ERROR',
       });
     }

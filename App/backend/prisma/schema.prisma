@@ -80,6 +80,7 @@ enum AccionAuditoria {
   CAMBIO_ESTATUS
   ELIMINACION
   CONSULTA_EMERGENCIA
+  RESETEO_PASSWORD
 }
 
 enum NivelCarrera {
