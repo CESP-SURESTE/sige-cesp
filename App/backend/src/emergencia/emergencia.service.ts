@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { AccionAuditoria, type TelefonoEmergenciaSede } from '@prisma/client';
+import { FotoPerfilService } from '../foto-perfil/foto-perfil.service';
 import { PrismaService } from '../prisma/prisma.service';
 import type { CrearTelefonoDto } from './dto/crear-telefono.dto';
 import type { ActualizarTelefonoDto } from './dto/actualizar-telefono.dto';
@@ -54,6 +55,7 @@ export interface ExpedienteEmergencia {
     fechaNacimiento: string | null; // ISO YYYY-MM-DD, solo ALUMNO
     edad: number | null; // solo ALUMNO
     activo: boolean;
+    fotoUrl: string | null;
   };
   infoMedica: {
     tieneCondicionMedica: boolean;
@@ -126,7 +128,10 @@ function mapContactos(
  */
 @Injectable()
 export class EmergenciaService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly fotoPerfilService: FotoPerfilService,
+  ) {}
 
   async listarTelefonos(sedeId: string): Promise<TelefonoEmergenciaSede[]> {
     try {
@@ -474,12 +479,19 @@ export class EmergenciaService {
         const a = await this.prisma.perfilAlumno.findFirst({
           where: { id: perfilId, usuario: { sedeId } },
           include: {
-            usuario: { select: { activo: true } },
+            usuario: { select: { id: true, activo: true, fotoStoragePath: true } },
             infoMedica: true,
             contactos: { orderBy: { orden: 'asc' } },
           },
         });
         if (!a) return null;
+        const fotoUrlAlumno = a.usuario.fotoStoragePath
+          ? (
+              await this.fotoPerfilService.firmarUrls([
+                { usuarioId: a.usuario.id, storagePath: a.usuario.fotoStoragePath },
+              ])
+            ).get(a.usuario.id) ?? null
+          : null;
         return {
           tipo,
           perfilId: a.id,
@@ -494,6 +506,7 @@ export class EmergenciaService {
             fechaNacimiento: a.fechaNacimiento.toISOString().slice(0, 10),
             edad: calcularEdad(a.fechaNacimiento),
             activo: a.usuario.activo,
+            fotoUrl: fotoUrlAlumno,
           },
           infoMedica: mapInfoMedica(a.infoMedica),
           contactos: mapContactos(a.contactos, true),
@@ -504,12 +517,19 @@ export class EmergenciaService {
         const m = await this.prisma.perfilMaestro.findFirst({
           where: { id: perfilId, usuario: { sedeId } },
           include: {
-            usuario: { select: { activo: true } },
+            usuario: { select: { id: true, activo: true, fotoStoragePath: true } },
             infoMedica: true,
             contactos: { orderBy: { orden: 'asc' } },
           },
         });
         if (!m) return null;
+        const fotoUrlMaestro = m.usuario.fotoStoragePath
+          ? (
+              await this.fotoPerfilService.firmarUrls([
+                { usuarioId: m.usuario.id, storagePath: m.usuario.fotoStoragePath },
+              ])
+            ).get(m.usuario.id) ?? null
+          : null;
         return {
           tipo,
           perfilId: m.id,
@@ -524,6 +544,7 @@ export class EmergenciaService {
             fechaNacimiento: null,
             edad: null,
             activo: m.usuario.activo,
+            fotoUrl: fotoUrlMaestro,
           },
           infoMedica: mapInfoMedica(m.infoMedica),
           contactos: mapContactos(m.contactos, false),
@@ -534,12 +555,19 @@ export class EmergenciaService {
         const ad = await this.prisma.perfilAdministrativo.findFirst({
           where: { id: perfilId, usuario: { sedeId } },
           include: {
-            usuario: { select: { activo: true } },
+            usuario: { select: { id: true, activo: true, fotoStoragePath: true } },
             infoMedica: true,
             contactos: { orderBy: { orden: 'asc' } },
           },
         });
         if (!ad) return null;
+        const fotoUrlAdmin = ad.usuario.fotoStoragePath
+          ? (
+              await this.fotoPerfilService.firmarUrls([
+                { usuarioId: ad.usuario.id, storagePath: ad.usuario.fotoStoragePath },
+              ])
+            ).get(ad.usuario.id) ?? null
+          : null;
         return {
           tipo,
           perfilId: ad.id,
@@ -554,6 +582,7 @@ export class EmergenciaService {
             fechaNacimiento: null,
             edad: null,
             activo: ad.usuario.activo,
+            fotoUrl: fotoUrlAdmin,
           },
           infoMedica: mapInfoMedica(ad.infoMedica),
           contactos: mapContactos(ad.contactos, false),
@@ -583,6 +612,7 @@ export class EmergenciaService {
           fechaNacimiento: null,
           edad: null,
           activo: p.estatus === 'ACTIVO',
+          fotoUrl: null,
         },
         infoMedica: mapInfoMedica(p.infoMedica),
         contactos: mapContactos(p.contactos, false),

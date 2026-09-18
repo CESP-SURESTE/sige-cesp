@@ -26,6 +26,7 @@ describe('FotoPerfil — POST/DELETE /perfil/foto y /personas/:id/foto (e2e)', (
   let sedeMeridaId: string;
   let sedeValladolidId: string;
   let alumnoMeridaId: string;
+  let perfilAlumnoMeridaId: string;
   let adminMeridaId: string;
   let adminValladolidId: string;
   let upload: jest.Mock;
@@ -90,6 +91,9 @@ describe('FotoPerfil — POST/DELETE /perfil/foto y /personas/:id/foto (e2e)', (
     sedeValladolidId = valladolid.id;
     const alumno = await prisma.usuario.findUniqueOrThrow({ where: { email: 'luis.chan@cesp-merida.edu.mx' } });
     alumnoMeridaId = alumno.id;
+    perfilAlumnoMeridaId = (
+      await prisma.perfilAlumno.findUniqueOrThrow({ where: { usuarioId: alumnoMeridaId } })
+    ).id;
     const adminMerida = await prisma.usuario.findUniqueOrThrow({ where: { email: 'ana.canul@cesp-merida.edu.mx' } });
     adminMeridaId = adminMerida.id;
     const adminValladolid = await prisma.usuario.findUniqueOrThrow({ where: { email: 'jorge.ek@cesp-valladolid.edu.mx' } });
@@ -310,5 +314,28 @@ describe('FotoPerfil — POST/DELETE /perfil/foto y /personas/:id/foto (e2e)', (
     }
     const item = (res.body as ListaBody).data.find((p) => p.usuarioId === adminMeridaId);
     expect(item?.fotoUrl).toBe(`https://storage.example.com/signed/${adminMeridaId}/foto.png`);
+  });
+
+  it('GET /emergencia/expediente/ALUMNO/:perfilId trae fotoUrl tras subir la foto', async () => {
+    const tokenAdmin = await firmarToken(
+      { role: 'authenticated', sede_id: sedeMeridaId, rol: RolUsuario.ADMINISTRATIVO },
+      adminMeridaId,
+    );
+    await request(app.getHttpServer())
+      .post(`/personas/${alumnoMeridaId}/foto`)
+      .set('Authorization', `Bearer ${tokenAdmin}`)
+      .attach('archivo', Buffer.from('x'), { filename: 'foto.webp', contentType: 'image/webp' });
+
+    const res = await request(app.getHttpServer())
+      .get(`/emergencia/expediente/ALUMNO/${perfilAlumnoMeridaId}`)
+      .set('Authorization', `Bearer ${tokenAdmin}`);
+
+    expect(res.status).toBe(200);
+    interface ExpedienteBody {
+      data: { identidad: { fotoUrl: string | null } };
+    }
+    expect((res.body as ExpedienteBody).data.identidad.fotoUrl).toBe(
+      `https://storage.example.com/signed/${alumnoMeridaId}/foto.webp`,
+    );
   });
 });
