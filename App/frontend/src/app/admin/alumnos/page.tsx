@@ -5,9 +5,11 @@ import {
   keepPreviousData,
   useMutation,
   useQuery,
+  useQueryClient,
 } from '@tanstack/react-query';
 import { useState } from 'react';
 import { toast } from 'sonner';
+import { Avatar } from '@/components/admin/ui/Avatar';
 import { SkeletonTableRows } from '@/components/admin/ui/Skeleton';
 import { ApiError } from '@/lib/api/http';
 import { obtenerPerfil } from '@/lib/api/perfil';
@@ -21,6 +23,7 @@ import { BuscadorFiltro } from '@/components/admin/ui/personas-listado/BuscadorF
 import { Paginacion } from '@/components/admin/ui/personas-listado/Paginacion';
 import { EstadoActivoBadge } from '@/components/admin/ui/personas-listado/EstadoActivoBadge';
 import { ResetearPasswordModal } from '@/components/admin/ui/personas-listado/ResetearPasswordModal';
+import { SubirFotoPersonaModal } from '@/components/admin/ui/personas-listado/SubirFotoPersonaModal';
 import { useBuscarDebounced } from '@/components/admin/ui/personas-listado/useBuscarDebounced';
 import { usePaginacionFiltrada } from '@/components/admin/ui/personas-listado/usePaginacionFiltrada';
 import { useCooldownReseteo } from '@/components/admin/ui/personas-listado/useCooldownReseteo';
@@ -50,6 +53,9 @@ export default function AdminAlumnosPage() {
     usePaginacionFiltrada(buscar);
   const [alumnoAResetear, setAlumnoAResetear] =
     useState<PersonaListItemAlumno | null>(null);
+  const [alumnoAFotografiar, setAlumnoAFotografiar] =
+    useState<PersonaListItemAlumno | null>(null);
+  const queryClient = useQueryClient();
 
   const perfilActorQuery = useQuery({
     queryKey: ['admin', 'perfil'],
@@ -141,6 +147,7 @@ export default function AdminAlumnosPage() {
             <table className="min-w-full divide-y divide-mist text-sm">
               <thead className="bg-bone">
                 <tr>
+                  <Th>Foto</Th>
                   <Th>Nombre completo</Th>
                   <Th>Matrícula</Th>
                   <Th>Carrera</Th>
@@ -151,7 +158,7 @@ export default function AdminAlumnosPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-mist">
-                <SkeletonTableRows columns={7} />
+                <SkeletonTableRows columns={8} />
               </tbody>
             </table>
           </div>
@@ -172,6 +179,7 @@ export default function AdminAlumnosPage() {
               estaEnCooldown={estaEnCooldown}
               minutosRestantes={minutosRestantes}
               onResetearPassword={setAlumnoAResetear}
+              onFotografiar={setAlumnoAFotografiar}
             />
             <div className="mt-4">
               <Paginacion
@@ -201,6 +209,26 @@ export default function AdminAlumnosPage() {
           onCancelar={() => setAlumnoAResetear(null)}
         />
       )}
+
+      {alumnoAFotografiar && (
+        <SubirFotoPersonaModal
+          usuarioId={alumnoAFotografiar.usuarioId}
+          nombreCompleto={[
+            alumnoAFotografiar.nombres,
+            alumnoAFotografiar.apellidoPaterno,
+            alumnoAFotografiar.apellidoMaterno,
+          ]
+            .filter(Boolean)
+            .join(' ')}
+          fotoUrlActual={alumnoAFotografiar.fotoUrl}
+          onClose={() => setAlumnoAFotografiar(null)}
+          onCambioConExito={() =>
+            queryClient.invalidateQueries({
+              queryKey: ['admin', 'personas', 'ALUMNO'],
+            })
+          }
+        />
+      )}
     </div>
   );
 }
@@ -210,18 +238,21 @@ function TablaAlumnos({
   estaEnCooldown,
   minutosRestantes,
   onResetearPassword,
+  onFotografiar,
 }: {
   alumnos: PersonaListItemAlumno[];
   /** Cooldown de reseteo de contraseña (`useCooldownReseteo`) — por fila. */
   estaEnCooldown: (usuarioId: string) => boolean;
   minutosRestantes: (usuarioId: string) => number;
   onResetearPassword: (alumno: PersonaListItemAlumno) => void;
+  onFotografiar: (alumno: PersonaListItemAlumno) => void;
 }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-mist">
       <table className="min-w-full divide-y divide-mist text-sm">
         <thead className="bg-bone">
           <tr>
+            <Th>Foto</Th>
             <Th>Nombre completo</Th>
             <Th>Matrícula</Th>
             <Th>Carrera</Th>
@@ -234,6 +265,19 @@ function TablaAlumnos({
         <tbody className="divide-y divide-mist">
           {alumnos.map((alumno) => (
             <tr key={alumno.usuarioId}>
+              <Td>
+                <button
+                  type="button"
+                  onClick={() => onFotografiar(alumno)}
+                  aria-label={`Cambiar foto de ${alumno.nombres}`}
+                >
+                  <Avatar
+                    fotoUrl={alumno.fotoUrl}
+                    iniciales={`${alumno.nombres.charAt(0)}${alumno.apellidoPaterno.charAt(0)}`.toUpperCase()}
+                    tamano="sm"
+                  />
+                </button>
+              </Td>
               <Td>
                 {[alumno.nombres, alumno.apellidoPaterno, alumno.apellidoMaterno]
                   .filter(Boolean)

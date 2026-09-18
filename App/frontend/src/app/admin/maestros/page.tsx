@@ -9,6 +9,7 @@ import {
 } from '@tanstack/react-query';
 import { useState } from 'react';
 import { toast } from 'sonner';
+import { Avatar } from '@/components/admin/ui/Avatar';
 import { SkeletonTableRows } from '@/components/admin/ui/Skeleton';
 import { obtenerPerfil } from '@/lib/api/perfil';
 import { ApiError } from '@/lib/api/http';
@@ -28,6 +29,7 @@ import { EstadoActivoBadge } from '@/components/admin/ui/personas-listado/Estado
 import { EstatusEmpleadoBadge } from '@/components/admin/ui/personas-listado/EstatusEmpleadoBadge';
 import { CambiarEstatusModal } from '@/components/admin/ui/personas-listado/CambiarEstatusModal';
 import { ResetearPasswordModal } from '@/components/admin/ui/personas-listado/ResetearPasswordModal';
+import { SubirFotoPersonaModal } from '@/components/admin/ui/personas-listado/SubirFotoPersonaModal';
 import { useBuscarDebounced } from '@/components/admin/ui/personas-listado/useBuscarDebounced';
 import { usePaginacionFiltrada } from '@/components/admin/ui/personas-listado/usePaginacionFiltrada';
 import { useCooldownReseteo } from '@/components/admin/ui/personas-listado/useCooldownReseteo';
@@ -56,6 +58,8 @@ export default function AdminMaestrosPage() {
   const [maestroAEditar, setMaestroAEditar] =
     useState<PersonaListItemMaestro | null>(null);
   const [maestroAResetear, setMaestroAResetear] =
+    useState<PersonaListItemMaestro | null>(null);
+  const [maestroAFotografiar, setMaestroAFotografiar] =
     useState<PersonaListItemMaestro | null>(null);
 
   const perfilActorQuery = useQuery({
@@ -177,6 +181,7 @@ export default function AdminMaestrosPage() {
             <table className="min-w-full divide-y divide-mist text-sm">
               <thead className="bg-bone">
                 <tr>
+                  <Th>Foto</Th>
                   <Th>Nombre completo</Th>
                   <Th>Cédula profesional</Th>
                   <Th>Contratación</Th>
@@ -186,7 +191,7 @@ export default function AdminMaestrosPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-mist">
-                <SkeletonTableRows columns={6} />
+                <SkeletonTableRows columns={7} />
               </tbody>
             </table>
           </div>
@@ -208,6 +213,7 @@ export default function AdminMaestrosPage() {
               estaEnCooldown={estaEnCooldown}
               minutosRestantes={minutosRestantes}
               onResetearPassword={setMaestroAResetear}
+              onFotografiar={setMaestroAFotografiar}
             />
             <div className="mt-4">
               <Paginacion
@@ -252,6 +258,26 @@ export default function AdminMaestrosPage() {
           onCancelar={() => setMaestroAResetear(null)}
         />
       )}
+
+      {maestroAFotografiar && (
+        <SubirFotoPersonaModal
+          usuarioId={maestroAFotografiar.usuarioId}
+          nombreCompleto={[
+            maestroAFotografiar.nombres,
+            maestroAFotografiar.apellidoPaterno,
+            maestroAFotografiar.apellidoMaterno,
+          ]
+            .filter(Boolean)
+            .join(' ')}
+          fotoUrlActual={maestroAFotografiar.fotoUrl}
+          onClose={() => setMaestroAFotografiar(null)}
+          onCambioConExito={() =>
+            queryClient.invalidateQueries({
+              queryKey: ['admin', 'personas', 'MAESTRO'],
+            })
+          }
+        />
+      )}
     </div>
   );
 }
@@ -262,6 +288,7 @@ function TablaMaestros({
   estaEnCooldown,
   minutosRestantes,
   onResetearPassword,
+  onFotografiar,
 }: {
   maestros: PersonaListItemMaestro[];
   onCambiarEstatus: (maestro: PersonaListItemMaestro) => void;
@@ -269,12 +296,14 @@ function TablaMaestros({
   estaEnCooldown: (usuarioId: string) => boolean;
   minutosRestantes: (usuarioId: string) => number;
   onResetearPassword: (maestro: PersonaListItemMaestro) => void;
+  onFotografiar: (maestro: PersonaListItemMaestro) => void;
 }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-mist">
       <table className="min-w-full divide-y divide-mist text-sm">
         <thead className="bg-bone">
           <tr>
+            <Th>Foto</Th>
             <Th>Nombre completo</Th>
             <Th>Cédula profesional</Th>
             <Th>Contratación</Th>
@@ -286,6 +315,19 @@ function TablaMaestros({
         <tbody className="divide-y divide-mist">
           {maestros.map((maestro) => (
             <tr key={maestro.usuarioId}>
+              <Td>
+                <button
+                  type="button"
+                  onClick={() => onFotografiar(maestro)}
+                  aria-label={`Cambiar foto de ${maestro.nombres}`}
+                >
+                  <Avatar
+                    fotoUrl={maestro.fotoUrl}
+                    iniciales={`${maestro.nombres.charAt(0)}${maestro.apellidoPaterno.charAt(0)}`.toUpperCase()}
+                    tamano="sm"
+                  />
+                </button>
+              </Td>
               <Td>
                 {[maestro.nombres, maestro.apellidoPaterno, maestro.apellidoMaterno]
                   .filter(Boolean)

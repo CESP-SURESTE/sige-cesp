@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { toast } from 'sonner';
+import { Avatar } from '@/components/admin/ui/Avatar';
 import { SkeletonTableRows } from '@/components/admin/ui/Skeleton';
 import { ApiError } from '@/lib/api/http';
 import { obtenerPerfil } from '@/lib/api/perfil';
@@ -24,6 +25,7 @@ import { EstadoActivoBadge } from '@/components/admin/ui/personas-listado/Estado
 import { EstatusEmpleadoBadge } from '@/components/admin/ui/personas-listado/EstatusEmpleadoBadge';
 import { CambiarEstatusModal } from '@/components/admin/ui/personas-listado/CambiarEstatusModal';
 import { ResetearPasswordModal } from '@/components/admin/ui/personas-listado/ResetearPasswordModal';
+import { SubirFotoPersonaModal } from '@/components/admin/ui/personas-listado/SubirFotoPersonaModal';
 import { useBuscarDebounced } from '@/components/admin/ui/personas-listado/useBuscarDebounced';
 import { usePaginacionFiltrada } from '@/components/admin/ui/personas-listado/usePaginacionFiltrada';
 import { useCooldownReseteo } from '@/components/admin/ui/personas-listado/useCooldownReseteo';
@@ -78,6 +80,8 @@ export default function AdminAdministrativosPage() {
   const [administrativoAEditar, setAdministrativoAEditar] =
     useState<PersonaListItemAdministrativo | null>(null);
   const [administrativoAResetear, setAdministrativoAResetear] =
+    useState<PersonaListItemAdministrativo | null>(null);
+  const [administrativoAFotografiar, setAdministrativoAFotografiar] =
     useState<PersonaListItemAdministrativo | null>(null);
 
   const perfilActorQuery = useQuery({
@@ -220,6 +224,7 @@ export default function AdminAdministrativosPage() {
             <table className="min-w-full divide-y divide-mist text-sm">
               <thead className="bg-bone">
                 <tr>
+                  <Th>Foto</Th>
                   <Th>Nombre completo</Th>
                   <Th>Puesto</Th>
                   <Th>Nivel de permiso</Th>
@@ -229,7 +234,7 @@ export default function AdminAdministrativosPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-mist">
-                <SkeletonTableRows columns={6} />
+                <SkeletonTableRows columns={7} />
               </tbody>
             </table>
           </div>
@@ -255,6 +260,7 @@ export default function AdminAdministrativosPage() {
               estaEnCooldown={estaEnCooldown}
               minutosRestantes={minutosRestantes}
               onResetearPassword={setAdministrativoAResetear}
+              onFotografiar={setAdministrativoAFotografiar}
             />
             <div className="mt-4">
               <Paginacion
@@ -299,6 +305,26 @@ export default function AdminAdministrativosPage() {
           onCancelar={() => setAdministrativoAResetear(null)}
         />
       )}
+
+      {administrativoAFotografiar && (
+        <SubirFotoPersonaModal
+          usuarioId={administrativoAFotografiar.usuarioId}
+          nombreCompleto={[
+            administrativoAFotografiar.nombres,
+            administrativoAFotografiar.apellidoPaterno,
+            administrativoAFotografiar.apellidoMaterno,
+          ]
+            .filter(Boolean)
+            .join(' ')}
+          fotoUrlActual={administrativoAFotografiar.fotoUrl}
+          onClose={() => setAdministrativoAFotografiar(null)}
+          onCambioConExito={() =>
+            queryClient.invalidateQueries({
+              queryKey: ['admin', 'personas', 'ADMINISTRATIVO'],
+            })
+          }
+        />
+      )}
     </div>
   );
 }
@@ -311,6 +337,7 @@ function TablaAdministrativos({
   estaEnCooldown,
   minutosRestantes,
   onResetearPassword,
+  onFotografiar,
 }: {
   administrativos: PersonaListItemAdministrativo[];
   /** `id` del actor logueado (`GET /perfil`) — `undefined` mientras esa
@@ -326,12 +353,14 @@ function TablaAdministrativos({
   estaEnCooldown: (usuarioId: string) => boolean;
   minutosRestantes: (usuarioId: string) => number;
   onResetearPassword: (administrativo: PersonaListItemAdministrativo) => void;
+  onFotografiar: (administrativo: PersonaListItemAdministrativo) => void;
 }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-mist">
       <table className="min-w-full divide-y divide-mist text-sm">
         <thead className="bg-bone">
           <tr>
+            <Th>Foto</Th>
             <Th>Nombre completo</Th>
             <Th>Puesto</Th>
             <Th>Nivel de permiso</Th>
@@ -358,6 +387,19 @@ function TablaAdministrativos({
 
             return (
               <tr key={administrativo.usuarioId}>
+                <Td>
+                  <button
+                    type="button"
+                    onClick={() => onFotografiar(administrativo)}
+                    aria-label={`Cambiar foto de ${administrativo.nombres}`}
+                  >
+                    <Avatar
+                      fotoUrl={administrativo.fotoUrl}
+                      iniciales={`${administrativo.nombres.charAt(0)}${administrativo.apellidoPaterno.charAt(0)}`.toUpperCase()}
+                      tamano="sm"
+                    />
+                  </button>
+                </Td>
                 <Td>
                   {[
                     administrativo.nombres,
