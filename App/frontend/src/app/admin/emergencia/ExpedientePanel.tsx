@@ -1,5 +1,6 @@
 'use client';
 
+import { Avatar } from '@/components/admin/ui/Avatar';
 import type { ExpedienteEmergencia } from '@/lib/api/emergencia';
 import { humanizarReferencia, TIPO_ROL_LABEL } from './labels';
 
@@ -15,33 +16,40 @@ export function ExpedientePanel({ expediente }: { expediente: ExpedienteEmergenc
 
   return (
     <div className="space-y-5 rounded-lg border-l-4 border-crimson bg-white p-6 shadow-sm">
-      <header>
-        <div className="flex items-center gap-2">
-          <h2 className="font-display text-xl font-semibold text-slate">
-            {[identidad.nombres, identidad.apellidoPaterno, identidad.apellidoMaterno]
-              .filter(Boolean)
-              .join(' ')}
-          </h2>
-          {!identidad.activo && (
-            <span className="rounded-full bg-mist px-2 py-0.5 text-xs font-medium text-slate/70">
-              Inactivo
-            </span>
+      <header className="flex items-start gap-4">
+        <Avatar
+          fotoUrl={identidad.fotoUrl}
+          iniciales={`${identidad.nombres.charAt(0)}${identidad.apellidoPaterno.charAt(0)}`.toUpperCase()}
+          tamano="lg"
+        />
+        <div>
+          <div className="flex items-center gap-2">
+            <h2 className="font-display text-xl font-semibold text-slate">
+              {[identidad.nombres, identidad.apellidoPaterno, identidad.apellidoMaterno]
+                .filter(Boolean)
+                .join(' ')}
+            </h2>
+            {!identidad.activo && (
+              <span className="rounded-full bg-mist px-2 py-0.5 text-xs font-medium text-slate/70">
+                Inactivo
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-sm text-slate/70">
+            {TIPO_ROL_LABEL[expediente.tipo]} ·{' '}
+            {humanizarReferencia(expediente.tipo, identidad.referencia)}
+            {identidad.edad !== null && ` · ${identidad.edad} años`}
+          </p>
+          <p className="mt-1 text-sm text-slate/70">CURP: {identidad.curp ?? '—'}</p>
+          {identidad.telefono && (
+            <p className="mt-1 text-sm text-slate/70">
+              Tel. propio:{' '}
+              <a href={`tel:${identidad.telefono.replace(/\s+/g, '')}`} className="text-navy hover:underline">
+                {identidad.telefono}
+              </a>
+            </p>
           )}
         </div>
-        <p className="mt-1 text-sm text-slate/70">
-          {TIPO_ROL_LABEL[expediente.tipo]} ·{' '}
-          {humanizarReferencia(expediente.tipo, identidad.referencia)}
-          {identidad.edad !== null && ` · ${identidad.edad} años`}
-        </p>
-        <p className="mt-1 text-sm text-slate/70">CURP: {identidad.curp ?? '—'}</p>
-        {identidad.telefono && (
-          <p className="mt-1 text-sm text-slate/70">
-            Tel. propio:{' '}
-            <a href={`tel:${identidad.telefono.replace(/\s+/g, '')}`} className="text-navy hover:underline">
-              {identidad.telefono}
-            </a>
-          </p>
-        )}
       </header>
 
       {/* Tipo de sangre — bloque prominente */}
