@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { FotoPerfilModule } from '../foto-perfil/foto-perfil.module';
 import { MailModule } from '../mail/mail.module';
 import { PersonasController } from './personas.controller';
 import {
@@ -19,9 +20,14 @@ import {
  * `MailModule` (Día 13, correo de bienvenida best-effort) SÍ se importa acá
  * de forma explícita — no es `@Global()`, `PersonasService` necesita
  * `MailService` inyectado en su constructor.
+ *
+ * `FotoPerfilModule` (feature "Foto de perfil", 2026-09-17) se importa por
+ * el mismo motivo: `PersonasController`/`PersonasService` inyectan
+ * `FotoPerfilService` (admin sobre otra persona — `POST/DELETE
+ * /personas/:id/foto` — y `fotoUrl` en `GET /personas`).
  */
 @Module({
-  imports: [MailModule],
+  imports: [MailModule, FotoPerfilModule],
   controllers: [PersonasController],
   providers: [
     PersonasService,

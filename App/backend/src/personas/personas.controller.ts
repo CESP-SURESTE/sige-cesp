@@ -1,24 +1,34 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
+  HttpStatus,
   Param,
   Patch,
   Post,
   Query,
+  UploadedFile,
+  UseFilters,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { RolUsuario } from '@prisma/client';
 import { ActorUsuarioId } from '../common/decorators/actor-usuario-id.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { SedeActual } from '../common/decorators/sede-actual.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { SedeGuard } from '../common/guards/sede.guard';
+import { ArchivoFotoInvalidaFilter } from '../foto-perfil/archivo-foto-invalida.filter';
+import { FotoPerfilService } from '../foto-perfil/foto-perfil.service';
 import { CambiarEstatusDto } from './dto/cambiar-estatus.dto';
 import { CrearPersonaDto } from './dto/crear-persona.dto';
 import { ListarPersonasQueryDto } from './dto/listar-personas.query.dto';
 import { PersonasService } from './personas.service';
+
+const TRES_MB = 3 * 1024 * 1024;
 
 /**
  * `POST /personas` — Fase 4, Día 11.
@@ -65,11 +75,24 @@ import { PersonasService } from './personas.service';
  * el actor); `sedeId`/`actorUsuarioId` siempre del JWT. La jerarquía de
  * `NivelPermiso` (regla 7) solo aplica cuando el objetivo es
  * `ADMINISTRATIVO` — ver `PersonasService.cambiarEstatus`.
+ *
+ * `POST/DELETE /personas/:id/foto` (feature "Foto de perfil", 2026-09-17) —
+ * un `ADMINISTRATIVO` gestiona la foto de OTRA persona de su sede (vs.
+ * `POST/DELETE /perfil/foto` en `PerfilController`, self-service). Delegan
+ * 100% en `FotoPerfilService.subir`/`.eliminar` (Task 2) — ese service ya
+ * valida que `id` pertenezca a `sedeId` (404 NOT_FOUND si no) y el tipo/
+ * tamaño del archivo; este controller solo hace el wiring HTTP. Sin
+ * jerarquía de `nivelPermiso` (mismo criterio que `POST /grupos`/
+ * `POST /carreras`: subir una foto no cambia permisos ni estatus de la
+ * cuenta objetivo).
  */
 @Controller('personas')
 @UseGuards(SedeGuard, RolesGuard)
 export class PersonasController {
-  constructor(private readonly personasService: PersonasService) {}
+  constructor(
+    private readonly personasService: PersonasService,
+    private readonly fotoPerfilService: FotoPerfilService,
+  ) {}
 
   @Post()
   @HttpCode(201)
@@ -130,6 +153,44 @@ export class PersonasController {
     @ActorUsuarioId() actorUsuarioId: string,
   ) {
     const data = await this.personasService.resetearPassword(
+      id,
+      sedeId,
+      actorUsuarioId,
+    );
+    return { data };
+  }
+
+  @Post(':id/foto')
+  @HttpCode(HttpStatus.OK)
+  @Roles(RolUsuario.ADMINISTRATIVO)
+  @UseInterceptors(
+    FileInterceptor('archivo', { limits: { fileSize: TRES_MB } }),
+  )
+  @UseFilters(ArchivoFotoInvalidaFilter)
+  async subirFotoPersona(
+    @Param('id') id: string,
+    @SedeActual() sedeId: string,
+    @ActorUsuarioId() actorUsuarioId: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    const data = await this.fotoPerfilService.subir(
+      id,
+      sedeId,
+      actorUsuarioId,
+      file,
+    );
+    return { data };
+  }
+
+  @Delete(':id/foto')
+  @HttpCode(HttpStatus.OK)
+  @Roles(RolUsuario.ADMINISTRATIVO)
+  async eliminarFotoPersona(
+    @Param('id') id: string,
+    @SedeActual() sedeId: string,
+    @ActorUsuarioId() actorUsuarioId: string,
+  ) {
+    const data = await this.fotoPerfilService.eliminar(
       id,
       sedeId,
       actorUsuarioId,

@@ -21,6 +21,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
+import { FotoPerfilService } from '../foto-perfil/foto-perfil.service';
 import {
   CrearPersonaDto,
   InfoMedicaDto,
@@ -40,6 +41,10 @@ export interface PersonaListItemAlumno {
   estatusAcademico: EstatusAcademico;
   cuatrimestreActual: number;
   activo: boolean;
+  /** URL firmada (900s) de la foto de perfil — `null` si la persona no tiene
+   * una subida (feature "Foto de perfil", 2026-09-17). Resuelta en batch por
+   * página vía `resolverFotosPerfil`, nunca persistida (regla 1). */
+  fotoUrl: string | null;
 }
 
 export interface PersonaListItemMaestro {
@@ -67,6 +72,8 @@ export interface PersonaListItemMaestro {
   contratoFechaInicio: string | null;
   contratoFechaFin: string | null;
   activo: boolean;
+  /** Ver `PersonaListItemAlumno.fotoUrl`. */
+  fotoUrl: string | null;
 }
 
 /**
@@ -91,6 +98,8 @@ export interface PersonaListItemAdministrativo {
    * estatus actual es LICENCIA. */
   tipoLicencia: TipoLicencia | null;
   activo: boolean;
+  /** Ver `PersonaListItemAlumno.fotoUrl`. */
+  fotoUrl: string | null;
 }
 
 export interface ListarPersonasResult {
@@ -272,6 +281,7 @@ export class PersonasService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly mailService: MailService,
+    private readonly fotoPerfilService: FotoPerfilService,
     @Optional()
     @Inject(PERSONAS_SUPABASE_CLIENT_OVERRIDE)
     private readonly clientOverride?: SupabaseAdminClient,
@@ -1211,6 +1221,30 @@ export class PersonasService {
    * `GET /perfil` (perfil completo del propio usuario, Días 16-18), no este
    * listado resumen.
    */
+  /**
+   * Firma en batch (`FotoPerfilService.firmarUrls`) las fotos de una página
+   * de resultados — filtra primero a quienes SÍ tienen `fotoStoragePath`
+   * (nunca se firma de más), y solo de la página actual, nunca de toda la
+   * tabla.
+   */
+  private async resolverFotosPerfil(
+    items: { usuarioId: string; fotoStoragePath: string | null }[],
+  ): Promise<Map<string, string>> {
+    const conFoto = items.filter(
+      (item): item is { usuarioId: string; fotoStoragePath: string } =>
+        item.fotoStoragePath !== null,
+    );
+    if (conFoto.length === 0) {
+      return new Map();
+    }
+    return this.fotoPerfilService.firmarUrls(
+      conFoto.map((item) => ({
+        usuarioId: item.usuarioId,
+        storagePath: item.fotoStoragePath,
+      })),
+    );
+  }
+
   async listarPorSedeYRol(
     sedeId: string,
     query: ListarPersonasQueryDto,
@@ -1274,7 +1308,7 @@ export class PersonasService {
             estatusAcademico: true,
             cuatrimestreActual: true,
             carrera: { select: { id: true, nombre: true } },
-            usuario: { select: { activo: true } },
+            usuario: { select: { activo: true, fotoStoragePath: true } },
           },
           orderBy: [
             { apellidoPaterno: 'asc' },
@@ -1285,6 +1319,13 @@ export class PersonasService {
           take: limit,
         }),
       ]);
+
+      const fotosUrl = await this.resolverFotosPerfil(
+        alumnos.map((alumno) => ({
+          usuarioId: alumno.usuarioId,
+          fotoStoragePath: alumno.usuario.fotoStoragePath,
+        })),
+      );
 
       return {
         data: alumnos.map((alumno) => ({
@@ -1297,6 +1338,7 @@ export class PersonasService {
           estatusAcademico: alumno.estatusAcademico,
           cuatrimestreActual: alumno.cuatrimestreActual,
           activo: alumno.usuario.activo,
+          fotoUrl: fotosUrl.get(alumno.usuarioId) ?? null,
         })),
         page,
         limit,
@@ -1367,7 +1409,7 @@ export class PersonasService {
           diasTemporal: true,
           contratoFechaInicio: true,
           contratoFechaFin: true,
-          usuario: { select: { activo: true } },
+          usuario: { select: { activo: true, fotoStoragePath: true } },
         },
         orderBy: [
           { apellidoPaterno: 'asc' },
@@ -1378,6 +1420,13 @@ export class PersonasService {
         take: limit,
       }),
     ]);
+
+    const fotosUrl = await this.resolverFotosPerfil(
+      maestros.map((maestro) => ({
+        usuarioId: maestro.usuarioId,
+        fotoStoragePath: maestro.usuario.fotoStoragePath,
+      })),
+    );
 
     return {
       data: maestros.map((maestro) => ({
@@ -1397,6 +1446,7 @@ export class PersonasService {
           ? maestro.contratoFechaFin.toISOString().slice(0, 10)
           : null,
         activo: maestro.usuario.activo,
+        fotoUrl: fotosUrl.get(maestro.usuarioId) ?? null,
       })),
       page,
       limit,
@@ -1471,7 +1521,7 @@ export class PersonasService {
           nivelPermiso: true,
           estatus: true,
           tipoLicencia: true,
-          usuario: { select: { activo: true } },
+          usuario: { select: { activo: true, fotoStoragePath: true } },
         },
         orderBy: [
           { apellidoPaterno: 'asc' },
@@ -1482,6 +1532,13 @@ export class PersonasService {
         take: limit,
       }),
     ]);
+
+    const fotosUrl = await this.resolverFotosPerfil(
+      administrativos.map((administrativo) => ({
+        usuarioId: administrativo.usuarioId,
+        fotoStoragePath: administrativo.usuario.fotoStoragePath,
+      })),
+    );
 
     return {
       data: administrativos.map((administrativo) => ({
@@ -1494,6 +1551,7 @@ export class PersonasService {
         estatus: administrativo.estatus,
         tipoLicencia: administrativo.tipoLicencia,
         activo: administrativo.usuario.activo,
+        fotoUrl: fotosUrl.get(administrativo.usuarioId) ?? null,
       })),
       page,
       limit,

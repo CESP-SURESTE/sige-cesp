@@ -255,4 +255,60 @@ describe('FotoPerfil — POST/DELETE /perfil/foto y /personas/:id/foto (e2e)', (
     const usuario = await prisma.usuario.findUniqueOrThrow({ where: { id: alumnoMeridaId } });
     expect(usuario.fotoStoragePath).toBeNull();
   });
+
+  it('POST /personas/:id/foto (admin) sube la foto de otra persona de su sede', async () => {
+    const token = await firmarToken(
+      { role: 'authenticated', sede_id: sedeMeridaId, rol: RolUsuario.ADMINISTRATIVO },
+      adminMeridaId,
+    );
+
+    const res = await request(app.getHttpServer())
+      .post(`/personas/${alumnoMeridaId}/foto`)
+      .set('Authorization', `Bearer ${token}`)
+      .attach('archivo', Buffer.from('contenido jpg de prueba'), {
+        filename: 'foto.jpg',
+        contentType: 'image/jpeg',
+      });
+
+    expect(res.status).toBe(200);
+    const usuario = await prisma.usuario.findUniqueOrThrow({ where: { id: alumnoMeridaId } });
+    expect(usuario.fotoStoragePath).toBe(`${alumnoMeridaId}/foto.jpg`);
+  });
+
+  it('POST /personas/:id/foto contra una persona de OTRA sede responde 404 NOT_FOUND', async () => {
+    const token = await firmarToken(
+      { role: 'authenticated', sede_id: sedeValladolidId, rol: RolUsuario.ADMINISTRATIVO },
+      adminValladolidId,
+    );
+
+    const res = await request(app.getHttpServer())
+      .post(`/personas/${alumnoMeridaId}/foto`)
+      .set('Authorization', `Bearer ${token}`)
+      .attach('archivo', Buffer.from('x'), { filename: 'foto.png', contentType: 'image/png' });
+
+    expect(res.status).toBe(404);
+    expect((res.body as ErrorBody).code).toBe('NOT_FOUND');
+  });
+
+  it('GET /personas?rol=ADMINISTRATIVO trae fotoUrl en el listado tras subir una foto', async () => {
+    const tokenSubida = await firmarToken(
+      { role: 'authenticated', sede_id: sedeMeridaId, rol: RolUsuario.ADMINISTRATIVO },
+      adminMeridaId,
+    );
+    await request(app.getHttpServer())
+      .post(`/personas/${adminMeridaId}/foto`)
+      .set('Authorization', `Bearer ${tokenSubida}`)
+      .attach('archivo', Buffer.from('x'), { filename: 'foto.png', contentType: 'image/png' });
+
+    const res = await request(app.getHttpServer())
+      .get('/personas?rol=ADMINISTRATIVO')
+      .set('Authorization', `Bearer ${tokenSubida}`);
+
+    expect(res.status).toBe(200);
+    interface ListaBody {
+      data: { usuarioId: string; fotoUrl: string | null }[];
+    }
+    const item = (res.body as ListaBody).data.find((p) => p.usuarioId === adminMeridaId);
+    expect(item?.fotoUrl).toBe(`https://storage.example.com/signed/${adminMeridaId}/foto.png`);
+  });
 });

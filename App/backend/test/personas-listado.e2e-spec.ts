@@ -406,6 +406,7 @@ describe('PersonasController — GET /personas (e2e)', () => {
         'estatusAcademico',
         'cuatrimestreActual',
         'activo',
+        'fotoUrl',
       ].sort(),
     );
   });
@@ -453,6 +454,7 @@ describe('PersonasController — GET /personas (e2e)', () => {
           'contratoFechaInicio',
           'contratoFechaFin',
           'activo',
+          'fotoUrl',
         ].sort(),
       );
     }
@@ -731,6 +733,7 @@ describe('PersonasController — GET /personas (e2e)', () => {
           'estatus',
           'tipoLicencia',
           'activo',
+          'fotoUrl',
         ].sort(),
       );
     }
