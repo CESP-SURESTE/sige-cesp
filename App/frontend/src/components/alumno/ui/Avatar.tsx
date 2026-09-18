@@ -13,7 +13,7 @@
 export interface AvatarProps {
   fotoUrl: string | null;
   iniciales: string;
-  tamano?: 'sm' | 'md' | 'lg';
+  tamano?: 'sm' | 'md' | 'lg' | 'xl';
   className?: string;
 }
 
@@ -21,6 +21,18 @@ const TAMANOS: Record<NonNullable<AvatarProps['tamano']>, string> = {
   sm: 'size-6 text-xs',
   md: 'size-8 text-sm',
   lg: 'size-16 text-xl',
+  // `xl` — agregado en la ronda de fix del review de Task 6 (2026-09-17):
+  // el encabezado del perfil (`EncabezadoPerfil` en `app/alumno/page.tsx`)
+  // usaba antes un círculo responsive de `h-24 w-24 sm:h-32 sm:w-32`
+  // (96–128px) para el avatar/iniciales — `lg` (`size-16`, 64px fijo, sin
+  // variante responsive) se quedaba corto ahí. Solo utilidades `size-*`
+  // (nunca mezclar `h-*`/`w-*` sueltas con `size-*` en el `className` de un
+  // consumidor — dos utilidades de Tailwind que tocan la misma propiedad
+  // compiten por el orden interno del motor, no por el orden en el string
+  // de clases, así que un `className` externo NUNCA debe intentar pisar el
+  // tamaño de este componente; si un tamaño no alcanza, se agrega una
+  // variante nueva acá, como esta). `lg` se queda intacto.
+  xl: 'size-24 text-2xl sm:size-32 sm:text-4xl',
 };
 
 export function Avatar({

@@ -220,7 +220,7 @@ function EncabezadoPerfil({
           <Avatar
             fotoUrl={fotoUrl}
             iniciales={iniciales}
-            tamano="lg"
+            tamano="xl"
             className="border-4 border-white shadow-sm"
           />
           <span className="absolute inset-0 flex items-center justify-center rounded-full bg-slate/0 text-xs font-medium text-transparent transition-colors group-hover:bg-slate/40 group-hover:text-white">
