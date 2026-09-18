@@ -145,6 +145,49 @@ describe('FotoPerfil — POST/DELETE /perfil/foto y /personas/:id/foto (e2e)', (
     expect(registro?.usuarioId).toBe(alumnoMeridaId);
   });
 
+  it('POST /perfil/foto con una extensión distinta reemplaza la foto y borra el archivo viejo en Storage', async () => {
+    const token = await firmarToken(
+      { role: 'authenticated', sede_id: sedeMeridaId, rol: RolUsuario.ADMINISTRATIVO },
+      adminMeridaId,
+    );
+
+    // Setup: sube una foto JPG primero, para tener un `fotoStoragePath` viejo
+    // conocido — independiente de lo que hayan dejado otros tests (usa
+    // `adminMeridaId`, que ningún otro caso toca).
+    await request(app.getHttpServer())
+      .post('/perfil/foto')
+      .set('Authorization', `Bearer ${token}`)
+      .attach('archivo', Buffer.from('contenido jpg viejo'), {
+        filename: 'foto.jpg',
+        contentType: 'image/jpeg',
+      });
+    upload.mockClear();
+    remove.mockClear();
+
+    const res = await request(app.getHttpServer())
+      .post('/perfil/foto')
+      .set('Authorization', `Bearer ${token}`)
+      .attach('archivo', Buffer.from('contenido png nuevo'), {
+        filename: 'foto.png',
+        contentType: 'image/png',
+      });
+
+    expect(res.status).toBe(200);
+    // El archivo NUEVO se sube primero — corrige el hallazgo de review
+    // (antes se borraba el viejo antes de confirmar que el nuevo subiera).
+    expect(upload).toHaveBeenCalledWith(
+      `${adminMeridaId}/foto.png`,
+      expect.any(Buffer),
+      { contentType: 'image/png', upsert: true },
+    );
+    // El archivo VIEJO se borra como limpieza best-effort, con la ruta vieja
+    // exacta — la aserción que directamente cubre el hallazgo de review.
+    expect(remove).toHaveBeenCalledWith([`${adminMeridaId}/foto.jpg`]);
+
+    const usuario = await prisma.usuario.findUniqueOrThrow({ where: { id: adminMeridaId } });
+    expect(usuario.fotoStoragePath).toBe(`${adminMeridaId}/foto.png`);
+  });
+
   it('POST /perfil/foto con un tipo de archivo inválido responde 400 VALIDATION_ERROR', async () => {
     const token = await firmarToken(
       { role: 'authenticated', sede_id: sedeMeridaId, rol: RolUsuario.ALUMNO },

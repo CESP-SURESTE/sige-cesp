@@ -83,9 +83,17 @@ export class FotoPerfilService {
    * `usuarioId` debe pertenecer a `sedeId` — `404 NOT_FOUND` si no (mismo
    * criterio que `resetearPassword`). Valida tipo de archivo (whitelist de
    * MIME, nunca se confía en la extensión del nombre que manda el cliente).
-   * Si la persona ya tenía una foto con OTRA extensión, borra el archivo
-   * viejo antes de subir el nuevo (el `upsert: true` de Storage solo
-   * sobreescribe si la ruta es idéntica).
+   *
+   * Orden de operaciones (importante — corrige un hallazgo de review):
+   * el archivo NUEVO se sube primero (a una ruta distinta si la extensión
+   * cambió, el `upsert: true` de Storage solo sobreescribe si la ruta es
+   * idéntica — nunca toca el archivo viejo). Si la subida falla, se corta
+   * ahí: ni el archivo viejo ni la DB se tocaron. Solo DESPUÉS de que la
+   * transacción de DB (`fotoStoragePath` + auditoría) ya confirmó, se borra
+   * el archivo viejo (si existía y era una ruta distinta) como limpieza
+   * best-effort — evita que un fallo de la subida nueva deje
+   * `fotoStoragePath` apuntando a un archivo ya borrado (URL firmada rota,
+   * sin error visible para la persona).
    */
   async subir(
     usuarioId: string,
@@ -121,12 +129,10 @@ export class FotoPerfilService {
     const storagePath = `${usuarioId}/foto.${extension}`;
     const client = await this.getClient();
 
-    if (usuario.fotoStoragePath && usuario.fotoStoragePath !== storagePath) {
-      await client.storage
-        .from(BUCKET_FOTOS_PERFIL)
-        .remove([usuario.fotoStoragePath]);
-    }
-
+    // Subir el archivo NUEVO primero — es una ruta distinta a la vieja
+    // siempre que la extensión cambió, así que nunca toca el archivo
+    // anterior. Si esto falla, se corta acá: ni el archivo viejo ni la DB
+    // se tocaron, la persona conserva su foto anterior intacta.
     const { error } = await client.storage
       .from(BUCKET_FOTOS_PERFIL)
       .upload(storagePath, file.buffer, {
@@ -157,6 +163,24 @@ export class FotoPerfilService {
         },
       });
     });
+
+    // Limpieza del archivo viejo — SOLO después de que el archivo nuevo ya
+    // subió Y la DB ya quedó consistente (fotoStoragePath apuntando al
+    // nuevo path). Best-effort, mismo criterio que `eliminar()`: si falla,
+    // se loguea completo (regla 12) pero no se lanza — para este punto la
+    // DB ya está correcta, un archivo viejo huérfano en Storage no es un
+    // problema visible para nadie.
+    if (usuario.fotoStoragePath && usuario.fotoStoragePath !== storagePath) {
+      const { error: errorLimpieza } = await client.storage
+        .from(BUCKET_FOTOS_PERFIL)
+        .remove([usuario.fotoStoragePath]);
+      if (errorLimpieza) {
+        console.error(
+          '[FotoPerfilService.subir] error borrando la foto vieja de Storage (se deja huérfana, la DB ya quedó consistente):',
+          errorLimpieza,
+        );
+      }
+    }
 
     return { ok: true };
   }
