@@ -2026,7 +2026,7 @@ export class PersonasService {
         options: { redirectTo: `${frontendUrl}/restablecer-password` },
       });
 
-      if (error || !data?.properties?.action_link) {
+      if (error || !data?.properties?.hashed_token) {
         console.error(
           '[PersonasService.resetearPassword] Error generando el link de recuperación en Supabase Auth:',
           error,
@@ -2037,12 +2037,30 @@ export class PersonasService {
         });
       }
 
+      // Construimos nuestro propio link en vez de reenviar `action_link`
+      // (el que hostea Supabase en `/auth/v1/verify`): ese endpoint verifica
+      // el token del lado de Supabase y redirige con la sesión ya armada en
+      // el FRAGMENTO de la URL (`#access_token=...&type=recovery`, flujo
+      // "implicit") — pero `createBrowserClient` de `@supabase/ssr` fuerza
+      // `flowType: 'pkce'` sin forma de overridearlo (`createBrowserClient.js`
+      // pisa cualquier `flowType` que se le pase), y el cliente rechaza
+      // internamente cualquier callback de tipo "implicit" en silencio (solo
+      // loguea con `_debug`, que está apagado por default) — la página nunca
+      // recibe el evento `PASSWORD_RECOVERY` y cae al timeout de "enlace
+      // inválido". Enviando el `hashed_token` como query param propio, el
+      // frontend puede llamar `supabase.auth.verifyOtp({ token_hash, type:
+      // 'recovery' })` directo — ese método no depende de `flowType` ni de
+      // parsear el fragmento, funciona igual con el cliente en modo PKCE.
+      const linkReseteo = `${frontendUrl}/restablecer-password?token_hash=${encodeURIComponent(
+        data.properties.hashed_token,
+      )}&type=recovery`;
+
       // El correo NO es best-effort acá (ver comentario del método) — si
       // lanza, cae al catch de abajo y se mapea a 500 SERVER_ERROR.
       await this.mailService.enviarCorreoReseteoPassword({
         nombreCompleto,
         correoDestino: correoPersonal,
-        linkReseteo: data.properties.action_link,
+        linkReseteo,
       });
 
       try {

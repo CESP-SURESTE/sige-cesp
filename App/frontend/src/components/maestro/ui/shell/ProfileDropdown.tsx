@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { KeyRound, LogOut, User } from 'lucide-react';
+import { LogOut, User } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { IconChevronAbajo } from './icons';
 
@@ -123,9 +123,6 @@ export function ProfileDropdown({ email }: { email: string | null }) {
               <div className="py-1">
                 <ItemMenu href="/maestro" Icon={User} onClick={() => setAbierto(false)}>
                   Mi perfil
-                </ItemMenu>
-                <ItemMenu href="/cambiar-password" Icon={KeyRound} onClick={() => setAbierto(false)}>
-                  Cambiar contraseña
                 </ItemMenu>
               </div>
               <div className="border-t border-mist py-1">

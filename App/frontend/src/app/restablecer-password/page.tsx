@@ -7,34 +7,40 @@ import { createClient } from '@/lib/supabase/client';
 
 /**
  * Página pública — el link de correo generado por
- * `PersonasService.resetearPassword` (`client.auth.admin.generateLink`,
- * `type: 'recovery'`) redirige aquí. Supabase establece la sesión de
- * recuperación automáticamente en la URL (el cliente de
- * `lib/supabase/client.ts` usa `createBrowserClient`, que detecta la sesión
- * en la URL por defecto) — esta página solo espera a que esa sesión quede
- * lista, pide la contraseña nueva, y llama `supabase.auth.updateUser()`
- * DIRECTO desde el navegador (sin backend de por medio para el cambio real).
+ * `PersonasService.resetearPassword` redirige aquí con `?token_hash=...&
+ * type=recovery` (query params propios nuestros, no el `action_link` que
+ * hostea Supabase en `/auth/v1/verify`).
  *
  * Agregada a `RUTAS_PUBLICAS` en `src/proxy.ts` — se renderiza sin importar
  * el estado de autenticación (la sesión de recuperación SÍ cuenta como
  * "autenticada" para los claims del JWT que lee el middleware).
  *
- * IMPORTANTE (hallazgo Important 1 de la revisión final de rama, 2026-09-16):
- * NO basta con `getSession()` para decidir si mostrar el form — cualquier
- * usuario YA logueado (sesión normal, no de recovery) tiene una sesión
- * válida y pasaría ese check igual, pudiendo cambiar su propia contraseña
- * sin dar la actual (exactamente lo que `PATCH /auth/cambiar-password` sí
- * exige). La única señal confiable de que el navegador acaba de establecer
- * una sesión de RECOVERY (no una sesión normal ya existente) es el evento
- * `PASSWORD_RECOVERY` de `onAuthStateChange`, que Supabase emite una sola
- * vez al procesar el link — de ahí el timeout corto: si ese evento nunca
- * llega (porque no hay sesión, porque es una sesión normal, o porque el link
- * ya se usó/expiró), el estado cae a `invalida` en vez de quedarse esperando
- * para siempre.
+ * IMPORTANTE — por qué NO se usa `action_link` + detección automática por
+ * `onAuthStateChange` (como en un primer intento de esta página, revertido):
+ * `action_link` redirige con la sesión ya armada en el FRAGMENTO de la URL
+ * (`#access_token=...&type=recovery`, flujo "implicit"), pero
+ * `createClient()` (`lib/supabase/client.ts`, `createBrowserClient` de
+ * `@supabase/ssr`) fuerza `flowType: 'pkce'` sin forma de overridearlo —
+ * `createBrowserClient.js` pisa cualquier `flowType` recibido en options. El
+ * cliente en modo PKCE rechaza internamente cualquier callback "implicit" en
+ * silencio (solo loguea vía `_debug`, apagado por default): el evento
+ * `PASSWORD_RECOVERY` nunca llega, sin importar cuánto se espere.
+ *
+ * `supabase.auth.verifyOtp({ token_hash, type: 'recovery' })` no depende de
+ * `flowType` ni de parsear el fragmento — funciona igual con el cliente en
+ * PKCE, y devuelve éxito/error directo (sin necesidad de un timeout
+ * arbitrario ni de escuchar un evento que podría no llegar).
+ *
+ * Se sigue validando (hallazgo Important 1 de la revisión final de rama,
+ * 2026-09-16) que la sesión activa sea REALMENTE de recuperación: NO basta
+ * con `getSession()` — un usuario ya logueado con una sesión normal pasaría
+ * ese check igual, pudiendo cambiar su contraseña sin dar la actual (lo que
+ * `PATCH /auth/cambiar-password` sí exige). `verifyOtp` con `type:
+ * 'recovery'` cumple el mismo rol que antes cumplía esperar el evento
+ * `PASSWORD_RECOVERY`: solo resuelve con éxito si el token es válido y es de
+ * tipo recovery.
  */
 type Estado = 'verificando' | 'lista' | 'invalida' | 'enviando' | 'completa';
-
-const TIMEOUT_VERIFICACION_MS = 8000;
 
 export default function RestablecerPasswordPage() {
   const [estado, setEstado] = useState<Estado>('verificando');
@@ -43,30 +49,33 @@ export default function RestablecerPasswordPage() {
 
   useEffect(() => {
     const supabase = createClient();
-    let resuelto = false;
+    const params = new URLSearchParams(window.location.search);
+    const tokenHash = params.get('token_hash');
+    const type = params.get('type');
 
-    const timeout = setTimeout(() => {
-      if (resuelto) return;
-      resuelto = true;
+    if (!tokenHash || type !== 'recovery') {
       console.error(
-        '[RestablecerPasswordPage] Nunca llegó el evento PASSWORD_RECOVERY antes del timeout — enlace inválido/expirado o sesión no es de recuperación.',
+        '[RestablecerPasswordPage] Falta token_hash o type=recovery en la URL — enlace inválido.',
       );
+      // Mismo criterio ya aceptado en este proyecto para un `setState`
+      // síncrono legítimo al montar (`RelojFechaHora` en `app/login/`) — acá
+      // es la validación inicial de la URL antes de intentar `verifyOtp`.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setEstado('invalida');
-    }, TIMEOUT_VERIFICACION_MS);
+      return;
+    }
 
-    const { data: subscription } = supabase.auth.onAuthStateChange((event) => {
-      if (resuelto) return;
-      if (event === 'PASSWORD_RECOVERY') {
-        resuelto = true;
-        clearTimeout(timeout);
-        setEstado('lista');
+    supabase.auth.verifyOtp({ token_hash: tokenHash, type: 'recovery' }).then(({ error }) => {
+      if (error) {
+        console.error(
+          '[RestablecerPasswordPage] verifyOtp falló — enlace inválido/expirado:',
+          error,
+        );
+        setEstado('invalida');
+        return;
       }
+      setEstado('lista');
     });
-
-    return () => {
-      clearTimeout(timeout);
-      subscription.subscription.unsubscribe();
-    };
   }, []);
 
   async function handleSubmit(e: FormEvent) {

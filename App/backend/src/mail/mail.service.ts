@@ -152,7 +152,7 @@ export class MailService {
       '',
       `Da clic aquí para elegir una contraseña nueva: ${linkReseteo}`,
       '',
-      'Si tú no solicitaste esto, puedes ignorar este correo — tu contraseña actual sigue siendo válida.',
+      'Si tú no solicitaste esto, ignora este correo — tu contraseña actual sigue siendo válida — y repórtalo a tu administrativo a cargo lo antes posible, ya que podría tratarse de un fraude o un mal uso de tu cuenta.',
       '',
       'SIGE CESP',
     ].join('\n');
@@ -165,7 +165,7 @@ export class MailService {
         <p>Hola <strong>${nombreCompleto}</strong>,</p>
         <p>Un administrativo de SIGE (Sistema de Gestión Escolar de CESP) solicitó restablecer tu contraseña.</p>
         <p><a href="${linkReseteo}">Da clic aquí para elegir una contraseña nueva</a></p>
-        <p>Si tú no solicitaste esto, puedes ignorar este correo — tu contraseña actual sigue siendo válida.</p>
+        <p>Si tú no solicitaste esto, ignora este correo — tu contraseña actual sigue siendo válida — y repórtalo a tu administrativo a cargo lo antes posible, ya que podría tratarse de un fraude o un mal uso de tu cuenta.</p>
         <p>SIGE CESP</p>
       </div>
     `.trim();

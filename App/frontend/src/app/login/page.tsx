@@ -9,6 +9,7 @@ import { ApiError } from "@/lib/api/http";
 import { createClient } from "@/lib/supabase/client";
 import { AnimatePresence, motion } from "motion/react";
 import Image from "next/image";
+import { Eye, EyeOff } from "lucide-react";
 /**
  * UI de login — Fase 2, Día 10 (reemplaza el stub de Día 9). Rediseño visual
  * 2026-09-05 (pedido explícito del usuario, "login más vivo" —
@@ -48,6 +49,7 @@ export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [mostrarPassword, setMostrarPassword] = useState(false);
   // `mutation.isPending` pasa a `false` en cuanto `setSession` resuelve, pero
   // `router.push`/`router.refresh()` no son awaited (no devuelven una promesa
   // que resuelva cuando termina la navegación) — sin este estado propio, el
@@ -159,16 +161,34 @@ export default function LoginPage() {
               >
                 Contraseña
               </label>
-              <input
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={cargando}
-                className="mt-1 w-full rounded-lg border border-mist px-3 py-2 text-sm text-slate focus:border-navy focus:ring-2 focus:ring-navy/20 focus:outline-none disabled:opacity-50"
-              />
+              <div className="relative mt-1">
+                <input
+                  id="password"
+                  type={mostrarPassword ? "text" : "password"}
+                  autoComplete="current-password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={cargando}
+                  className="w-full rounded-lg border border-mist px-3 py-2 pr-10 text-sm text-slate focus:border-navy focus:ring-2 focus:ring-navy/20 focus:outline-none disabled:opacity-50"
+                />
+                <button
+                  type="button"
+                  onClick={() => setMostrarPassword((v) => !v)}
+                  disabled={cargando}
+                  tabIndex={-1}
+                  aria-label={
+                    mostrarPassword ? "Ocultar contraseña" : "Mostrar contraseña"
+                  }
+                  className="absolute top-1/2 right-2 -translate-y-1/2 text-slate/50 transition-colors hover:text-slate disabled:opacity-50"
+                >
+                  {mostrarPassword ? (
+                    <EyeOff className="size-4" />
+                  ) : (
+                    <Eye className="size-4" />
+                  )}
+                </button>
+              </div>
             </div>
 
             <button
