@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { ApiError } from '@/lib/api/http';
 import {
@@ -16,13 +16,15 @@ import {
   type Perfil,
   type PerfilAlumno,
 } from '@/lib/api/perfil';
-import { IconCandado, IconPerfil } from '@/components/alumno/ui/shell/icons';
+import { IconCandado } from '@/components/alumno/ui/shell/icons';
+import { Avatar } from '@/components/alumno/ui/Avatar';
 import {
   // `SkeletonLines` — solo la usaba `SeccionCompaneros` (comentado,
   // 2026-09-07). No borrar, reactivar junto con ese bloque.
   // SkeletonLines,
   SkeletonProfileCard,
 } from '@/components/alumno/ui/Skeleton';
+import { SubirFotoModal } from './SubirFotoModal';
 
 /**
  * Perfil de alumno — Fase 5, Día 16.
@@ -112,6 +114,8 @@ export default function AlumnoPerfilPage() {
 
 function PerfilContenido({ perfil }: { perfil: Perfil }) {
   const [seccion, setSeccion] = useState<SeccionId>('datos');
+  const queryClient = useQueryClient();
+  const [modalFotoAbierto, setModalFotoAbierto] = useState(false);
 
   // `alumno` viene lleno para `rol === 'ALUMNO'` (el único caso que aplica en
   // este árbol de rutas — ver nota de `SedeGuard`/`proxy.ts` arriba). Se
@@ -129,16 +133,34 @@ function PerfilContenido({ perfil }: { perfil: Perfil }) {
   }
 
   const alumno = perfil.alumno;
+  const iniciales = (
+    alumno.nombres.charAt(0) + alumno.apellidoPaterno.charAt(0)
+  ).toUpperCase();
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
-      <EncabezadoPerfil alumno={alumno} />
+      <EncabezadoPerfil
+        alumno={alumno}
+        fotoUrl={perfil.fotoUrl}
+        iniciales={iniciales}
+        onCambiarFoto={() => setModalFotoAbierto(true)}
+      />
       <div className="flex flex-col gap-4 rounded-lg border border-mist bg-white p-4 shadow-sm sm:flex-row sm:gap-6 sm:p-6">
         <SidebarSecciones activa={seccion} onCambiar={setSeccion} />
         <div className="min-w-0 flex-1">
           <PanelSeccion seccion={seccion} alumno={alumno} email={perfil.email} sede={perfil.sede} />
         </div>
       </div>
+
+      {modalFotoAbierto && (
+        <SubirFotoModal
+          fotoUrlActual={perfil.fotoUrl}
+          onClose={() => setModalFotoAbierto(false)}
+          onCambioConExito={() =>
+            queryClient.invalidateQueries({ queryKey: ['alumno', 'perfil'] })
+          }
+        />
+      )}
     </div>
   );
 }
@@ -171,14 +193,27 @@ function BannerArcos() {
 
 /**
  * Encabezado del perfil — banner + avatar + nombre + badges de estatus.
- * Reemplaza el `<h1>Mi perfil</h1>` suelto que había antes. El avatar es un
- * ícono placeholder (`IconPerfil`, no una foto real ni iniciales — no
- * existe feature de subida de foto todavía). `estatusAcademico` y
- * `esMenorDeEdad` ya se mostraban como campo/badge dentro de "Datos
- * personales"; acá se repiten como badges destacados del encabezado, el
- * dato es el mismo, solo se muestra también en un lugar más prominente.
+ * Reemplaza el `<h1>Mi perfil</h1>` suelto que había antes. El avatar
+ * (`Avatar`, feature "Foto de perfil" 2026-09-17) muestra la foto real si
+ * `perfil.fotoUrl` existe, o las iniciales como respaldo — reemplaza al
+ * ícono placeholder (`IconPerfil`) que se usaba antes de que existiera la
+ * subida de foto. Es el disparador del modal de subida propia
+ * (`SubirFotoModal`). `estatusAcademico` y `esMenorDeEdad` ya se mostraban
+ * como campo/badge dentro de "Datos personales"; acá se repiten como badges
+ * destacados del encabezado, el dato es el mismo, solo se muestra también en
+ * un lugar más prominente.
  */
-function EncabezadoPerfil({ alumno }: { alumno: PerfilAlumno }) {
+function EncabezadoPerfil({
+  alumno,
+  fotoUrl,
+  iniciales,
+  onCambiarFoto,
+}: {
+  alumno: PerfilAlumno;
+  fotoUrl: string | null;
+  iniciales: string;
+  onCambiarFoto: () => void;
+}) {
   const nombreCompleto = nombreCompletoDe(alumno);
 
   return (
@@ -187,9 +222,22 @@ function EncabezadoPerfil({ alumno }: { alumno: PerfilAlumno }) {
         <BannerArcos />
       </div>
       <div className="flex flex-col items-center px-6 pb-6">
-        <div className="relative -mt-12 flex h-24 w-24 items-center justify-center rounded-full border-4 border-white bg-mist text-navy shadow-sm sm:-mt-16 sm:h-32 sm:w-32">
-          <IconPerfil className="h-12 w-12 sm:h-16 sm:w-16" />
-        </div>
+        <button
+          type="button"
+          onClick={onCambiarFoto}
+          aria-label="Cambiar foto de perfil"
+          className="group relative -mt-12 sm:-mt-16"
+        >
+          <Avatar
+            fotoUrl={fotoUrl}
+            iniciales={iniciales}
+            tamano="lg"
+            className="border-4 border-white shadow-sm"
+          />
+          <span className="absolute inset-0 flex items-center justify-center rounded-full bg-slate/0 text-xs font-medium text-transparent transition-colors group-hover:bg-slate/40 group-hover:text-white">
+            Cambiar
+          </span>
+        </button>
         <h1 className="mt-4 text-center font-display text-2xl font-semibold text-navy">
           {nombreCompleto}
         </h1>
