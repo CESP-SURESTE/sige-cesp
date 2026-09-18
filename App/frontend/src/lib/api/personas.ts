@@ -278,6 +278,9 @@ export interface PersonaListItemAlumno {
   /** `Usuario.activo` (regla 3 de `CLAUDE.md` raíz — baja lógica, nunca se
    * oculta la fila, se muestra distinguida). */
   activo: boolean;
+  /** URL firmada de Supabase Storage, o `null` si no tiene foto subida
+   * (feature "Foto de perfil", 2026-09-17). */
+  fotoUrl: string | null;
 }
 
 export interface PersonaListItemMaestro {
@@ -304,6 +307,9 @@ export interface PersonaListItemMaestro {
    * `null` en otro caso o en altas previas al 2026-09-07. */
   contratoFechaFin: string | null;
   activo: boolean;
+  /** URL firmada de Supabase Storage, o `null` si no tiene foto subida
+   * (feature "Foto de perfil", 2026-09-17). */
+  fotoUrl: string | null;
 }
 
 /**
@@ -327,6 +333,9 @@ export interface PersonaListItemAdministrativo {
    * estatus. */
   tipoLicencia: TipoLicencia | null;
   activo: boolean;
+  /** URL firmada de Supabase Storage, o `null` si no tiene foto subida
+   * (feature "Foto de perfil", 2026-09-17). */
+  fotoUrl: string | null;
 }
 
 function construirQueryString(

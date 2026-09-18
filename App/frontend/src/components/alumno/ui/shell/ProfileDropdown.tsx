@@ -4,8 +4,10 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
+import { useQuery } from '@tanstack/react-query';
 import { LogOut, User } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { obtenerPerfil } from '@/lib/api/perfil';
 import { IconChevronAbajo } from './icons';
 
 /**
@@ -71,6 +73,11 @@ export function ProfileDropdown({ email }: { email: string | null }) {
 
   const inicial = email ? email.charAt(0).toUpperCase() : '?';
 
+  const { data: perfil } = useQuery({
+    queryKey: ['alumno', 'perfil'],
+    queryFn: obtenerPerfil,
+  });
+
   return (
     <div ref={contenedorRef} className="relative">
       <AnimatePresence>
@@ -89,9 +96,18 @@ export function ProfileDropdown({ email }: { email: string | null }) {
               layoutId="profile-avatar"
               transition={SPRING}
               aria-hidden="true"
-              className="flex size-8 shrink-0 items-center justify-center rounded-full bg-navy text-sm font-semibold text-bone"
+              className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-navy text-sm font-semibold text-bone"
             >
-              {inicial}
+              {perfil?.fotoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element -- URL firmada de Supabase Storage (dominio externo), mismo criterio que FondoEventos en app/login/page.tsx
+                <img
+                  src={perfil.fotoUrl}
+                  alt=""
+                  className="size-full object-cover"
+                />
+              ) : (
+                inicial
+              )}
             </motion.span>
             <IconChevronAbajo className="size-4 text-slate/60" />
           </motion.button>
@@ -108,9 +124,18 @@ export function ProfileDropdown({ email }: { email: string | null }) {
                 layoutId="profile-avatar"
                 transition={SPRING}
                 aria-hidden="true"
-                className="flex size-8 shrink-0 items-center justify-center rounded-full bg-navy text-sm font-semibold text-bone"
+                className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-navy text-sm font-semibold text-bone"
               >
-                {inicial}
+                {perfil?.fotoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- URL firmada de Supabase Storage (dominio externo), mismo criterio que FondoEventos en app/login/page.tsx
+                  <img
+                    src={perfil.fotoUrl}
+                    alt=""
+                    className="size-full object-cover"
+                  />
+                ) : (
+                  inicial
+                )}
               </motion.span>
               {email && (
                 <p className="truncate text-sm font-medium text-slate">{email}</p>
