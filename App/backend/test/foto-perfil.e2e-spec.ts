@@ -294,6 +294,48 @@ describe('FotoPerfil — POST/DELETE /perfil/foto y /personas/:id/foto (e2e)', (
     expect((res.body as ErrorBody).code).toBe('NOT_FOUND');
   });
 
+  it('DELETE /personas/:id/foto (admin) quita la foto de otra persona de su sede', async () => {
+    const token = await firmarToken(
+      { role: 'authenticated', sede_id: sedeMeridaId, rol: RolUsuario.ADMINISTRATIVO },
+      adminMeridaId,
+    );
+
+    await request(app.getHttpServer())
+      .post(`/personas/${alumnoMeridaId}/foto`)
+      .set('Authorization', `Bearer ${token}`)
+      .attach('archivo', Buffer.from('x'), { filename: 'foto.jpg', contentType: 'image/jpeg' });
+
+    const del = await request(app.getHttpServer())
+      .delete(`/personas/${alumnoMeridaId}/foto`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(del.status).toBe(200);
+    expect((del.body as OkBody).data).toEqual({ ok: true });
+
+    const usuario = await prisma.usuario.findUniqueOrThrow({ where: { id: alumnoMeridaId } });
+    expect(usuario.fotoStoragePath).toBeNull();
+  });
+
+  it('POST/DELETE /personas/:id/foto con un rol distinto de ADMINISTRATIVO responde 403 ROL_NO_AUTORIZADO', async () => {
+    const token = await firmarToken(
+      { role: 'authenticated', sede_id: sedeMeridaId, rol: RolUsuario.ALUMNO },
+      alumnoMeridaId,
+    );
+
+    const post = await request(app.getHttpServer())
+      .post(`/personas/${adminMeridaId}/foto`)
+      .set('Authorization', `Bearer ${token}`)
+      .attach('archivo', Buffer.from('x'), { filename: 'foto.jpg', contentType: 'image/jpeg' });
+    expect(post.status).toBe(403);
+    expect((post.body as ErrorBody).code).toBe('ROL_NO_AUTORIZADO');
+
+    const del = await request(app.getHttpServer())
+      .delete(`/personas/${adminMeridaId}/foto`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(del.status).toBe(403);
+    expect((del.body as ErrorBody).code).toBe('ROL_NO_AUTORIZADO');
+  });
+
   it('GET /personas?rol=ADMINISTRATIVO trae fotoUrl en el listado tras subir una foto', async () => {
     const tokenSubida = await firmarToken(
       { role: 'authenticated', sede_id: sedeMeridaId, rol: RolUsuario.ADMINISTRATIVO },
