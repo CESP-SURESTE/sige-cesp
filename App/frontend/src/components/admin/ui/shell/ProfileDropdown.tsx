@@ -45,6 +45,10 @@ const contentAnimations = {
 export function ProfileDropdown({ email }: { email: string | null }) {
   const [abierto, setAbierto] = useState(false);
   const [cerrandoSesion, setCerrandoSesion] = useState(false);
+  // `onError` (ronda de fix del review final de rama, 2026-09-20): la URL
+  // firmada expira a los 900s — sin esto, una pestaña dejada abierta más de
+  // 15 min mostraba el ícono de imagen rota en vez de caer a la inicial.
+  const [errorFoto, setErrorFoto] = useState(false);
   const contenedorRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
@@ -101,12 +105,13 @@ export function ProfileDropdown({ email }: { email: string | null }) {
               aria-hidden="true"
               className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-navy text-sm font-semibold text-bone"
             >
-              {perfil?.fotoUrl ? (
+              {perfil?.fotoUrl && !errorFoto ? (
                 // eslint-disable-next-line @next/next/no-img-element -- URL firmada de Supabase Storage (dominio externo), mismo criterio que FondoEventos en app/login/page.tsx
                 <img
                   src={perfil.fotoUrl}
                   alt=""
                   className="size-full object-cover"
+                  onError={() => setErrorFoto(true)}
                 />
               ) : (
                 inicial
@@ -129,12 +134,13 @@ export function ProfileDropdown({ email }: { email: string | null }) {
                 aria-hidden="true"
                 className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-navy text-sm font-semibold text-bone"
               >
-                {perfil?.fotoUrl ? (
+                {perfil?.fotoUrl && !errorFoto ? (
                   // eslint-disable-next-line @next/next/no-img-element -- URL firmada de Supabase Storage (dominio externo), mismo criterio que FondoEventos en app/login/page.tsx
                   <img
                     src={perfil.fotoUrl}
                     alt=""
                     className="size-full object-cover"
+                    onError={() => setErrorFoto(true)}
                   />
                 ) : (
                   inicial

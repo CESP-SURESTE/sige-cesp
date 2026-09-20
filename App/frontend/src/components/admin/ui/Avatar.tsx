@@ -1,12 +1,23 @@
+'use client';
+
+import { useState } from 'react';
+
 /**
- * `Avatar` — feature "Foto de perfil" (2026-09-17). Solo existe en el árbol
- * `admin` (regla 11 de `CLAUDE.md` raíz) porque es el único con más de una
- * superficie que lo necesita (los 3 listados + el expediente de emergencia)
- * — los `ProfileDropdown` de los 3 árboles NO lo usan: ahí la foto vive
- * dentro de un `motion.span` con `layoutId` compartido para la animación de
- * Framer Motion (ver `ProfileDropdown.tsx`), envolverlo en este componente
- * complicaría esa coreografía sin ganar nada (un solo caso más no justifica
- * generalizar — mismo criterio que `SubirMallaModal.tsx`).
+ * `Avatar` — feature "Foto de perfil" (2026-09-17). Copia local al árbol
+ * `admin` (regla 11 de `CLAUDE.md` raíz — sin componentes compartidos entre
+ * `app/admin/`, `app/alumno/`, `app/maestro/`); es la única de las 3 copias
+ * con más de una superficie que lo necesita (los 3 listados + el expediente
+ * de emergencia) — mismo componente que `components/alumno/ui/Avatar.tsx` y
+ * `components/maestro/ui/Avatar.tsx`. Los `ProfileDropdown` de los 3 árboles
+ * NO lo usan: ahí la foto vive dentro de un `motion.span` con `layoutId`
+ * compartido para la animación de Framer Motion (ver `ProfileDropdown.tsx`),
+ * envolverlo en este componente complicaría esa coreografía sin ganar nada
+ * (un solo caso más no justifica generalizar — mismo criterio que
+ * `SubirMallaModal.tsx`).
+ *
+ * `onError` (ronda de fix del review final de rama, 2026-09-20): la URL
+ * firmada expira a los 900s — sin esto, una pestaña dejada abierta más de
+ * 15 min mostraba el ícono de imagen rota en vez de caer a las iniciales.
  */
 export interface AvatarProps {
   fotoUrl: string | null;
@@ -41,12 +52,18 @@ export function Avatar({
   tamano = 'md',
   className = '',
 }: AvatarProps) {
+  const [error, setError] = useState(false);
   const base = `flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-navy font-semibold text-bone ${TAMANOS[tamano]} ${className}`;
 
-  if (fotoUrl) {
+  if (fotoUrl && !error) {
     return (
       // eslint-disable-next-line @next/next/no-img-element -- URL firmada de Supabase Storage (dominio externo), mismo criterio que FondoEventos en app/login/page.tsx
-      <img src={fotoUrl} alt="" className={`${base} object-cover`} />
+      <img
+        src={fotoUrl}
+        alt=""
+        className={`${base} object-cover`}
+        onError={() => setError(true)}
+      />
     );
   }
   return (
