@@ -132,11 +132,20 @@ export function EditarAlumnoModal({
       onClick={onClose}
     >
       <div
-        className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-lg bg-white p-6 shadow-lg"
+        className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-lg bg-white p-6 shadow-lg sm:p-8"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
-          <h2 className="font-display text-lg font-semibold text-slate">Editar alumno</h2>
+          <h2 className="font-display text-lg font-semibold text-slate">
+            {personaQuery.data?.perfilAlumno
+              ? `Editar a ${[
+                  personaQuery.data.perfilAlumno.nombres,
+                  personaQuery.data.perfilAlumno.apellidoPaterno,
+                ]
+                  .filter(Boolean)
+                  .join(' ')}`
+              : 'Editar alumno'}
+          </h2>
           <button
             type="button"
             onClick={onClose}
@@ -270,82 +279,57 @@ function FormularioEdicion({
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="mt-5 space-y-5" noValidate>
-      <div className="grid gap-5 xl:grid-cols-3">
-        <div className="flex flex-col gap-5">
+    <form onSubmit={handleSubmit(onSubmit)} className="mt-6 space-y-6" noValidate>
+      <DatosPersonalesFieldset
+        register={register}
+        errors={errors}
+        disabled={mutation.isPending}
+        prefix="perfilAlumno"
+      />
+
+      <div className="grid gap-6 md:grid-cols-2">
+        <fieldset className="space-y-4 rounded-lg border border-mist bg-bone/50 p-4">
+          <legend className="text-sm font-semibold text-slate">Datos académicos</legend>
           <div>
-            <label htmlFor="codigoExterno" className={LABEL_CLASS}>
-              Código externo (opcional)
+            <label htmlFor="fechaNacimiento" className={LABEL_CLASS}>
+              Fecha de nacimiento
             </label>
             <input
-              id="codigoExterno"
-              type="text"
+              id="fechaNacimiento"
+              type="date"
               disabled={mutation.isPending}
               className={INPUT_CLASS}
-              {...register('codigoExterno')}
+              {...register('perfilAlumno.fechaNacimiento')}
             />
-            <FieldError message={errors.codigoExterno?.message} />
+            <FieldError message={errors.perfilAlumno?.fechaNacimiento?.message} />
           </div>
-
-          <InfoMedicaFieldset
-            control={control}
-            register={register}
-            errors={errors}
-            disabled={mutation.isPending}
-            prefix="perfilAlumno"
-            tieneCondicionMedica={Boolean(tieneCondicionMedica)}
-          />
-        </div>
-
-        <DatosPersonalesFieldset
-          register={register}
-          errors={errors}
-          disabled={mutation.isPending}
-          prefix="perfilAlumno"
-        />
-
-        <fieldset className="space-y-3 rounded-lg border border-mist bg-bone/50 p-4">
-          <legend className="text-sm font-semibold text-slate">Datos académicos</legend>
+          <div>
+            <label htmlFor="carreraId" className={LABEL_CLASS}>
+              Carrera
+            </label>
+            <Controller
+              control={control}
+              name="perfilAlumno.carreraId"
+              render={({ field }) => (
+                <Select
+                  id="carreraId"
+                  value={field.value}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                  disabled={mutation.isPending || carrerasQuery.isLoading}
+                  placeholder={
+                    carrerasQuery.isLoading ? 'Cargando carreras…' : 'Selecciona una carrera'
+                  }
+                  options={(carrerasQuery.data ?? []).map((c) => ({
+                    value: c.id,
+                    label: `${c.clave} — ${c.nombre}`,
+                  }))}
+                />
+              )}
+            />
+            <FieldError message={errors.perfilAlumno?.carreraId?.message} />
+          </div>
           <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label htmlFor="fechaNacimiento" className={LABEL_CLASS}>
-                Fecha de nacimiento
-              </label>
-              <input
-                id="fechaNacimiento"
-                type="date"
-                disabled={mutation.isPending}
-                className={INPUT_CLASS}
-                {...register('perfilAlumno.fechaNacimiento')}
-              />
-              <FieldError message={errors.perfilAlumno?.fechaNacimiento?.message} />
-            </div>
-            <div>
-              <label htmlFor="carreraId" className={LABEL_CLASS}>
-                Carrera
-              </label>
-              <Controller
-                control={control}
-                name="perfilAlumno.carreraId"
-                render={({ field }) => (
-                  <Select
-                    id="carreraId"
-                    value={field.value}
-                    onChange={field.onChange}
-                    onBlur={field.onBlur}
-                    disabled={mutation.isPending || carrerasQuery.isLoading}
-                    placeholder={
-                      carrerasQuery.isLoading ? 'Cargando carreras…' : 'Selecciona una carrera'
-                    }
-                    options={(carrerasQuery.data ?? []).map((c) => ({
-                      value: c.id,
-                      label: `${c.clave} — ${c.nombre}`,
-                    }))}
-                  />
-                )}
-              />
-              <FieldError message={errors.perfilAlumno?.carreraId?.message} />
-            </div>
             <div>
               <label htmlFor="periodoIngreso" className={LABEL_CLASS}>
                 Periodo de ingreso
@@ -375,7 +359,29 @@ function FormularioEdicion({
               <FieldError message={errors.perfilAlumno?.cuatrimestreActual?.message} />
             </div>
           </div>
+          <div>
+            <label htmlFor="codigoExterno" className={LABEL_CLASS}>
+              Código externo (opcional)
+            </label>
+            <input
+              id="codigoExterno"
+              type="text"
+              disabled={mutation.isPending}
+              className={INPUT_CLASS}
+              {...register('codigoExterno')}
+            />
+            <FieldError message={errors.codigoExterno?.message} />
+          </div>
         </fieldset>
+
+        <InfoMedicaFieldset
+          control={control}
+          register={register}
+          errors={errors}
+          disabled={mutation.isPending}
+          prefix="perfilAlumno"
+          tieneCondicionMedica={Boolean(tieneCondicionMedica)}
+        />
       </div>
 
       <ContactosFieldset
@@ -387,7 +393,7 @@ function FormularioEdicion({
         mostrarTipo
       />
 
-      <div className="flex justify-end gap-3">
+      <div className="flex justify-end gap-3 border-t border-mist pt-5">
         <button
           type="button"
           onClick={onClose}

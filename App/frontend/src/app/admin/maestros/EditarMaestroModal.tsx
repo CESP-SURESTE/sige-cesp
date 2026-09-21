@@ -174,11 +174,20 @@ export function EditarMaestroModal({
       onClick={onClose}
     >
       <div
-        className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-lg bg-white p-6 shadow-lg"
+        className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-lg bg-white p-6 shadow-lg sm:p-8"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
-          <h2 className="font-display text-lg font-semibold text-slate">Editar maestro</h2>
+          <h2 className="font-display text-lg font-semibold text-slate">
+            {personaQuery.data?.perfilMaestro
+              ? `Editar a ${[
+                  personaQuery.data.perfilMaestro.nombres,
+                  personaQuery.data.perfilMaestro.apellidoPaterno,
+                ]
+                  .filter(Boolean)
+                  .join(' ')}`
+              : 'Editar maestro'}
+          </h2>
           <button
             type="button"
             onClick={onClose}
@@ -317,9 +326,117 @@ function FormularioEdicion({
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="mt-5 space-y-5" noValidate>
-      <div className="grid gap-5 xl:grid-cols-3">
-        <div className="flex flex-col gap-5">
+    <form onSubmit={handleSubmit(onSubmit)} className="mt-6 space-y-6" noValidate>
+      <DatosPersonalesFieldset
+        register={register}
+        errors={errors}
+        disabled={mutation.isPending}
+        prefix="perfilMaestro"
+        curpOpcional={false}
+        telefonoOpcional={false}
+      />
+
+      <div className="grid gap-6 md:grid-cols-2">
+        <fieldset className="space-y-4 rounded-lg border border-mist bg-bone/50 p-4">
+          <legend className="text-sm font-semibold text-slate">Datos laborales</legend>
+          <div>
+            <label htmlFor="cedulaProfesional" className={LABEL_CLASS}>
+              Cédula profesional (opcional)
+            </label>
+            <input
+              id="cedulaProfesional"
+              type="text"
+              disabled={mutation.isPending}
+              className={INPUT_CLASS}
+              {...register('perfilMaestro.cedulaProfesional')}
+            />
+            <FieldError message={errors.perfilMaestro?.cedulaProfesional?.message} />
+          </div>
+          <div>
+            <label htmlFor="fechaContratacion" className={LABEL_CLASS}>
+              Fecha de contratación
+            </label>
+            <input
+              id="fechaContratacion"
+              type="date"
+              disabled={mutation.isPending}
+              className={INPUT_CLASS}
+              {...register('perfilMaestro.fechaContratacion')}
+            />
+            <FieldError message={errors.perfilMaestro?.fechaContratacion?.message} />
+          </div>
+          <div>
+            <label htmlFor="tipoContratacion" className={LABEL_CLASS}>
+              Tipo de contratación
+            </label>
+            <Controller
+              control={control}
+              name="perfilMaestro.tipoContratacion"
+              render={({ field }) => (
+                <Select
+                  id="tipoContratacion"
+                  value={(field.value as string | undefined) ?? ''}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                  disabled={mutation.isPending}
+                  placeholder="Selecciona el tipo de contratación"
+                  options={[
+                    { value: 'BASE', label: 'Base (planta)' },
+                    { value: 'TEMPORAL', label: 'Temporal' },
+                    { value: 'CONTRATO', label: 'Por contrato' },
+                  ]}
+                />
+              )}
+            />
+            <FieldError message={errors.perfilMaestro?.tipoContratacion?.message} />
+          </div>
+          {tipoContratacion === 'TEMPORAL' && (
+            <div>
+              <label htmlFor="diasTemporal" className={LABEL_CLASS}>
+                Días
+              </label>
+              <input
+                id="diasTemporal"
+                type="number"
+                min={1}
+                step={1}
+                disabled={mutation.isPending}
+                className={INPUT_CLASS}
+                {...register('perfilMaestro.diasTemporal')}
+              />
+              <FieldError message={errors.perfilMaestro?.diasTemporal?.message} />
+            </div>
+          )}
+          {tipoContratacion === 'CONTRATO' && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label htmlFor="contratoFechaInicio" className={LABEL_CLASS}>
+                  Fecha de inicio
+                </label>
+                <input
+                  id="contratoFechaInicio"
+                  type="date"
+                  disabled={mutation.isPending}
+                  className={INPUT_CLASS}
+                  {...register('perfilMaestro.contratoFechaInicio')}
+                />
+                <FieldError message={errors.perfilMaestro?.contratoFechaInicio?.message} />
+              </div>
+              <div>
+                <label htmlFor="contratoFechaFin" className={LABEL_CLASS}>
+                  Fecha de fin
+                </label>
+                <input
+                  id="contratoFechaFin"
+                  type="date"
+                  disabled={mutation.isPending}
+                  className={INPUT_CLASS}
+                  {...register('perfilMaestro.contratoFechaFin')}
+                />
+                <FieldError message={errors.perfilMaestro?.contratoFechaFin?.message} />
+              </div>
+            </div>
+          )}
           <div>
             <label htmlFor="codigoExterno" className={LABEL_CLASS}>
               Código externo (opcional)
@@ -333,133 +450,16 @@ function FormularioEdicion({
             />
             <FieldError message={errors.codigoExterno?.message} />
           </div>
+        </fieldset>
 
-          <InfoMedicaFieldset
-            control={control}
-            register={register}
-            errors={errors}
-            disabled={mutation.isPending}
-            prefix="perfilMaestro"
-            tieneCondicionMedica={Boolean(tieneCondicionMedica)}
-          />
-        </div>
-
-        <DatosPersonalesFieldset
+        <InfoMedicaFieldset
+          control={control}
           register={register}
           errors={errors}
           disabled={mutation.isPending}
           prefix="perfilMaestro"
-          curpOpcional={false}
-          telefonoOpcional={false}
+          tieneCondicionMedica={Boolean(tieneCondicionMedica)}
         />
-
-        <fieldset className="space-y-3 rounded-lg border border-mist bg-bone/50 p-4">
-          <legend className="text-sm font-semibold text-slate">Datos laborales</legend>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label htmlFor="cedulaProfesional" className={LABEL_CLASS}>
-                Cédula profesional (opcional)
-              </label>
-              <input
-                id="cedulaProfesional"
-                type="text"
-                disabled={mutation.isPending}
-                className={INPUT_CLASS}
-                {...register('perfilMaestro.cedulaProfesional')}
-              />
-              <FieldError message={errors.perfilMaestro?.cedulaProfesional?.message} />
-            </div>
-            <div>
-              <label htmlFor="fechaContratacion" className={LABEL_CLASS}>
-                Fecha de contratación
-              </label>
-              <input
-                id="fechaContratacion"
-                type="date"
-                disabled={mutation.isPending}
-                className={INPUT_CLASS}
-                {...register('perfilMaestro.fechaContratacion')}
-              />
-              <FieldError message={errors.perfilMaestro?.fechaContratacion?.message} />
-            </div>
-            <div>
-              <label htmlFor="tipoContratacion" className={LABEL_CLASS}>
-                Tipo de contratación
-              </label>
-              <Controller
-                control={control}
-                name="perfilMaestro.tipoContratacion"
-                render={({ field }) => (
-                  <Select
-                    id="tipoContratacion"
-                    value={(field.value as string | undefined) ?? ''}
-                    onChange={field.onChange}
-                    onBlur={field.onBlur}
-                    disabled={mutation.isPending}
-                    placeholder="Selecciona el tipo de contratación"
-                    options={[
-                      { value: 'BASE', label: 'Base (planta)' },
-                      { value: 'TEMPORAL', label: 'Temporal' },
-                      { value: 'CONTRATO', label: 'Por contrato' },
-                    ]}
-                  />
-                )}
-              />
-              <FieldError message={errors.perfilMaestro?.tipoContratacion?.message} />
-            </div>
-            {tipoContratacion === 'TEMPORAL' && (
-              <div>
-                <label htmlFor="diasTemporal" className={LABEL_CLASS}>
-                  Días
-                </label>
-                <input
-                  id="diasTemporal"
-                  type="number"
-                  min={1}
-                  step={1}
-                  disabled={mutation.isPending}
-                  className={INPUT_CLASS}
-                  {...register('perfilMaestro.diasTemporal')}
-                />
-                <FieldError message={errors.perfilMaestro?.diasTemporal?.message} />
-              </div>
-            )}
-            {tipoContratacion === 'CONTRATO' && (
-              <>
-                <div>
-                  <label htmlFor="contratoFechaInicio" className={LABEL_CLASS}>
-                    Fecha de inicio
-                  </label>
-                  <input
-                    id="contratoFechaInicio"
-                    type="date"
-                    disabled={mutation.isPending}
-                    className={INPUT_CLASS}
-                    {...register('perfilMaestro.contratoFechaInicio')}
-                  />
-                  <FieldError
-                    message={errors.perfilMaestro?.contratoFechaInicio?.message}
-                  />
-                </div>
-                <div>
-                  <label htmlFor="contratoFechaFin" className={LABEL_CLASS}>
-                    Fecha de fin
-                  </label>
-                  <input
-                    id="contratoFechaFin"
-                    type="date"
-                    disabled={mutation.isPending}
-                    className={INPUT_CLASS}
-                    {...register('perfilMaestro.contratoFechaFin')}
-                  />
-                  <FieldError
-                    message={errors.perfilMaestro?.contratoFechaFin?.message}
-                  />
-                </div>
-              </>
-            )}
-          </div>
-        </fieldset>
       </div>
 
       <ContactosFieldset
@@ -470,7 +470,7 @@ function FormularioEdicion({
         prefix="perfilMaestro"
       />
 
-      <div className="flex justify-end gap-3">
+      <div className="flex justify-end gap-3 border-t border-mist pt-5">
         <button
           type="button"
           onClick={onClose}

@@ -189,12 +189,19 @@ export function EditarAdministrativoModal({
       onClick={onClose}
     >
       <div
-        className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-lg bg-white p-6 shadow-lg"
+        className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-lg bg-white p-6 shadow-lg sm:p-8"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
           <h2 className="font-display text-lg font-semibold text-slate">
-            Editar administrativo
+            {personaQuery.data?.perfilAdministrativo
+              ? `Editar a ${[
+                  personaQuery.data.perfilAdministrativo.nombres,
+                  personaQuery.data.perfilAdministrativo.apellidoPaterno,
+                ]
+                  .filter(Boolean)
+                  .join(' ')}`
+              : 'Editar administrativo'}
           </h2>
           <button
             type="button"
@@ -325,9 +332,89 @@ function FormularioEdicion({
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="mt-5 space-y-5" noValidate>
-      <div className="grid gap-5 xl:grid-cols-3">
-        <div className="flex flex-col gap-5">
+    <form onSubmit={handleSubmit(onSubmit)} className="mt-6 space-y-6" noValidate>
+      <DatosPersonalesFieldset
+        register={register}
+        errors={errors}
+        disabled={mutation.isPending}
+        prefix="perfilAdministrativo"
+        curpOpcional={false}
+        telefonoOpcional={false}
+      />
+
+      <div className="grid gap-6 md:grid-cols-2">
+        <fieldset className="space-y-4 rounded-lg border border-mist bg-bone/50 p-4">
+          <legend className="text-sm font-semibold text-slate">Datos laborales</legend>
+          <div>
+            <label htmlFor="fechaContratacion" className={LABEL_CLASS}>
+              Fecha de contratación
+            </label>
+            <input
+              id="fechaContratacion"
+              type="date"
+              disabled={mutation.isPending}
+              className={INPUT_CLASS}
+              {...register('perfilAdministrativo.fechaContratacion')}
+            />
+            <FieldError message={errors.perfilAdministrativo?.fechaContratacion?.message} />
+          </div>
+          <div>
+            <label htmlFor="puesto" className={LABEL_CLASS}>
+              Puesto
+            </label>
+            <Controller
+              control={control}
+              name="perfilAdministrativo.puesto"
+              render={({ field }) => (
+                <Select
+                  id="puesto"
+                  value={field.value}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                  disabled={mutation.isPending}
+                  placeholder="Selecciona un puesto"
+                  options={PUESTO_OPCIONES.map((valor) => ({ value: valor, label: valor }))}
+                />
+              )}
+            />
+            <FieldError message={errors.perfilAdministrativo?.puesto?.message} />
+          </div>
+          <div>
+            <label htmlFor="nivelPermiso" className={LABEL_CLASS}>
+              Nivel de permiso
+            </label>
+            <Controller
+              control={control}
+              name="perfilAdministrativo.nivelPermiso"
+              render={({ field }) => (
+                <Select
+                  id="nivelPermiso"
+                  value={field.value ?? ''}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                  disabled={mutation.isPending || esUsuarioActor}
+                  placeholder="Selecciona un nivel de permiso"
+                  options={opcionesNivelPermisoDisponibles(nivelPermisoActor).map(
+                    (valor) => ({
+                      value: valor,
+                      label: valor,
+                    }),
+                  )}
+                />
+              )}
+            />
+            {esUsuarioActor ? (
+              <p className="mt-1 text-xs text-slate/60">
+                No puedes cambiar tu propio nivel de permiso desde aquí.
+              </p>
+            ) : (
+              <p className="mt-1 text-xs text-slate/60">
+                Solo puedes asignar un nivel igual o menor al tuyo — el backend rechaza la
+                solicitud con <code>NIVEL_PERMISO_INSUFICIENTE</code> si intentas asignar más.
+              </p>
+            )}
+            <FieldError message={errors.perfilAdministrativo?.nivelPermiso?.message} />
+          </div>
           <div>
             <label htmlFor="codigoExterno" className={LABEL_CLASS}>
               Código externo (opcional)
@@ -341,101 +428,16 @@ function FormularioEdicion({
             />
             <FieldError message={errors.codigoExterno?.message} />
           </div>
+        </fieldset>
 
-          <InfoMedicaFieldset
-            control={control}
-            register={register}
-            errors={errors}
-            disabled={mutation.isPending}
-            prefix="perfilAdministrativo"
-            tieneCondicionMedica={Boolean(tieneCondicionMedica)}
-          />
-        </div>
-
-        <DatosPersonalesFieldset
+        <InfoMedicaFieldset
+          control={control}
           register={register}
           errors={errors}
           disabled={mutation.isPending}
           prefix="perfilAdministrativo"
-          curpOpcional={false}
-          telefonoOpcional={false}
+          tieneCondicionMedica={Boolean(tieneCondicionMedica)}
         />
-
-        <fieldset className="space-y-3 rounded-lg border border-mist bg-bone/50 p-4">
-          <legend className="text-sm font-semibold text-slate">Datos laborales</legend>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label htmlFor="fechaContratacion" className={LABEL_CLASS}>
-                Fecha de contratación
-              </label>
-              <input
-                id="fechaContratacion"
-                type="date"
-                disabled={mutation.isPending}
-                className={INPUT_CLASS}
-                {...register('perfilAdministrativo.fechaContratacion')}
-              />
-              <FieldError message={errors.perfilAdministrativo?.fechaContratacion?.message} />
-            </div>
-            <div>
-              <label htmlFor="puesto" className={LABEL_CLASS}>
-                Puesto
-              </label>
-              <Controller
-                control={control}
-                name="perfilAdministrativo.puesto"
-                render={({ field }) => (
-                  <Select
-                    id="puesto"
-                    value={field.value}
-                    onChange={field.onChange}
-                    onBlur={field.onBlur}
-                    disabled={mutation.isPending}
-                    placeholder="Selecciona un puesto"
-                    options={PUESTO_OPCIONES.map((valor) => ({ value: valor, label: valor }))}
-                  />
-                )}
-              />
-              <FieldError message={errors.perfilAdministrativo?.puesto?.message} />
-            </div>
-            <div className="sm:col-span-2">
-              <label htmlFor="nivelPermiso" className={LABEL_CLASS}>
-                Nivel de permiso
-              </label>
-              <Controller
-                control={control}
-                name="perfilAdministrativo.nivelPermiso"
-                render={({ field }) => (
-                  <Select
-                    id="nivelPermiso"
-                    value={field.value ?? ''}
-                    onChange={field.onChange}
-                    onBlur={field.onBlur}
-                    disabled={mutation.isPending || esUsuarioActor}
-                    placeholder="Selecciona un nivel de permiso"
-                    options={opcionesNivelPermisoDisponibles(nivelPermisoActor).map(
-                      (valor) => ({
-                        value: valor,
-                        label: valor,
-                      }),
-                    )}
-                  />
-                )}
-              />
-              {esUsuarioActor ? (
-                <p className="mt-1 text-xs text-slate/60">
-                  No puedes cambiar tu propio nivel de permiso desde aquí.
-                </p>
-              ) : (
-                <p className="mt-1 text-xs text-slate/60">
-                  Solo puedes asignar un nivel igual o menor al tuyo — el backend rechaza la
-                  solicitud con <code>NIVEL_PERMISO_INSUFICIENTE</code> si intentas asignar más.
-                </p>
-              )}
-              <FieldError message={errors.perfilAdministrativo?.nivelPermiso?.message} />
-            </div>
-          </div>
-        </fieldset>
       </div>
 
       <ContactosFieldset
@@ -446,7 +448,7 @@ function FormularioEdicion({
         prefix="perfilAdministrativo"
       />
 
-      <div className="flex justify-end gap-3">
+      <div className="flex justify-end gap-3 border-t border-mist pt-5">
         <button
           type="button"
           onClick={onClose}
