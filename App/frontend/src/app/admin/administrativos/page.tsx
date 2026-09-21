@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { Avatar } from '@/components/admin/ui/Avatar';
 import { SkeletonTableRows } from '@/components/admin/ui/Skeleton';
@@ -29,6 +30,7 @@ import { SubirFotoPersonaModal } from '@/components/admin/ui/personas-listado/Su
 import { useBuscarDebounced } from '@/components/admin/ui/personas-listado/useBuscarDebounced';
 import { usePaginacionFiltrada } from '@/components/admin/ui/personas-listado/usePaginacionFiltrada';
 import { useCooldownReseteo } from '@/components/admin/ui/personas-listado/useCooldownReseteo';
+import { EditarAdministrativoModal } from './EditarAdministrativoModal';
 
 /**
  * Listado de administrativos — Fase 10 (unificación CRUD admin, Task 5).
@@ -66,6 +68,13 @@ import { useCooldownReseteo } from '@/components/admin/ui/personas-listado/useCo
  * SOLO para UX (ocultar de antemano lo que va a fallar), el backend sigue
  * siendo la fuente de verdad real, este chequeo del cliente nunca
  * reemplaza al `403` del servidor.
+ *
+ * El lápiz de "Editar datos" (Task 6, `EditarAdministrativoModal.tsx`) usa
+ * un gate DISTINTO (`puedeEditarDatos`, calculado junto a
+ * `puedeGestionarAdministrativo` en `TablaAdministrativos`): SOLO la
+ * jerarquía de `nivelPermiso`, SIN la exclusión de la fila del propio actor
+ * — a diferencia de "Cambiar estatus"/"Restablecer contraseña", editar los
+ * propios datos (corregir un typo propio) sí tiene sentido.
  */
 const JERARQUIA_NIVEL_PERMISO: Record<NivelPermiso, number> = {
   AUXILIAR: 0,
@@ -82,6 +91,8 @@ export default function AdminAdministrativosPage() {
   const [administrativoAResetear, setAdministrativoAResetear] =
     useState<PersonaListItemAdministrativo | null>(null);
   const [administrativoAFotografiar, setAdministrativoAFotografiar] =
+    useState<PersonaListItemAdministrativo | null>(null);
+  const [administrativoAEditarDatos, setAdministrativoAEditarDatos] =
     useState<PersonaListItemAdministrativo | null>(null);
 
   const perfilActorQuery = useQuery({
@@ -224,6 +235,7 @@ export default function AdminAdministrativosPage() {
             <table className="min-w-full divide-y divide-mist text-sm">
               <thead className="bg-bone">
                 <tr>
+                  <Th></Th>
                   <Th>Foto</Th>
                   <Th>Nombre completo</Th>
                   <Th>Puesto</Th>
@@ -234,7 +246,7 @@ export default function AdminAdministrativosPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-mist">
-                <SkeletonTableRows columns={7} />
+                <SkeletonTableRows columns={8} />
               </tbody>
             </table>
           </div>
@@ -261,6 +273,7 @@ export default function AdminAdministrativosPage() {
               minutosRestantes={minutosRestantes}
               onResetearPassword={setAdministrativoAResetear}
               onFotografiar={setAdministrativoAFotografiar}
+              onEditarDatos={setAdministrativoAEditarDatos}
             />
             <div className="mt-4">
               <Paginacion
@@ -325,6 +338,19 @@ export default function AdminAdministrativosPage() {
           }
         />
       )}
+
+      {administrativoAEditarDatos && (
+        <EditarAdministrativoModal
+          usuarioId={administrativoAEditarDatos.usuarioId}
+          nivelPermisoActor={perfilActorQuery.data?.administrativo?.nivelPermiso}
+          onClose={() => setAdministrativoAEditarDatos(null)}
+          onGuardadoConExito={() =>
+            queryClient.invalidateQueries({
+              queryKey: ['admin', 'personas', 'ADMINISTRATIVO'],
+            })
+          }
+        />
+      )}
     </div>
   );
 }
@@ -338,6 +364,7 @@ function TablaAdministrativos({
   minutosRestantes,
   onResetearPassword,
   onFotografiar,
+  onEditarDatos,
 }: {
   administrativos: PersonaListItemAdministrativo[];
   /** `id` del actor logueado (`GET /perfil`) — `undefined` mientras esa
@@ -354,12 +381,14 @@ function TablaAdministrativos({
   minutosRestantes: (usuarioId: string) => number;
   onResetearPassword: (administrativo: PersonaListItemAdministrativo) => void;
   onFotografiar: (administrativo: PersonaListItemAdministrativo) => void;
+  onEditarDatos: (administrativo: PersonaListItemAdministrativo) => void;
 }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-mist">
       <table className="min-w-full divide-y divide-mist text-sm">
         <thead className="bg-bone">
           <tr>
+            <Th></Th>
             <Th>Foto</Th>
             <Th>Nombre completo</Th>
             <Th>Puesto</Th>
@@ -385,8 +414,30 @@ function TablaAdministrativos({
                 JERARQUIA_NIVEL_PERMISO[nivelPermisoActor] >=
                   JERARQUIA_NIVEL_PERMISO[administrativo.nivelPermiso]);
 
+            // Task 6 — gate DISTINTO al de arriba: solo la jerarquía de
+            // `nivelPermiso`, SIN la exclusión de la fila del propio actor.
+            // Editar los propios datos (corregir un typo propio) sí tiene
+            // sentido, a diferencia de "Cambiar estatus"/"Restablecer
+            // contraseña" sobre uno mismo.
+            const puedeEditarDatos =
+              nivelPermisoActor === undefined ||
+              JERARQUIA_NIVEL_PERMISO[nivelPermisoActor] >=
+                JERARQUIA_NIVEL_PERMISO[administrativo.nivelPermiso];
+
             return (
               <tr key={administrativo.usuarioId}>
+                <Td>
+                  {puedeEditarDatos && (
+                    <button
+                      type="button"
+                      onClick={() => onEditarDatos(administrativo)}
+                      aria-label={`Editar datos de ${administrativo.nombres}`}
+                      className="text-slate/60 hover:text-navy"
+                    >
+                      <Pencil className="size-4" />
+                    </button>
+                  )}
+                </Td>
                 <Td>
                   <button
                     type="button"
@@ -455,7 +506,7 @@ function TablaAdministrativos({
   );
 }
 
-function Th({ children }: { children: React.ReactNode }) {
+function Th({ children }: { children?: React.ReactNode }) {
   return (
     <th className="px-4 py-2 text-left text-xs font-semibold tracking-wide text-slate/60 uppercase">
       {children}
