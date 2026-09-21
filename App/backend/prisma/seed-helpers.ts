@@ -419,24 +419,30 @@ export async function seedAviso(params: {
   alcanceTipo: AlcanceDestino;
   alcanceId?: string;
 }): Promise<Aviso> {
-  const existente = await prisma.aviso.findFirst({
+  let aviso = await prisma.aviso.findFirst({
     where: { sedeId: params.sedeId, titulo: params.titulo },
   });
-  if (existente) return existente;
 
-  const aviso = await prisma.aviso.create({
-    data: {
-      sedeId: params.sedeId,
-      autorUsuarioId: params.autorUsuarioId,
-      titulo: params.titulo,
-      cuerpo: params.cuerpo,
-      alcanceTipo: params.alcanceTipo,
-      alcanceId: params.alcanceId,
-    },
-  });
+  if (!aviso) {
+    aviso = await prisma.aviso.create({
+      data: {
+        sedeId: params.sedeId,
+        autorUsuarioId: params.autorUsuarioId,
+        titulo: params.titulo,
+        cuerpo: params.cuerpo,
+        alcanceTipo: params.alcanceTipo,
+        alcanceId: params.alcanceId,
+      },
+    });
+  }
 
   // Mismo fan-out que `AvisosService.publicar` en producción — reutiliza
   // la función real, no reimplementa la resolución de destinatarios.
+  // Se recalcula SIEMPRE (aviso nuevo o ya existente de una corrida previa)
+  // y solo se crea `Notificacion` para quien todavía no la tiene — así un
+  // reseed incremental (personas agregadas a la config después de la
+  // primera corrida) también las notifica, en vez de quedarse mudo para
+  // siempre por el `findFirst` de arriba.
   const destinatarios = await resolverDestinatarios(
     prisma as unknown as PrismaService,
     params.sedeId,
@@ -444,11 +450,19 @@ export async function seedAviso(params: {
     params.alcanceId ?? null,
   );
 
+  const yaNotificados = await prisma.notificacion.findMany({
+    where: { referenciaId: aviso.id, tipo: TipoNotificacion.AVISO },
+    select: { usuarioId: true },
+  });
+  const yaNotificadosIds = new Set(yaNotificados.map((n) => n.usuarioId));
+
   const cuerpoCorto = params.cuerpo.slice(0, 140);
-  const receptores = destinatarios.filter((id) => id !== params.autorUsuarioId);
-  if (receptores.length > 0) {
+  const receptoresFaltantes = destinatarios.filter(
+    (id) => id !== params.autorUsuarioId && !yaNotificadosIds.has(id),
+  );
+  if (receptoresFaltantes.length > 0) {
     await prisma.notificacion.createMany({
-      data: receptores.map((usuarioId) => ({
+      data: receptoresFaltantes.map((usuarioId) => ({
         usuarioId,
         sedeId: params.sedeId,
         tipo: TipoNotificacion.AVISO,
