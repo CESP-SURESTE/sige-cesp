@@ -206,12 +206,20 @@ function FormularioEdicion({
   const mutation = useMutation({
     mutationFn: (values: AlumnoEditarFormOutput) =>
       editarPersona(usuarioId, {
-        codigoExterno: values.codigoExterno || undefined,
+        // A diferencia de `crearAlumno` (alta, sin valor previo que
+        // preservar), acá NO se coalesce string vacío a `undefined` en estos
+        // 4 campos: `PATCH /personas/:id` hace un `update` parcial de
+        // Prisma, donde `undefined` en `data` significa "no tocar esta
+        // columna" — coalescer perdería silenciosamente el borrado de un
+        // campo opcional que el admin vació a propósito. `contactos`/
+        // `infoMedica` sí se quedan con el coalesce de abajo: esos van por
+        // delete+recreate completo en el backend, no por `update` parcial.
+        codigoExterno: values.codigoExterno,
         perfilAlumno: {
           ...values.perfilAlumno,
-          apellidoMaterno: values.perfilAlumno.apellidoMaterno || undefined,
-          curp: values.perfilAlumno.curp || undefined,
-          telefono: values.perfilAlumno.telefono || undefined,
+          apellidoMaterno: values.perfilAlumno.apellidoMaterno,
+          curp: values.perfilAlumno.curp,
+          telefono: values.perfilAlumno.telefono,
           contactos: values.perfilAlumno.contactos.map((contacto) => ({
             ...contacto,
             correo: contacto.correo || undefined,
