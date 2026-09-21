@@ -16,6 +16,14 @@ import type { FormEventHandler, ReactNode } from 'react';
  * estandarizado"). Los errores de campo específico siguen inline vía
  * `FieldError` (eso sí se queda visible junto al campo, no solo en el toast
  * — el usuario necesita saber CUÁL campo está mal, no solo que algo falló).
+ *
+ * Aviso de "verifica antes de guardar" (2026-09-20, pedido directo del
+ * usuario, mientras se decide si se construye edición real de campos
+ * post-alta — regla 3 de `CLAUDE.md` raíz: hoy NO existe ningún `PATCH` que
+ * corrija nombres/apellidos/CURP/etc. una vez creada la persona). Mitigación
+ * mínima: un recordatorio visual justo antes del botón de guardar, mismo
+ * patrón visual (`warning-bg`/`warning-border`) que `CambiarEstatusModal`/
+ * `SeccionAsignaciones`.
  */
 interface AltaPersonaFormShellProps {
   titulo: string;
@@ -41,6 +49,11 @@ export function AltaPersonaFormShell({
 
       <form onSubmit={onSubmit} className="mt-5 space-y-5" noValidate>
         {children}
+
+        <p className="rounded-lg border border-warning-border bg-warning-bg px-3 py-2 text-xs text-warning">
+          Verifica bien los datos antes de guardar — nombres, apellidos, CURP y demás
+          datos personales no se pueden editar después de dar de alta.
+        </p>
 
         <button
           type="submit"
