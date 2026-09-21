@@ -13,10 +13,17 @@ review de código. Requiere que el backend ya esté desplegado (dev o prod) con
 
 ## 1. Habilitar las extensiones (una sola vez por proyecto de Supabase)
 
-```sql
-create extension if not exists pg_cron;
-create extension if not exists pg_net;
-```
+**No uses `CREATE EXTENSION` por SQL Editor** — en Supabase hospedado da
+`ERROR: 3F000: schema "cron" does not exist` (verificado en dev, 2026-09-21): el rol
+del SQL Editor no tiene los privilegios internos que `pg_cron` necesita para
+instalarse ahí. La vía soportada es el Dashboard:
+
+1. **Database → Extensions** en el proyecto de Supabase.
+2. Busca `pg_cron` en la lista y actívalo con el toggle.
+3. Haz lo mismo para `pg_net` si no aparece ya activo.
+
+Una vez activadas por ahí, el schema `cron` y las funciones (`cron.schedule`, etc.)
+quedan disponibles para el resto de este doc sin nada más que hacer.
 
 ## 2. Programar el cron diario
 
