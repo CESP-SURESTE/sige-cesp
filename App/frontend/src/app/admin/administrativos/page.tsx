@@ -343,6 +343,7 @@ export default function AdminAdministrativosPage() {
         <EditarAdministrativoModal
           usuarioId={administrativoAEditarDatos.usuarioId}
           nivelPermisoActor={perfilActorQuery.data?.administrativo?.nivelPermiso}
+          esUsuarioActor={administrativoAEditarDatos.usuarioId === perfilActorQuery.data?.id}
           onClose={() => setAdministrativoAEditarDatos(null)}
           onGuardadoConExito={() =>
             queryClient.invalidateQueries({

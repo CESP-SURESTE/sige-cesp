@@ -1,7 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
@@ -151,6 +151,7 @@ const MENSAJES_ERROR_ADMINISTRATIVO: Record<string, string> = {
 export function EditarAdministrativoModal({
   usuarioId,
   nivelPermisoActor,
+  esUsuarioActor,
   onClose,
   onGuardadoConExito,
 }: {
@@ -159,6 +160,14 @@ export function EditarAdministrativoModal({
    * `undefined` mientras esa query sigue cargando. Solo se usa para filtrar
    * las opciones del `<select>` de `nivelPermiso` (UX preventiva). */
   nivelPermisoActor: NivelPermiso | undefined;
+  /**
+   * `true` si `usuarioId` es el propio actor logueado (fix de revisión
+   * final de rama, 2026-09-20 — sin esto, el único `SUPER_ADMIN` de una
+   * sede podía auto-degradarse por accidente sin ninguna ruta de
+   * recuperación, ni siquiera de plataforma). Deshabilita el `<select>` de
+   * `nivelPermiso` — el resto de los campos del actor sí son editables.
+   */
+  esUsuarioActor: boolean;
   onClose: () => void;
   onGuardadoConExito: () => void;
 }) {
@@ -205,6 +214,7 @@ export function EditarAdministrativoModal({
             usuarioId={usuarioId}
             persona={personaQuery.data}
             nivelPermisoActor={nivelPermisoActor}
+            esUsuarioActor={esUsuarioActor}
             onClose={onClose}
             onGuardadoConExito={onGuardadoConExito}
           />
@@ -220,15 +230,19 @@ function FormularioEdicion({
   usuarioId,
   persona,
   nivelPermisoActor,
+  esUsuarioActor,
   onClose,
   onGuardadoConExito,
 }: {
   usuarioId: string;
   persona: PersonaParaEditar;
   nivelPermisoActor: NivelPermiso | undefined;
+  esUsuarioActor: boolean;
   onClose: () => void;
   onGuardadoConExito: () => void;
 }) {
+  const queryClient = useQueryClient();
+
   const {
     register,
     handleSubmit,
@@ -252,39 +266,49 @@ function FormularioEdicion({
         // `codigoExterno`/`apellidoMaterno`: `PATCH /personas/:id` hace un
         // `update` parcial de Prisma, donde `undefined` en `data` significa
         // "no tocar esta columna" — coalescer perdería silenciosamente el
-        // borrado de un campo opcional que el admin vació a propósito.
-        // `contactos`/`infoMedica` sí se quedan con el coalesce de abajo:
-        // esos van por delete+recreate completo en el backend, no por
-        // `update` parcial. `nivelPermiso` siempre tiene un valor real
-        // seleccionado acá (a diferencia del alta), no hace falta el
-        // fallback a `undefined`.
-        codigoExterno: values.codigoExterno,
+        // borrado de un campo opcional que el admin vació a propósito. Se
+        // manda `null` explícito para que el borrado sí se persista.
+        // `contactos` sí se queda con el coalesce a `undefined` de abajo —
+        // va por delete+recreate completo en el backend, no por `update`
+        // parcial, así que ahí `undefined` es correcto. `infoMedica` es un
+        // `upsert` (no delete+recreate), así que igual que los campos de
+        // arriba necesita `null` explícito para limpiar — ver el bloque de
+        // abajo. `nivelPermiso` siempre tiene un valor real seleccionado acá
+        // (a diferencia del alta), no hace falta el fallback a `undefined`.
+        codigoExterno: values.codigoExterno || null,
         perfilAdministrativo: {
           ...values.perfilAdministrativo,
-          apellidoMaterno: values.perfilAdministrativo.apellidoMaterno,
+          apellidoMaterno: values.perfilAdministrativo.apellidoMaterno || null,
           contactos: values.perfilAdministrativo.contactos.map((contacto) => ({
             ...contacto,
             correo: contacto.correo || undefined,
           })),
           infoMedica: {
             tipoSangre: values.perfilAdministrativo.infoMedica.tipoSangre,
-            ...(values.perfilAdministrativo.infoMedica.tieneCondicionMedica
-              ? {
-                  tieneCondicionMedica: true,
-                  padecimiento:
-                    values.perfilAdministrativo.infoMedica.padecimiento || undefined,
-                  medicamentos:
-                    values.perfilAdministrativo.infoMedica.medicamentos || undefined,
-                  alergias: values.perfilAdministrativo.infoMedica.alergias || undefined,
-                  tratamientoAdicional:
-                    values.perfilAdministrativo.infoMedica.tratamientoAdicional || undefined,
-                }
-              : { tieneCondicionMedica: false }),
+            tieneCondicionMedica: values.perfilAdministrativo.infoMedica.tieneCondicionMedica,
+            padecimiento: values.perfilAdministrativo.infoMedica.tieneCondicionMedica
+              ? values.perfilAdministrativo.infoMedica.padecimiento || null
+              : null,
+            medicamentos: values.perfilAdministrativo.infoMedica.tieneCondicionMedica
+              ? values.perfilAdministrativo.infoMedica.medicamentos || null
+              : null,
+            alergias: values.perfilAdministrativo.infoMedica.tieneCondicionMedica
+              ? values.perfilAdministrativo.infoMedica.alergias || null
+              : null,
+            tratamientoAdicional: values.perfilAdministrativo.infoMedica.tieneCondicionMedica
+              ? values.perfilAdministrativo.infoMedica.tratamientoAdicional || null
+              : null,
           },
         },
       }),
     onSuccess: () => {
       toast.success('Administrativo actualizado.');
+      // Fix de revisión final de rama (2026-09-20) — sin esto, reabrir el
+      // modal del mismo administrativo mostraba los datos viejos (caché de
+      // `['admin', 'personas', 'editar', usuarioId]` servido antes de que
+      // resuelva el refetch en background) y un segundo guardado revertía
+      // silenciosamente la edición recién hecha.
+      queryClient.invalidateQueries({ queryKey: ['admin', 'personas', 'editar', usuarioId] });
       onGuardadoConExito();
       onClose();
     },
@@ -387,7 +411,7 @@ function FormularioEdicion({
                     value={field.value ?? ''}
                     onChange={field.onChange}
                     onBlur={field.onBlur}
-                    disabled={mutation.isPending}
+                    disabled={mutation.isPending || esUsuarioActor}
                     placeholder="Selecciona un nivel de permiso"
                     options={opcionesNivelPermisoDisponibles(nivelPermisoActor).map(
                       (valor) => ({
@@ -398,10 +422,16 @@ function FormularioEdicion({
                   />
                 )}
               />
-              <p className="mt-1 text-xs text-slate/60">
-                Solo puedes asignar un nivel igual o menor al tuyo — el backend rechaza la
-                solicitud con <code>NIVEL_PERMISO_INSUFICIENTE</code> si intentas asignar más.
-              </p>
+              {esUsuarioActor ? (
+                <p className="mt-1 text-xs text-slate/60">
+                  No puedes cambiar tu propio nivel de permiso desde aquí.
+                </p>
+              ) : (
+                <p className="mt-1 text-xs text-slate/60">
+                  Solo puedes asignar un nivel igual o menor al tuyo — el backend rechaza la
+                  solicitud con <code>NIVEL_PERMISO_INSUFICIENTE</code> si intentas asignar más.
+                </p>
+              )}
               <FieldError message={errors.perfilAdministrativo?.nivelPermiso?.message} />
             </div>
           </div>

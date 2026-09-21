@@ -70,24 +70,40 @@ export type TipoSangre =
 export interface InfoMedicaInput {
   tieneCondicionMedica: boolean;
   tipoSangre: TipoSangre;
-  padecimiento?: string;
-  medicamentos?: string;
-  alergias?: string;
-  tratamientoAdicional?: string;
+  /**
+   * `string | null` (fix de revisión final de rama, 2026-09-20, feature
+   * "Edición de datos de persona") — el backend hace `infoMedicaX.upsert`
+   * (no delete+recreate), así que `undefined` en el `PATCH` significa "no
+   * tocar la columna" y NUNCA borra un valor viejo; los 3 modales de edición
+   * mandan `null` explícito para limpiar. Sigue siendo opcional/omitible
+   * para el flujo de alta (`crearAlumno`/`crearMaestro`/`crearAdministrativo`),
+   * que nunca manda `null`.
+   */
+  padecimiento?: string | null;
+  medicamentos?: string | null;
+  alergias?: string | null;
+  tratamientoAdicional?: string | null;
 }
 
 export interface PerfilAlumnoInput {
   nombres: string;
   apellidoPaterno: string;
-  apellidoMaterno?: string;
-  curp?: string;
+  /**
+   * `string | null` (fix de revisión final de rama, 2026-09-20, feature
+   * "Edición de datos de persona") — `EditarAlumnoModal` manda `null`
+   * explícito para borrar un valor previo (el `PATCH` es un `update`
+   * parcial de Prisma: `undefined` significa "no tocar la columna", `null`
+   * sí la limpia). Sigue omitible para el flujo de alta.
+   */
+  apellidoMaterno?: string | null;
+  curp?: string | null;
   /** ISO date (`YYYY-MM-DD`). */
   fechaNacimiento: string;
   correoPersonal: string;
   carreraId: string;
   periodoIngreso: string;
   cuatrimestreActual: number;
-  telefono?: string;
+  telefono?: string | null;
   /** 1-3 elementos — `ContactoAlumnoDto` (con `tipo`), exclusivo de alumno. */
   contactos: ContactoAlumnoInput[];
   infoMedica: InfoMedicaInput;
@@ -123,9 +139,11 @@ export type TipoContratacion = 'BASE' | 'TEMPORAL' | 'CONTRATO';
 export interface PerfilMaestroInput {
   nombres: string;
   apellidoPaterno: string;
-  apellidoMaterno?: string;
+  /** `string | null` (fix 2026-09-20, "Edición de datos de persona") — ver
+   * la nota de `PerfilAlumnoInput.apellidoMaterno`, mismo criterio. */
+  apellidoMaterno?: string | null;
   curp: string;
-  cedulaProfesional?: string;
+  cedulaProfesional?: string | null;
   correoPersonal: string;
   telefono: string;
   /** ISO date (`YYYY-MM-DD`). */
@@ -150,7 +168,9 @@ export interface CrearMaestroInput {
 export interface PerfilAdministrativoInput {
   nombres: string;
   apellidoPaterno: string;
-  apellidoMaterno?: string;
+  /** `string | null` (fix 2026-09-20, "Edición de datos de persona") — ver
+   * la nota de `PerfilAlumnoInput.apellidoMaterno`, mismo criterio. */
+  apellidoMaterno?: string | null;
   curp: string;
   correoPersonal: string;
   telefono: string;
@@ -527,7 +547,12 @@ export function obtenerPersonaParaEditar(
 }
 
 export interface EditarPersonaInput {
-  codigoExterno?: string;
+  /** `string | null` (fix 2026-09-20, revisión final de "Edición de datos de
+   * persona") — `Usuario.codigoExterno` es `String? @unique`; los 3 modales
+   * de edición mandan `null` (nunca `''`) cuando la persona no tiene código
+   * externo, para no chocar con el índice único cuando dos personas
+   * distintas se editan sin código. */
+  codigoExterno?: string | null;
   perfilAlumno?: PerfilAlumnoInput;
   perfilMaestro?: PerfilMaestroInput;
   perfilAdministrativo?: PerfilAdministrativoInput;

@@ -1,7 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
@@ -176,6 +176,8 @@ function FormularioEdicion({
   onClose: () => void;
   onGuardadoConExito: () => void;
 }) {
+  const queryClient = useQueryClient();
+
   const carrerasQuery = useQuery({
     queryKey: ['carreras'],
     queryFn: async () => {
@@ -208,39 +210,52 @@ function FormularioEdicion({
       editarPersona(usuarioId, {
         // A diferencia de `crearAlumno` (alta, sin valor previo que
         // preservar), acá NO se coalesce string vacío a `undefined` en estos
-        // 4 campos: `PATCH /personas/:id` hace un `update` parcial de
-        // Prisma, donde `undefined` en `data` significa "no tocar esta
-        // columna" — coalescer perdería silenciosamente el borrado de un
-        // campo opcional que el admin vació a propósito. `contactos`/
-        // `infoMedica` sí se quedan con el coalesce de abajo: esos van por
-        // delete+recreate completo en el backend, no por `update` parcial.
-        codigoExterno: values.codigoExterno,
+        // campos: `PATCH /personas/:id` hace un `update` parcial de Prisma,
+        // donde `undefined` en `data` significa "no tocar esta columna" —
+        // coalescer perdería silenciosamente el borrado de un campo
+        // opcional que el admin vació a propósito. Se manda `null` explícito
+        // para que el borrado sí se persista. `contactos` sí se queda con el
+        // coalesce a `undefined` de abajo — va por delete+recreate completo
+        // en el backend, no por `update` parcial, así que ahí `undefined` es
+        // correcto. `infoMedica` es un `upsert` (no delete+recreate), así
+        // que igual que los campos de arriba necesita `null` explícito para
+        // limpiar — ver el bloque de abajo.
+        codigoExterno: values.codigoExterno || null,
         perfilAlumno: {
           ...values.perfilAlumno,
-          apellidoMaterno: values.perfilAlumno.apellidoMaterno,
-          curp: values.perfilAlumno.curp,
-          telefono: values.perfilAlumno.telefono,
+          apellidoMaterno: values.perfilAlumno.apellidoMaterno || null,
+          curp: values.perfilAlumno.curp || null,
+          telefono: values.perfilAlumno.telefono || null,
           contactos: values.perfilAlumno.contactos.map((contacto) => ({
             ...contacto,
             correo: contacto.correo || undefined,
           })),
           infoMedica: {
             tipoSangre: values.perfilAlumno.infoMedica.tipoSangre,
-            ...(values.perfilAlumno.infoMedica.tieneCondicionMedica
-              ? {
-                  tieneCondicionMedica: true,
-                  padecimiento: values.perfilAlumno.infoMedica.padecimiento || undefined,
-                  medicamentos: values.perfilAlumno.infoMedica.medicamentos || undefined,
-                  alergias: values.perfilAlumno.infoMedica.alergias || undefined,
-                  tratamientoAdicional:
-                    values.perfilAlumno.infoMedica.tratamientoAdicional || undefined,
-                }
-              : { tieneCondicionMedica: false }),
+            tieneCondicionMedica: values.perfilAlumno.infoMedica.tieneCondicionMedica,
+            padecimiento: values.perfilAlumno.infoMedica.tieneCondicionMedica
+              ? values.perfilAlumno.infoMedica.padecimiento || null
+              : null,
+            medicamentos: values.perfilAlumno.infoMedica.tieneCondicionMedica
+              ? values.perfilAlumno.infoMedica.medicamentos || null
+              : null,
+            alergias: values.perfilAlumno.infoMedica.tieneCondicionMedica
+              ? values.perfilAlumno.infoMedica.alergias || null
+              : null,
+            tratamientoAdicional: values.perfilAlumno.infoMedica.tieneCondicionMedica
+              ? values.perfilAlumno.infoMedica.tratamientoAdicional || null
+              : null,
           },
         },
       }),
     onSuccess: () => {
       toast.success('Alumno actualizado.');
+      // Fix de revisión final de rama (2026-09-20) — sin esto, reabrir el
+      // modal del mismo alumno mostraba los datos viejos (caché de
+      // `['admin', 'personas', 'editar', usuarioId]` servido antes de que
+      // resuelva el refetch en background) y un segundo guardado revertía
+      // silenciosamente la edición recién hecha.
+      queryClient.invalidateQueries({ queryKey: ['admin', 'personas', 'editar', usuarioId] });
       onGuardadoConExito();
       onClose();
     },

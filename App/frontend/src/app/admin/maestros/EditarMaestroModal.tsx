@@ -1,7 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
@@ -218,6 +218,8 @@ function FormularioEdicion({
   onClose: () => void;
   onGuardadoConExito: () => void;
 }) {
+  const queryClient = useQueryClient();
+
   const {
     register,
     handleSubmit,
@@ -247,14 +249,18 @@ function FormularioEdicion({
         // `PATCH /personas/:id` hace un `update` parcial de Prisma, donde
         // `undefined` en `data` significa "no tocar esta columna" —
         // coalescer perdería silenciosamente el borrado de un campo
-        // opcional que el admin vació a propósito. `contactos`/`infoMedica`
-        // sí se quedan con el coalesce de abajo: esos van por
-        // delete+recreate completo en el backend, no por `update` parcial.
-        codigoExterno: values.codigoExterno,
+        // opcional que el admin vació a propósito. Se manda `null` explícito
+        // para que el borrado sí se persista. `contactos` sí se queda con el
+        // coalesce a `undefined` de abajo — va por delete+recreate completo
+        // en el backend, no por `update` parcial, así que ahí `undefined` es
+        // correcto. `infoMedica` es un `upsert` (no delete+recreate), así
+        // que igual que los campos de arriba necesita `null` explícito para
+        // limpiar — ver el bloque de abajo.
+        codigoExterno: values.codigoExterno || null,
         perfilMaestro: {
           ...values.perfilMaestro,
-          apellidoMaterno: values.perfilMaestro.apellidoMaterno,
-          cedulaProfesional: values.perfilMaestro.cedulaProfesional,
+          apellidoMaterno: values.perfilMaestro.apellidoMaterno || null,
+          cedulaProfesional: values.perfilMaestro.cedulaProfesional || null,
           diasTemporal:
             values.perfilMaestro.tipoContratacion === 'TEMPORAL'
               ? Number(values.perfilMaestro.diasTemporal)
@@ -273,21 +279,30 @@ function FormularioEdicion({
           })),
           infoMedica: {
             tipoSangre: values.perfilMaestro.infoMedica.tipoSangre,
-            ...(values.perfilMaestro.infoMedica.tieneCondicionMedica
-              ? {
-                  tieneCondicionMedica: true,
-                  padecimiento: values.perfilMaestro.infoMedica.padecimiento || undefined,
-                  medicamentos: values.perfilMaestro.infoMedica.medicamentos || undefined,
-                  alergias: values.perfilMaestro.infoMedica.alergias || undefined,
-                  tratamientoAdicional:
-                    values.perfilMaestro.infoMedica.tratamientoAdicional || undefined,
-                }
-              : { tieneCondicionMedica: false }),
+            tieneCondicionMedica: values.perfilMaestro.infoMedica.tieneCondicionMedica,
+            padecimiento: values.perfilMaestro.infoMedica.tieneCondicionMedica
+              ? values.perfilMaestro.infoMedica.padecimiento || null
+              : null,
+            medicamentos: values.perfilMaestro.infoMedica.tieneCondicionMedica
+              ? values.perfilMaestro.infoMedica.medicamentos || null
+              : null,
+            alergias: values.perfilMaestro.infoMedica.tieneCondicionMedica
+              ? values.perfilMaestro.infoMedica.alergias || null
+              : null,
+            tratamientoAdicional: values.perfilMaestro.infoMedica.tieneCondicionMedica
+              ? values.perfilMaestro.infoMedica.tratamientoAdicional || null
+              : null,
           },
         },
       }),
     onSuccess: () => {
       toast.success('Maestro actualizado.');
+      // Fix de revisión final de rama (2026-09-20) — sin esto, reabrir el
+      // modal del mismo maestro mostraba los datos viejos (caché de
+      // `['admin', 'personas', 'editar', usuarioId]` servido antes de que
+      // resuelva el refetch en background) y un segundo guardado revertía
+      // silenciosamente la edición recién hecha.
+      queryClient.invalidateQueries({ queryKey: ['admin', 'personas', 'editar', usuarioId] });
       onGuardadoConExito();
       onClose();
     },
