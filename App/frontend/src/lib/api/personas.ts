@@ -438,3 +438,107 @@ export function resetearPasswordPersona(usuarioId: string): Promise<{ ok: true }
     method: 'POST',
   });
 }
+
+/**
+ * `GET/PATCH /personas/:id` — feature "Edición de datos de persona"
+ * (2026-09-20). Shape espejo de `PersonaParaEditar`/`PersonaEditableAlumno`/
+ * `PersonaEditableMaestro`/`PersonaEditableAdministrativo`/
+ * `PersonaEditableContacto`/`PersonaEditableInfoMedica`
+ * (`App/backend/src/personas/personas.service.ts`) para el `GET`, y de
+ * `EditarPersonaDto` (que reusa `PerfilAlumnoDto`/`PerfilMaestroDto`/
+ * `PerfilAdministrativoDto` de `crear-persona.dto.ts`, backend) para el
+ * `PATCH` — mismo shape que `CrearAlumnoInput`/`CrearMaestroInput`/
+ * `CrearAdministrativoInput` de este mismo archivo, SIN `matricula`/`email`
+ * (inmutables, ver spec) y sin `nivelPermiso` opcional-con-default (acá si
+ * cambia se audita `CAMBIO_PERMISO`, ver backend).
+ */
+export interface PersonaEditableContacto {
+  nombre: string;
+  telefono: string;
+  correo: string | null;
+  parentesco: string;
+  tipo?: TipoContacto;
+}
+
+export interface PersonaEditableInfoMedica {
+  tieneCondicionMedica: boolean;
+  tipoSangre: TipoSangre | null;
+  padecimiento: string | null;
+  medicamentos: string | null;
+  alergias: string | null;
+  tratamientoAdicional: string | null;
+}
+
+export interface PersonaEditableAlumno {
+  nombres: string;
+  apellidoPaterno: string;
+  apellidoMaterno: string | null;
+  curp: string | null;
+  /** ISO date (`YYYY-MM-DD`). */
+  fechaNacimiento: string;
+  correoPersonal: string;
+  carreraId: string;
+  periodoIngreso: string;
+  cuatrimestreActual: number;
+  telefono: string | null;
+}
+
+export interface PersonaEditableMaestro {
+  nombres: string;
+  apellidoPaterno: string;
+  apellidoMaterno: string | null;
+  curp: string;
+  cedulaProfesional: string | null;
+  correoPersonal: string;
+  telefono: string;
+  fechaContratacion: string;
+  tipoContratacion: TipoContratacion | null;
+  diasTemporal: number | null;
+  contratoFechaInicio: string | null;
+  contratoFechaFin: string | null;
+}
+
+export interface PersonaEditableAdministrativo {
+  nombres: string;
+  apellidoPaterno: string;
+  apellidoMaterno: string | null;
+  curp: string;
+  correoPersonal: string;
+  telefono: string;
+  fechaContratacion: string;
+  puesto: PuestoAdministrativo;
+  nivelPermiso: NivelPermiso;
+}
+
+export interface PersonaParaEditar {
+  rol: 'ALUMNO' | 'MAESTRO' | 'ADMINISTRATIVO';
+  codigoExterno: string | null;
+  perfilAlumno?: PersonaEditableAlumno;
+  perfilMaestro?: PersonaEditableMaestro;
+  perfilAdministrativo?: PersonaEditableAdministrativo;
+  contactos: PersonaEditableContacto[];
+  infoMedica: PersonaEditableInfoMedica;
+}
+
+export function obtenerPersonaParaEditar(
+  usuarioId: string,
+): Promise<PersonaParaEditar> {
+  return apiFetchAuth<PersonaParaEditar>(`/personas/${usuarioId}`);
+}
+
+export interface EditarPersonaInput {
+  codigoExterno?: string;
+  perfilAlumno?: PerfilAlumnoInput;
+  perfilMaestro?: PerfilMaestroInput;
+  perfilAdministrativo?: PerfilAdministrativoInput;
+}
+
+export function editarPersona(
+  usuarioId: string,
+  input: EditarPersonaInput,
+): Promise<{ ok: true }> {
+  return apiFetchAuth<{ ok: true }>(`/personas/${usuarioId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  });
+}
