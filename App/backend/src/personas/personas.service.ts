@@ -1567,133 +1567,141 @@ export class PersonasService {
     sedeId: string,
     actorUsuarioId: string,
   ): Promise<{ ok: true }> {
-    const usuario = await this.prisma.usuario.findFirst({
-      where: { id, sedeId },
-      select: {
-        rol: true,
-        codigoExterno: true,
-        perfilAdministrativo: { select: { nivelPermiso: true } },
-      },
-    });
-
-    if (!usuario) {
-      throw new NotFoundException({
-        error: 'Persona no encontrada en tu sede',
-        code: 'NOT_FOUND',
+    // Regla 12 de CLAUDE.md raíz — el `try` envuelve el método COMPLETO
+    // (lecturas previas + validación + transacción), no solo el
+    // `$transaction`, mismo patrón que `cambiarEstatus`: este codebase no
+    // tiene un `ExceptionFilter` global, así que un fallo real de Prisma/DB
+    // en cualquiera de las lecturas de abajo (`usuario.findFirst`, el
+    // pre-check de `codigoExterno`, `carrera.findFirst`, o el
+    // `perfilAdministrativo.findUnique` del actor) quedaría sin loguear si
+    // el `try` arrancara más abajo.
+    try {
+      const usuario = await this.prisma.usuario.findFirst({
+        where: { id, sedeId },
+        select: {
+          rol: true,
+          codigoExterno: true,
+          perfilAdministrativo: { select: { nivelPermiso: true } },
+        },
       });
-    }
 
-    // Mismo pre-check de `codigoExterno` que `altaPersona`, EXCLUYENDO a la
-    // propia persona (editar sin cambiar su propio código no debe fallar).
-    if (dto.codigoExterno && dto.codigoExterno !== usuario.codigoExterno) {
-      const codigoExternoEnUso = await this.prisma.usuario.findUnique({
-        where: { codigoExterno: dto.codigoExterno },
-        select: { id: true },
-      });
-      if (codigoExternoEnUso && codigoExternoEnUso.id !== id) {
-        throw new ConflictException({
-          error: 'Ya existe un usuario con ese código externo',
-          code: 'CONFLICT',
-        });
-      }
-    }
-
-    let nivelPermisoAnterior: NivelPermiso | undefined;
-    let nivelPermisoNuevo: NivelPermiso | undefined;
-
-    if (usuario.rol === RolUsuario.ALUMNO) {
-      if (!dto.perfilAlumno) {
-        throw new BadRequestException({
-          error: 'perfilAlumno es requerido para editar un ALUMNO',
-          code: 'VALIDATION_ERROR',
-        });
-      }
-      const carrera = await this.prisma.carrera.findFirst({
-        where: { id: dto.perfilAlumno.carreraId, sedeId },
-        select: { duracion: true },
-      });
-      if (!carrera) {
+      if (!usuario) {
         throw new NotFoundException({
-          error: 'Carrera no encontrada en tu sede',
+          error: 'Persona no encontrada en tu sede',
           code: 'NOT_FOUND',
         });
       }
-      if (
-        dto.perfilAlumno.cuatrimestreActual < 1 ||
-        dto.perfilAlumno.cuatrimestreActual > carrera.duracion
-      ) {
-        throw new BadRequestException({
-          error: `cuatrimestreActual debe estar entre 1 y ${carrera.duracion} para esa carrera`,
-          code: 'VALIDATION_ERROR',
-        });
-      }
-    } else if (usuario.rol === RolUsuario.MAESTRO) {
-      if (!dto.perfilMaestro) {
-        throw new BadRequestException({
-          error: 'perfilMaestro es requerido para editar un MAESTRO',
-          code: 'VALIDATION_ERROR',
-        });
-      }
-      // Misma regla cruzada que `altaPersona`.
-      if (
-        dto.perfilMaestro.tipoContratacion === TipoContratacion.CONTRATO &&
-        dto.perfilMaestro.contratoFechaInicio &&
-        dto.perfilMaestro.contratoFechaFin &&
-        new Date(dto.perfilMaestro.contratoFechaFin).getTime() <=
-          new Date(dto.perfilMaestro.contratoFechaInicio).getTime()
-      ) {
-        throw new BadRequestException({
-          error:
-            'contratoFechaFin no puede ser anterior o igual a contratoFechaInicio',
-          code: 'VALIDATION_ERROR',
-        });
-      }
-    } else {
-      if (!dto.perfilAdministrativo) {
-        throw new BadRequestException({
-          error: 'perfilAdministrativo es requerido para editar un ADMINISTRATIVO',
-          code: 'VALIDATION_ERROR',
-        });
-      }
-      nivelPermisoAnterior = usuario.perfilAdministrativo?.nivelPermiso;
-      nivelPermisoNuevo =
-        dto.perfilAdministrativo.nivelPermiso ?? nivelPermisoAnterior;
 
-      // Jerarquía de `nivelPermiso` (regla 7) — igual que `cambiarEstatus`:
-      // el actor debe tener nivel suficiente sobre el nivel ACTUAL del
-      // target Y sobre el nivel NUEVO que le quiere asignar.
-      const perfilActor = await this.prisma.perfilAdministrativo.findUnique({
-        where: { usuarioId: actorUsuarioId },
-        select: { nivelPermiso: true },
-      });
-      const nivelActor = perfilActor?.nivelPermiso ?? NivelPermiso.AUXILIAR;
-
-      if (nivelActor === NivelPermiso.AUXILIAR) {
-        throw new ForbiddenException({
-          error: 'Un usuario con nivel AUXILIAR no puede editar personal administrativo',
-          code: 'NIVEL_PERMISO_INSUFICIENTE',
+      // Mismo pre-check de `codigoExterno` que `altaPersona`, EXCLUYENDO a la
+      // propia persona (editar sin cambiar su propio código no debe fallar).
+      if (dto.codigoExterno && dto.codigoExterno !== usuario.codigoExterno) {
+        const codigoExternoEnUso = await this.prisma.usuario.findUnique({
+          where: { codigoExterno: dto.codigoExterno },
+          select: { id: true },
         });
+        if (codigoExternoEnUso && codigoExternoEnUso.id !== id) {
+          throw new ConflictException({
+            error: 'Ya existe un usuario con ese código externo',
+            code: 'CONFLICT',
+          });
+        }
       }
 
-      const rangoActor = PersonasService.JERARQUIA_NIVEL_PERMISO[nivelActor];
-      const rangoObjetivoActual =
-        PersonasService.JERARQUIA_NIVEL_PERMISO[
-          nivelPermisoAnterior ?? NivelPermiso.AUXILIAR
-        ];
-      const rangoObjetivoNuevo =
-        PersonasService.JERARQUIA_NIVEL_PERMISO[
-          nivelPermisoNuevo ?? NivelPermiso.AUXILIAR
-        ];
+      let nivelPermisoAnterior: NivelPermiso | undefined;
+      let nivelPermisoNuevo: NivelPermiso | undefined;
 
-      if (rangoActor < rangoObjetivoActual || rangoActor < rangoObjetivoNuevo) {
-        throw new ForbiddenException({
-          error: 'No tienes nivel de permiso suficiente para editar a este administrativo',
-          code: 'NIVEL_PERMISO_INSUFICIENTE',
+      if (usuario.rol === RolUsuario.ALUMNO) {
+        if (!dto.perfilAlumno) {
+          throw new BadRequestException({
+            error: 'perfilAlumno es requerido para editar un ALUMNO',
+            code: 'VALIDATION_ERROR',
+          });
+        }
+        const carrera = await this.prisma.carrera.findFirst({
+          where: { id: dto.perfilAlumno.carreraId, sedeId },
+          select: { duracion: true },
         });
-      }
-    }
+        if (!carrera) {
+          throw new NotFoundException({
+            error: 'Carrera no encontrada en tu sede',
+            code: 'NOT_FOUND',
+          });
+        }
+        if (
+          dto.perfilAlumno.cuatrimestreActual < 1 ||
+          dto.perfilAlumno.cuatrimestreActual > carrera.duracion
+        ) {
+          throw new BadRequestException({
+            error: `cuatrimestreActual debe estar entre 1 y ${carrera.duracion} para esa carrera`,
+            code: 'VALIDATION_ERROR',
+          });
+        }
+      } else if (usuario.rol === RolUsuario.MAESTRO) {
+        if (!dto.perfilMaestro) {
+          throw new BadRequestException({
+            error: 'perfilMaestro es requerido para editar un MAESTRO',
+            code: 'VALIDATION_ERROR',
+          });
+        }
+        // Misma regla cruzada que `altaPersona`.
+        if (
+          dto.perfilMaestro.tipoContratacion === TipoContratacion.CONTRATO &&
+          dto.perfilMaestro.contratoFechaInicio &&
+          dto.perfilMaestro.contratoFechaFin &&
+          new Date(dto.perfilMaestro.contratoFechaFin).getTime() <=
+            new Date(dto.perfilMaestro.contratoFechaInicio).getTime()
+        ) {
+          throw new BadRequestException({
+            error:
+              'contratoFechaFin no puede ser anterior o igual a contratoFechaInicio',
+            code: 'VALIDATION_ERROR',
+          });
+        }
+      } else {
+        if (!dto.perfilAdministrativo) {
+          throw new BadRequestException({
+            error: 'perfilAdministrativo es requerido para editar un ADMINISTRATIVO',
+            code: 'VALIDATION_ERROR',
+          });
+        }
+        nivelPermisoAnterior = usuario.perfilAdministrativo?.nivelPermiso;
+        nivelPermisoNuevo =
+          dto.perfilAdministrativo.nivelPermiso ?? nivelPermisoAnterior;
 
-    try {
+        // Jerarquía de `nivelPermiso` (regla 7) — igual que `cambiarEstatus`:
+        // el actor debe tener nivel suficiente sobre el nivel ACTUAL del
+        // target Y sobre el nivel NUEVO que le quiere asignar.
+        const perfilActor = await this.prisma.perfilAdministrativo.findUnique({
+          where: { usuarioId: actorUsuarioId },
+          select: { nivelPermiso: true },
+        });
+        const nivelActor = perfilActor?.nivelPermiso ?? NivelPermiso.AUXILIAR;
+
+        if (nivelActor === NivelPermiso.AUXILIAR) {
+          throw new ForbiddenException({
+            error: 'Un usuario con nivel AUXILIAR no puede editar personal administrativo',
+            code: 'NIVEL_PERMISO_INSUFICIENTE',
+          });
+        }
+
+        const rangoActor = PersonasService.JERARQUIA_NIVEL_PERMISO[nivelActor];
+        const rangoObjetivoActual =
+          PersonasService.JERARQUIA_NIVEL_PERMISO[
+            nivelPermisoAnterior ?? NivelPermiso.AUXILIAR
+          ];
+        const rangoObjetivoNuevo =
+          PersonasService.JERARQUIA_NIVEL_PERMISO[
+            nivelPermisoNuevo ?? NivelPermiso.AUXILIAR
+          ];
+
+        if (rangoActor < rangoObjetivoActual || rangoActor < rangoObjetivoNuevo) {
+          throw new ForbiddenException({
+            error: 'No tienes nivel de permiso suficiente para editar a este administrativo',
+            code: 'NIVEL_PERMISO_INSUFICIENTE',
+          });
+        }
+      }
+
       await this.prisma.$transaction(async (tx) => {
         await tx.usuario.update({
           where: { id },
