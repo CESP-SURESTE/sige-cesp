@@ -8,6 +8,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { useState } from 'react';
+import { Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { Avatar } from '@/components/admin/ui/Avatar';
 import { SkeletonTableRows } from '@/components/admin/ui/Skeleton';
@@ -33,6 +34,7 @@ import { SubirFotoPersonaModal } from '@/components/admin/ui/personas-listado/Su
 import { useBuscarDebounced } from '@/components/admin/ui/personas-listado/useBuscarDebounced';
 import { usePaginacionFiltrada } from '@/components/admin/ui/personas-listado/usePaginacionFiltrada';
 import { useCooldownReseteo } from '@/components/admin/ui/personas-listado/useCooldownReseteo';
+import { EditarMaestroModal } from './EditarMaestroModal';
 
 /**
  * Listado de maestros — Fase 5, Día 19; acción "Cambiar estatus" agregada en
@@ -60,6 +62,8 @@ export default function AdminMaestrosPage() {
   const [maestroAResetear, setMaestroAResetear] =
     useState<PersonaListItemMaestro | null>(null);
   const [maestroAFotografiar, setMaestroAFotografiar] =
+    useState<PersonaListItemMaestro | null>(null);
+  const [maestroAEditarDatos, setMaestroAEditarDatos] =
     useState<PersonaListItemMaestro | null>(null);
 
   const perfilActorQuery = useQuery({
@@ -181,6 +185,7 @@ export default function AdminMaestrosPage() {
             <table className="min-w-full divide-y divide-mist text-sm">
               <thead className="bg-bone">
                 <tr>
+                  <Th></Th>
                   <Th>Foto</Th>
                   <Th>Nombre completo</Th>
                   <Th>Cédula profesional</Th>
@@ -191,7 +196,7 @@ export default function AdminMaestrosPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-mist">
-                <SkeletonTableRows columns={7} />
+                <SkeletonTableRows columns={8} />
               </tbody>
             </table>
           </div>
@@ -214,6 +219,7 @@ export default function AdminMaestrosPage() {
               minutosRestantes={minutosRestantes}
               onResetearPassword={setMaestroAResetear}
               onFotografiar={setMaestroAFotografiar}
+              onEditarDatos={setMaestroAEditarDatos}
             />
             <div className="mt-4">
               <Paginacion
@@ -278,6 +284,18 @@ export default function AdminMaestrosPage() {
           }
         />
       )}
+
+      {maestroAEditarDatos && (
+        <EditarMaestroModal
+          usuarioId={maestroAEditarDatos.usuarioId}
+          onClose={() => setMaestroAEditarDatos(null)}
+          onGuardadoConExito={() =>
+            queryClient.invalidateQueries({
+              queryKey: ['admin', 'personas', 'MAESTRO'],
+            })
+          }
+        />
+      )}
     </div>
   );
 }
@@ -289,6 +307,7 @@ function TablaMaestros({
   minutosRestantes,
   onResetearPassword,
   onFotografiar,
+  onEditarDatos,
 }: {
   maestros: PersonaListItemMaestro[];
   onCambiarEstatus: (maestro: PersonaListItemMaestro) => void;
@@ -297,12 +316,14 @@ function TablaMaestros({
   minutosRestantes: (usuarioId: string) => number;
   onResetearPassword: (maestro: PersonaListItemMaestro) => void;
   onFotografiar: (maestro: PersonaListItemMaestro) => void;
+  onEditarDatos: (maestro: PersonaListItemMaestro) => void;
 }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-mist">
       <table className="min-w-full divide-y divide-mist text-sm">
         <thead className="bg-bone">
           <tr>
+            <Th></Th>
             <Th>Foto</Th>
             <Th>Nombre completo</Th>
             <Th>Cédula profesional</Th>
@@ -315,6 +336,16 @@ function TablaMaestros({
         <tbody className="divide-y divide-mist">
           {maestros.map((maestro) => (
             <tr key={maestro.usuarioId}>
+              <Td>
+                <button
+                  type="button"
+                  onClick={() => onEditarDatos(maestro)}
+                  aria-label={`Editar datos de ${maestro.nombres}`}
+                  className="text-slate/60 hover:text-navy"
+                >
+                  <Pencil className="size-4" />
+                </button>
+              </Td>
               <Td>
                 <button
                   type="button"
@@ -374,7 +405,7 @@ function TablaMaestros({
   );
 }
 
-function Th({ children }: { children: React.ReactNode }) {
+function Th({ children }: { children?: React.ReactNode }) {
   return (
     <th className="px-4 py-2 text-left text-xs font-semibold tracking-wide text-slate/60 uppercase">
       {children}
