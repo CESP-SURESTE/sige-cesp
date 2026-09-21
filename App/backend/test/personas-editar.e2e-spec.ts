@@ -23,6 +23,10 @@ interface ErrorBody {
   code: string;
 }
 
+interface OkBody {
+  data: { ok: true };
+}
+
 /**
  * Test de integración — feature "Edición de datos de persona" (2026-09-20).
  *
@@ -248,6 +252,168 @@ describe('PersonasController — GET/PATCH /personas/:id (e2e)', () => {
 
       expect(res.status).toBe(404);
       expect((res.body as ErrorBody).code).toBe('NOT_FOUND');
+    });
+  });
+
+  describe('PATCH /personas/:id', () => {
+    it('edita nombres/apellidos/CURP/contactos/infoMedica de un alumno', async () => {
+      const alumnoId = await crearAlumnoFixture(sedeMeridaId, carreraMeridaId);
+      const token = await firmarToken(adminMeridaId, RolUsuario.ADMINISTRATIVO, sedeMeridaId);
+
+      const res = await request(app.getHttpServer())
+        .patch(`/personas/${alumnoId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          perfilAlumno: {
+            nombres: 'Fixture Editar CORREGIDO',
+            apellidoPaterno: 'Corregido',
+            fechaNacimiento: '2005-01-01',
+            correoPersonal: 'corregido@example.com',
+            carreraId: carreraMeridaId,
+            periodoIngreso: '2026-1',
+            cuatrimestreActual: 2,
+            contactos: [
+              { nombre: 'Tutor Nuevo', telefono: '9991110000', parentesco: 'Padre', tipo: 'TUTOR' },
+            ],
+            infoMedica: { tieneCondicionMedica: false, tipoSangre: 'B_NEGATIVO' },
+          },
+        });
+
+      expect(res.status).toBe(200);
+      expect((res.body as OkBody).data).toEqual({ ok: true });
+
+      const perfil = await prisma.perfilAlumno.findUniqueOrThrow({
+        where: { usuarioId: alumnoId },
+        include: { contactos: true, infoMedica: true },
+      });
+      expect(perfil.nombres).toBe('Fixture Editar CORREGIDO');
+      expect(perfil.apellidoPaterno).toBe('Corregido');
+      expect(perfil.cuatrimestreActual).toBe(2);
+      expect(perfil.contactos).toHaveLength(1);
+      expect(perfil.contactos[0].nombre).toBe('Tutor Nuevo');
+      expect(perfil.infoMedica?.tipoSangre).toBe('B_NEGATIVO');
+
+      const registro = await prisma.registroAuditoria.findFirst({
+        where: { entidad: 'Usuario', entidadId: alumnoId, accion: 'EDICION' },
+        orderBy: { fecha: 'desc' },
+      });
+      expect(registro?.usuarioId).toBe(adminMeridaId);
+    });
+
+    it('responde 400 VALIDATION_ERROR si cuatrimestreActual excede la duración de la carrera', async () => {
+      const alumnoId = await crearAlumnoFixture(sedeMeridaId, carreraMeridaId);
+      const token = await firmarToken(adminMeridaId, RolUsuario.ADMINISTRATIVO, sedeMeridaId);
+      const carrera = await prisma.carrera.findUniqueOrThrow({ where: { id: carreraMeridaId } });
+
+      const res = await request(app.getHttpServer())
+        .patch(`/personas/${alumnoId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          perfilAlumno: {
+            nombres: 'X',
+            apellidoPaterno: 'Y',
+            fechaNacimiento: '2005-01-01',
+            correoPersonal: 'x@example.com',
+            carreraId: carreraMeridaId,
+            periodoIngreso: '2026-1',
+            cuatrimestreActual: carrera.duracion + 1,
+            contactos: [{ nombre: 'T', telefono: '1', parentesco: 'P', tipo: 'TUTOR' }],
+            infoMedica: { tieneCondicionMedica: false, tipoSangre: 'O_POSITIVO' },
+          },
+        });
+
+      expect(res.status).toBe(400);
+      expect((res.body as ErrorBody).code).toBe('VALIDATION_ERROR');
+    });
+
+    it('responde 404 NOT_FOUND si la persona es de otra sede', async () => {
+      const alumnoId = await crearAlumnoFixture(sedeMeridaId, carreraMeridaId);
+      const token = await firmarToken(adminValladolidId, RolUsuario.ADMINISTRATIVO, sedeValladolidId);
+
+      const res = await request(app.getHttpServer())
+        .patch(`/personas/${alumnoId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          perfilAlumno: {
+            nombres: 'X',
+            apellidoPaterno: 'Y',
+            fechaNacimiento: '2005-01-01',
+            correoPersonal: 'x@example.com',
+            carreraId: carreraMeridaId,
+            periodoIngreso: '2026-1',
+            cuatrimestreActual: 1,
+            contactos: [{ nombre: 'T', telefono: '1', parentesco: 'P', tipo: 'TUTOR' }],
+            infoMedica: { tieneCondicionMedica: false, tipoSangre: 'O_POSITIVO' },
+          },
+        });
+
+      expect(res.status).toBe(404);
+      expect((res.body as ErrorBody).code).toBe('NOT_FOUND');
+    });
+
+    it('un AUXILIAR no puede editar a un ADMINISTRATIVO (403 NIVEL_PERMISO_INSUFICIENTE)', async () => {
+      const targetId = await crearAdministrativoFixture(sedeMeridaId, NivelPermiso.AUXILIAR);
+      const auxiliarId = await crearAdministrativoFixture(sedeMeridaId, NivelPermiso.AUXILIAR);
+      const token = await firmarToken(auxiliarId, RolUsuario.ADMINISTRATIVO, sedeMeridaId);
+
+      const res = await request(app.getHttpServer())
+        .patch(`/personas/${targetId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          perfilAdministrativo: {
+            nombres: 'X',
+            apellidoPaterno: 'Y',
+            curp: 'CURPCURPCURPCURPCU',
+            correoPersonal: 'x@example.com',
+            telefono: '9990000000',
+            fechaContratacion: '2024-01-01',
+            puesto: 'AUXILIAR',
+            contactos: [{ nombre: 'T', telefono: '1', parentesco: 'P' }],
+            infoMedica: { tieneCondicionMedica: false, tipoSangre: 'O_POSITIVO' },
+          },
+        });
+
+      expect(res.status).toBe(403);
+      expect((res.body as ErrorBody).code).toBe('NIVEL_PERMISO_INSUFICIENTE');
+    });
+
+    it('cambiar nivelPermiso audita CAMBIO_PERMISO además de EDICION', async () => {
+      const targetId = await crearAdministrativoFixture(sedeMeridaId, NivelPermiso.AUXILIAR);
+      const token = await firmarToken(adminMeridaId, RolUsuario.ADMINISTRATIVO, sedeMeridaId);
+
+      const res = await request(app.getHttpServer())
+        .patch(`/personas/${targetId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          perfilAdministrativo: {
+            nombres: 'X',
+            apellidoPaterno: 'Y',
+            curp: 'CURPCURPCURPCURPCU',
+            correoPersonal: 'x@example.com',
+            telefono: '9990000000',
+            fechaContratacion: '2024-01-01',
+            puesto: 'AUXILIAR',
+            nivelPermiso: 'ADMIN',
+            contactos: [{ nombre: 'T', telefono: '1', parentesco: 'P' }],
+            infoMedica: { tieneCondicionMedica: false, tipoSangre: 'O_POSITIVO' },
+          },
+        });
+
+      expect(res.status).toBe(200);
+
+      const perfil = await prisma.perfilAdministrativo.findUniqueOrThrow({
+        where: { usuarioId: targetId },
+      });
+      expect(perfil.nivelPermiso).toBe('ADMIN');
+
+      const registroCambioPermiso = await prisma.registroAuditoria.findFirst({
+        where: { entidad: 'Usuario', entidadId: targetId, accion: 'CAMBIO_PERMISO' },
+      });
+      expect(registroCambioPermiso).not.toBeNull();
+      const registroEdicion = await prisma.registroAuditoria.findFirst({
+        where: { entidad: 'Usuario', entidadId: targetId, accion: 'EDICION' },
+      });
+      expect(registroEdicion).not.toBeNull();
     });
   });
 });

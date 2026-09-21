@@ -28,6 +28,7 @@ import {
   InfoMedicaDto,
   PerfilMaestroDto,
 } from './dto/crear-persona.dto';
+import { EditarPersonaDto } from './dto/editar-persona.dto';
 import { ListarPersonasQueryDto } from './dto/listar-personas.query.dto';
 import { generateTemporaryPassword } from './temporary-password';
 import { obtenerCorreosPersonales } from '../common/publicacion/correos-destinatarios.util';
@@ -1540,6 +1541,329 @@ export class PersonasService {
       error: 'Error inesperado al obtener los datos de la persona',
       code: 'SERVER_ERROR',
     });
+  }
+
+  /**
+   * `PATCH /personas/:id` — guarda los cambios del modal de edición (feature
+   * "Edición de datos de persona", 2026-09-20). Mismo patrón que
+   * `cambiarEstatus`: `id` es el `Usuario` objetivo, se valida contra su
+   * `rol` real (no contra un discriminador del body).
+   *
+   * Reemplazo completo de `contactos` (`deleteMany` + recrear, dentro de la
+   * transacción) — evita lógica de diff/merge, el modal siempre manda el
+   * array completo (mismo criterio documentado en el spec).
+   *
+   * Auditoría: `EDICION` si cambió cualquier campo del perfil/contactos/
+   * infoMedica/`codigoExterno`; un registro ADICIONAL `CAMBIO_PERMISO` si
+   * `nivelPermiso` cambió (solo aplica a ADMINISTRATIVO) — primer uso real
+   * de ese valor del enum. No se intenta evitar auditar cuando "no hay
+   * cambios reales" (a diferencia de `PATCH /carreras`) — decisión explícita
+   * del spec: el diff no vale el costo con contactos+infoMedica en el mismo
+   * submit.
+   */
+  async editarPersona(
+    id: string,
+    dto: EditarPersonaDto,
+    sedeId: string,
+    actorUsuarioId: string,
+  ): Promise<{ ok: true }> {
+    const usuario = await this.prisma.usuario.findFirst({
+      where: { id, sedeId },
+      select: {
+        rol: true,
+        codigoExterno: true,
+        perfilAdministrativo: { select: { nivelPermiso: true } },
+      },
+    });
+
+    if (!usuario) {
+      throw new NotFoundException({
+        error: 'Persona no encontrada en tu sede',
+        code: 'NOT_FOUND',
+      });
+    }
+
+    // Mismo pre-check de `codigoExterno` que `altaPersona`, EXCLUYENDO a la
+    // propia persona (editar sin cambiar su propio código no debe fallar).
+    if (dto.codigoExterno && dto.codigoExterno !== usuario.codigoExterno) {
+      const codigoExternoEnUso = await this.prisma.usuario.findUnique({
+        where: { codigoExterno: dto.codigoExterno },
+        select: { id: true },
+      });
+      if (codigoExternoEnUso && codigoExternoEnUso.id !== id) {
+        throw new ConflictException({
+          error: 'Ya existe un usuario con ese código externo',
+          code: 'CONFLICT',
+        });
+      }
+    }
+
+    let nivelPermisoAnterior: NivelPermiso | undefined;
+    let nivelPermisoNuevo: NivelPermiso | undefined;
+
+    if (usuario.rol === RolUsuario.ALUMNO) {
+      if (!dto.perfilAlumno) {
+        throw new BadRequestException({
+          error: 'perfilAlumno es requerido para editar un ALUMNO',
+          code: 'VALIDATION_ERROR',
+        });
+      }
+      const carrera = await this.prisma.carrera.findFirst({
+        where: { id: dto.perfilAlumno.carreraId, sedeId },
+        select: { duracion: true },
+      });
+      if (!carrera) {
+        throw new NotFoundException({
+          error: 'Carrera no encontrada en tu sede',
+          code: 'NOT_FOUND',
+        });
+      }
+      if (
+        dto.perfilAlumno.cuatrimestreActual < 1 ||
+        dto.perfilAlumno.cuatrimestreActual > carrera.duracion
+      ) {
+        throw new BadRequestException({
+          error: `cuatrimestreActual debe estar entre 1 y ${carrera.duracion} para esa carrera`,
+          code: 'VALIDATION_ERROR',
+        });
+      }
+    } else if (usuario.rol === RolUsuario.MAESTRO) {
+      if (!dto.perfilMaestro) {
+        throw new BadRequestException({
+          error: 'perfilMaestro es requerido para editar un MAESTRO',
+          code: 'VALIDATION_ERROR',
+        });
+      }
+      // Misma regla cruzada que `altaPersona`.
+      if (
+        dto.perfilMaestro.tipoContratacion === TipoContratacion.CONTRATO &&
+        dto.perfilMaestro.contratoFechaInicio &&
+        dto.perfilMaestro.contratoFechaFin &&
+        new Date(dto.perfilMaestro.contratoFechaFin).getTime() <=
+          new Date(dto.perfilMaestro.contratoFechaInicio).getTime()
+      ) {
+        throw new BadRequestException({
+          error:
+            'contratoFechaFin no puede ser anterior o igual a contratoFechaInicio',
+          code: 'VALIDATION_ERROR',
+        });
+      }
+    } else {
+      if (!dto.perfilAdministrativo) {
+        throw new BadRequestException({
+          error: 'perfilAdministrativo es requerido para editar un ADMINISTRATIVO',
+          code: 'VALIDATION_ERROR',
+        });
+      }
+      nivelPermisoAnterior = usuario.perfilAdministrativo?.nivelPermiso;
+      nivelPermisoNuevo =
+        dto.perfilAdministrativo.nivelPermiso ?? nivelPermisoAnterior;
+
+      // Jerarquía de `nivelPermiso` (regla 7) — igual que `cambiarEstatus`:
+      // el actor debe tener nivel suficiente sobre el nivel ACTUAL del
+      // target Y sobre el nivel NUEVO que le quiere asignar.
+      const perfilActor = await this.prisma.perfilAdministrativo.findUnique({
+        where: { usuarioId: actorUsuarioId },
+        select: { nivelPermiso: true },
+      });
+      const nivelActor = perfilActor?.nivelPermiso ?? NivelPermiso.AUXILIAR;
+
+      if (nivelActor === NivelPermiso.AUXILIAR) {
+        throw new ForbiddenException({
+          error: 'Un usuario con nivel AUXILIAR no puede editar personal administrativo',
+          code: 'NIVEL_PERMISO_INSUFICIENTE',
+        });
+      }
+
+      const rangoActor = PersonasService.JERARQUIA_NIVEL_PERMISO[nivelActor];
+      const rangoObjetivoActual =
+        PersonasService.JERARQUIA_NIVEL_PERMISO[
+          nivelPermisoAnterior ?? NivelPermiso.AUXILIAR
+        ];
+      const rangoObjetivoNuevo =
+        PersonasService.JERARQUIA_NIVEL_PERMISO[
+          nivelPermisoNuevo ?? NivelPermiso.AUXILIAR
+        ];
+
+      if (rangoActor < rangoObjetivoActual || rangoActor < rangoObjetivoNuevo) {
+        throw new ForbiddenException({
+          error: 'No tienes nivel de permiso suficiente para editar a este administrativo',
+          code: 'NIVEL_PERMISO_INSUFICIENTE',
+        });
+      }
+    }
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.usuario.update({
+          where: { id },
+          data: { codigoExterno: dto.codigoExterno },
+        });
+
+        if (usuario.rol === RolUsuario.ALUMNO && dto.perfilAlumno) {
+          const perfil = await tx.perfilAlumno.update({
+            where: { usuarioId: id },
+            data: {
+              nombres: dto.perfilAlumno.nombres,
+              apellidoPaterno: dto.perfilAlumno.apellidoPaterno,
+              apellidoMaterno: dto.perfilAlumno.apellidoMaterno,
+              curp: dto.perfilAlumno.curp,
+              fechaNacimiento: new Date(dto.perfilAlumno.fechaNacimiento),
+              correoPersonal: dto.perfilAlumno.correoPersonal,
+              carreraId: dto.perfilAlumno.carreraId,
+              periodoIngreso: dto.perfilAlumno.periodoIngreso,
+              cuatrimestreActual: dto.perfilAlumno.cuatrimestreActual,
+              telefono: dto.perfilAlumno.telefono,
+            },
+          });
+
+          await tx.contactoAlumno.deleteMany({ where: { alumnoId: perfil.id } });
+          for (const contacto of this.conOrdenSecuencial(dto.perfilAlumno.contactos)) {
+            await tx.contactoAlumno.create({
+              data: {
+                alumnoId: perfil.id,
+                tipo: contacto.tipo,
+                nombre: contacto.nombre,
+                telefono: contacto.telefono,
+                correo: contacto.correo,
+                parentesco: contacto.parentesco,
+                orden: contacto.orden,
+              },
+            });
+          }
+
+          await tx.infoMedicaAlumno.upsert({
+            where: { alumnoId: perfil.id },
+            create: { alumnoId: perfil.id, ...this.datosInfoMedica(dto.perfilAlumno.infoMedica) },
+            update: this.datosInfoMedica(dto.perfilAlumno.infoMedica),
+          });
+        } else if (usuario.rol === RolUsuario.MAESTRO && dto.perfilMaestro) {
+          const perfil = await tx.perfilMaestro.update({
+            where: { usuarioId: id },
+            data: {
+              nombres: dto.perfilMaestro.nombres,
+              apellidoPaterno: dto.perfilMaestro.apellidoPaterno,
+              apellidoMaterno: dto.perfilMaestro.apellidoMaterno,
+              curp: dto.perfilMaestro.curp,
+              cedulaProfesional: dto.perfilMaestro.cedulaProfesional,
+              correoPersonal: dto.perfilMaestro.correoPersonal,
+              telefono: dto.perfilMaestro.telefono,
+              fechaContratacion: new Date(dto.perfilMaestro.fechaContratacion),
+              ...this.datosContratacionMaestro(dto.perfilMaestro),
+            },
+          });
+
+          await tx.contactoMaestro.deleteMany({ where: { maestroId: perfil.id } });
+          for (const contacto of this.conOrdenSecuencial(dto.perfilMaestro.contactos)) {
+            await tx.contactoMaestro.create({
+              data: {
+                maestroId: perfil.id,
+                nombre: contacto.nombre,
+                telefono: contacto.telefono,
+                correo: contacto.correo,
+                parentesco: contacto.parentesco,
+                orden: contacto.orden,
+              },
+            });
+          }
+
+          await tx.infoMedicaMaestro.upsert({
+            where: { maestroId: perfil.id },
+            create: { maestroId: perfil.id, ...this.datosInfoMedica(dto.perfilMaestro.infoMedica) },
+            update: this.datosInfoMedica(dto.perfilMaestro.infoMedica),
+          });
+        } else if (usuario.rol === RolUsuario.ADMINISTRATIVO && dto.perfilAdministrativo) {
+          const perfil = await tx.perfilAdministrativo.update({
+            where: { usuarioId: id },
+            data: {
+              nombres: dto.perfilAdministrativo.nombres,
+              apellidoPaterno: dto.perfilAdministrativo.apellidoPaterno,
+              apellidoMaterno: dto.perfilAdministrativo.apellidoMaterno,
+              curp: dto.perfilAdministrativo.curp,
+              correoPersonal: dto.perfilAdministrativo.correoPersonal,
+              telefono: dto.perfilAdministrativo.telefono,
+              fechaContratacion: new Date(dto.perfilAdministrativo.fechaContratacion),
+              puesto: dto.perfilAdministrativo.puesto,
+              nivelPermiso: nivelPermisoNuevo,
+            },
+          });
+
+          await tx.contactoAdministrativo.deleteMany({
+            where: { administrativoId: perfil.id },
+          });
+          for (const contacto of this.conOrdenSecuencial(dto.perfilAdministrativo.contactos)) {
+            await tx.contactoAdministrativo.create({
+              data: {
+                administrativoId: perfil.id,
+                nombre: contacto.nombre,
+                telefono: contacto.telefono,
+                correo: contacto.correo,
+                parentesco: contacto.parentesco,
+                orden: contacto.orden,
+              },
+            });
+          }
+
+          await tx.infoMedicaAdministrativo.upsert({
+            where: { administrativoId: perfil.id },
+            create: {
+              administrativoId: perfil.id,
+              ...this.datosInfoMedica(dto.perfilAdministrativo.infoMedica),
+            },
+            update: this.datosInfoMedica(dto.perfilAdministrativo.infoMedica),
+          });
+        }
+
+        await tx.registroAuditoria.create({
+          data: {
+            usuarioId: actorUsuarioId,
+            sedeId,
+            accion: AccionAuditoria.EDICION,
+            entidad: 'Usuario',
+            entidadId: id,
+            detalle: { rol: usuario.rol },
+          },
+        });
+
+        if (
+          nivelPermisoAnterior !== undefined &&
+          nivelPermisoNuevo !== undefined &&
+          nivelPermisoAnterior !== nivelPermisoNuevo
+        ) {
+          await tx.registroAuditoria.create({
+            data: {
+              usuarioId: actorUsuarioId,
+              sedeId,
+              accion: AccionAuditoria.CAMBIO_PERMISO,
+              entidad: 'Usuario',
+              entidadId: id,
+              detalle: { nivelPermisoAnterior, nivelPermisoNuevo },
+            },
+          });
+        }
+      });
+
+      return { ok: true };
+    } catch (err) {
+      if (
+        err instanceof NotFoundException ||
+        err instanceof BadRequestException ||
+        err instanceof ForbiddenException ||
+        err instanceof ConflictException
+      ) {
+        throw err;
+      }
+      // Regla 12 de CLAUDE.md raíz — loguear el error completo server-side
+      // antes de responder, aunque el cliente no reciba el detalle.
+      console.error(
+        '[PersonasService.editarPersona] Error inesperado editando persona:',
+        err,
+      );
+      throw new InternalServerErrorException({
+        error: 'Error inesperado al editar la persona',
+        code: 'SERVER_ERROR',
+      });
+    }
   }
 
   async listarPorSedeYRol(

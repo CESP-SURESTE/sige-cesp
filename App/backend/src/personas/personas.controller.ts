@@ -25,6 +25,7 @@ import { ArchivoFotoInvalidaFilter } from '../foto-perfil/archivo-foto-invalida.
 import { FotoPerfilService } from '../foto-perfil/foto-perfil.service';
 import { CambiarEstatusDto } from './dto/cambiar-estatus.dto';
 import { CrearPersonaDto } from './dto/crear-persona.dto';
+import { EditarPersonaDto } from './dto/editar-persona.dto';
 import { ListarPersonasQueryDto } from './dto/listar-personas.query.dto';
 import { PersonasService } from './personas.service';
 
@@ -133,6 +134,23 @@ export class PersonasController {
     @SedeActual() sedeId: string,
   ) {
     const data = await this.personasService.obtenerParaEditar(id, sedeId);
+    return { data };
+  }
+
+  @Patch(':id')
+  @Roles(RolUsuario.ADMINISTRATIVO)
+  async editar(
+    @Param('id') id: string,
+    @Body() body: EditarPersonaDto,
+    @SedeActual() sedeId: string,
+    @ActorUsuarioId() actorUsuarioId: string,
+  ) {
+    const data = await this.personasService.editarPersona(
+      id,
+      body,
+      sedeId,
+      actorUsuarioId,
+    );
     return { data };
   }
 
