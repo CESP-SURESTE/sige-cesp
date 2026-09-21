@@ -18,6 +18,7 @@ import {
   RolUsuario,
   TipoContratacion,
   TipoLicencia,
+  TipoSangre,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
@@ -135,6 +136,90 @@ export interface ResumenPorSedeResult {
   totalCarreras: number;
   alumnosPorCarrera: AlumnosPorCarreraItem[];
   altasRecientes: AltaRecienteItem[];
+}
+
+/** `GET /personas/:id` (precarga del modal de edición) — contacto sin `id`
+ * ni `orden`: el frontend no necesita ninguno de los 2 para prellenar el
+ * form (el guardado reemplaza todo el array, ver `editarPersona`). `tipo`
+ * solo viene poblado para contactos de ALUMNO. */
+export interface PersonaEditableContacto {
+  nombre: string;
+  telefono: string;
+  correo: string | null;
+  parentesco: string;
+  tipo?: 'TUTOR' | 'EMERGENCIA';
+}
+
+/** `GET /personas/:id` — idéntico para los 3 roles. `tipoSangre` puede ser
+ * `null` en perfiles de altas anteriores al 2026-09-07 (columna nullable,
+ * sin backfill — ver nota de `InfoMedicaDto` en `crear-persona.dto.ts`). */
+export interface PersonaEditableInfoMedica {
+  tieneCondicionMedica: boolean;
+  tipoSangre: TipoSangre | null;
+  padecimiento: string | null;
+  medicamentos: string | null;
+  alergias: string | null;
+  tratamientoAdicional: string | null;
+}
+
+export interface PersonaEditableAlumno {
+  nombres: string;
+  apellidoPaterno: string;
+  apellidoMaterno: string | null;
+  curp: string | null;
+  /** ISO `YYYY-MM-DD`. */
+  fechaNacimiento: string;
+  correoPersonal: string;
+  carreraId: string;
+  periodoIngreso: string;
+  cuatrimestreActual: number;
+  telefono: string | null;
+}
+
+export interface PersonaEditableMaestro {
+  nombres: string;
+  apellidoPaterno: string;
+  apellidoMaterno: string | null;
+  curp: string;
+  cedulaProfesional: string | null;
+  correoPersonal: string;
+  telefono: string;
+  /** ISO `YYYY-MM-DD`. */
+  fechaContratacion: string;
+  tipoContratacion: TipoContratacion | null;
+  diasTemporal: number | null;
+  /** ISO `YYYY-MM-DD`, o `null`. */
+  contratoFechaInicio: string | null;
+  /** ISO `YYYY-MM-DD`, o `null`. */
+  contratoFechaFin: string | null;
+}
+
+export interface PersonaEditableAdministrativo {
+  nombres: string;
+  apellidoPaterno: string;
+  apellidoMaterno: string | null;
+  curp: string;
+  correoPersonal: string;
+  telefono: string;
+  /** ISO `YYYY-MM-DD`. */
+  fechaContratacion: string;
+  puesto: string;
+  nivelPermiso: NivelPermiso;
+}
+
+/**
+ * `GET /personas/:id` — precarga del modal de edición (feature "Edición de
+ * datos de persona", 2026-09-20). Exactamente uno de `perfilAlumno`/
+ * `perfilMaestro`/`perfilAdministrativo` viene presente, según `rol`.
+ */
+export interface PersonaParaEditar {
+  rol: RolUsuario;
+  codigoExterno: string | null;
+  perfilAlumno?: PersonaEditableAlumno;
+  perfilMaestro?: PersonaEditableMaestro;
+  perfilAdministrativo?: PersonaEditableAdministrativo;
+  contactos: PersonaEditableContacto[];
+  infoMedica: PersonaEditableInfoMedica;
 }
 
 /**
@@ -1243,6 +1328,218 @@ export class PersonasService {
         storagePath: item.fotoStoragePath,
       })),
     );
+  }
+
+  /**
+   * Espejo de `datosInfoMedica` (inverso): normaliza la fila de
+   * `InfoMedica*` (o `null`, perfiles sin fila — no debería pasar en la
+   * práctica desde que `tipoSangre` es requerido en el alta, pero
+   * defensivo por si acaso) al shape `PersonaEditableInfoMedica`.
+   */
+  private mapInfoMedicaEditable(
+    infoMedica: {
+      tieneCondicionMedica: boolean;
+      tipoSangre: TipoSangre | null;
+      padecimiento: string | null;
+      medicamentos: string | null;
+      alergias: string | null;
+      tratamientoAdicional: string | null;
+    } | null,
+  ): PersonaEditableInfoMedica {
+    if (!infoMedica) {
+      return {
+        tieneCondicionMedica: false,
+        tipoSangre: null,
+        padecimiento: null,
+        medicamentos: null,
+        alergias: null,
+        tratamientoAdicional: null,
+      };
+    }
+    return infoMedica;
+  }
+
+  /**
+   * `GET /personas/:id` — precarga del modal de edición (feature "Edición
+   * de datos de persona", 2026-09-20). Sin auditoría (decisión explícita
+   * del spec, sección "Contrato de API" — un `ADMINISTRATIVO` abriendo el
+   * modal de edición de alguien de su sede no es un evento que valga la
+   * pena rastrear, a diferencia de `GET /emergencia/expediente/...`).
+   */
+  async obtenerParaEditar(
+    id: string,
+    sedeId: string,
+  ): Promise<PersonaParaEditar> {
+    const CONTACTO_SELECT = {
+      nombre: true,
+      telefono: true,
+      correo: true,
+      parentesco: true,
+    } as const;
+    const INFO_MEDICA_SELECT = {
+      tieneCondicionMedica: true,
+      tipoSangre: true,
+      padecimiento: true,
+      medicamentos: true,
+      alergias: true,
+      tratamientoAdicional: true,
+    } as const;
+
+    const usuario = await this.prisma.usuario.findFirst({
+      where: { id, sedeId },
+      select: {
+        rol: true,
+        codigoExterno: true,
+        perfilAlumno: {
+          select: {
+            nombres: true,
+            apellidoPaterno: true,
+            apellidoMaterno: true,
+            curp: true,
+            fechaNacimiento: true,
+            correoPersonal: true,
+            carreraId: true,
+            periodoIngreso: true,
+            cuatrimestreActual: true,
+            telefono: true,
+            contactos: {
+              orderBy: { orden: 'asc' },
+              select: { ...CONTACTO_SELECT, tipo: true },
+            },
+            infoMedica: { select: INFO_MEDICA_SELECT },
+          },
+        },
+        perfilMaestro: {
+          select: {
+            nombres: true,
+            apellidoPaterno: true,
+            apellidoMaterno: true,
+            curp: true,
+            cedulaProfesional: true,
+            correoPersonal: true,
+            telefono: true,
+            fechaContratacion: true,
+            tipoContratacion: true,
+            diasTemporal: true,
+            contratoFechaInicio: true,
+            contratoFechaFin: true,
+            contactos: { orderBy: { orden: 'asc' }, select: CONTACTO_SELECT },
+            infoMedica: { select: INFO_MEDICA_SELECT },
+          },
+        },
+        perfilAdministrativo: {
+          select: {
+            nombres: true,
+            apellidoPaterno: true,
+            apellidoMaterno: true,
+            curp: true,
+            correoPersonal: true,
+            telefono: true,
+            fechaContratacion: true,
+            puesto: true,
+            nivelPermiso: true,
+            contactos: { orderBy: { orden: 'asc' }, select: CONTACTO_SELECT },
+            infoMedica: { select: INFO_MEDICA_SELECT },
+          },
+        },
+      },
+    });
+
+    if (!usuario) {
+      throw new NotFoundException({
+        error: 'Persona no encontrada en tu sede',
+        code: 'NOT_FOUND',
+      });
+    }
+
+    if (usuario.rol === RolUsuario.ALUMNO && usuario.perfilAlumno) {
+      const perfil = usuario.perfilAlumno;
+      return {
+        rol: usuario.rol,
+        codigoExterno: usuario.codigoExterno,
+        perfilAlumno: {
+          nombres: perfil.nombres,
+          apellidoPaterno: perfil.apellidoPaterno,
+          apellidoMaterno: perfil.apellidoMaterno,
+          curp: perfil.curp,
+          fechaNacimiento: perfil.fechaNacimiento.toISOString().slice(0, 10),
+          correoPersonal: perfil.correoPersonal,
+          carreraId: perfil.carreraId,
+          periodoIngreso: perfil.periodoIngreso,
+          cuatrimestreActual: perfil.cuatrimestreActual,
+          telefono: perfil.telefono,
+        },
+        contactos: perfil.contactos,
+        infoMedica: this.mapInfoMedicaEditable(perfil.infoMedica),
+      };
+    }
+
+    if (usuario.rol === RolUsuario.MAESTRO && usuario.perfilMaestro) {
+      const perfil = usuario.perfilMaestro;
+      return {
+        rol: usuario.rol,
+        codigoExterno: usuario.codigoExterno,
+        perfilMaestro: {
+          nombres: perfil.nombres,
+          apellidoPaterno: perfil.apellidoPaterno,
+          apellidoMaterno: perfil.apellidoMaterno,
+          curp: perfil.curp,
+          cedulaProfesional: perfil.cedulaProfesional,
+          correoPersonal: perfil.correoPersonal,
+          telefono: perfil.telefono,
+          fechaContratacion: perfil.fechaContratacion
+            .toISOString()
+            .slice(0, 10),
+          tipoContratacion: perfil.tipoContratacion,
+          diasTemporal: perfil.diasTemporal,
+          contratoFechaInicio: perfil.contratoFechaInicio
+            ? perfil.contratoFechaInicio.toISOString().slice(0, 10)
+            : null,
+          contratoFechaFin: perfil.contratoFechaFin
+            ? perfil.contratoFechaFin.toISOString().slice(0, 10)
+            : null,
+        },
+        contactos: perfil.contactos,
+        infoMedica: this.mapInfoMedicaEditable(perfil.infoMedica),
+      };
+    }
+
+    if (
+      usuario.rol === RolUsuario.ADMINISTRATIVO &&
+      usuario.perfilAdministrativo
+    ) {
+      const perfil = usuario.perfilAdministrativo;
+      return {
+        rol: usuario.rol,
+        codigoExterno: usuario.codigoExterno,
+        perfilAdministrativo: {
+          nombres: perfil.nombres,
+          apellidoPaterno: perfil.apellidoPaterno,
+          apellidoMaterno: perfil.apellidoMaterno,
+          curp: perfil.curp,
+          correoPersonal: perfil.correoPersonal,
+          telefono: perfil.telefono,
+          fechaContratacion: perfil.fechaContratacion
+            .toISOString()
+            .slice(0, 10),
+          puesto: perfil.puesto,
+          nivelPermiso: perfil.nivelPermiso,
+        },
+        contactos: perfil.contactos,
+        infoMedica: this.mapInfoMedicaEditable(perfil.infoMedica),
+      };
+    }
+
+    // Defensivo — no debería ocurrir nunca: `usuario.rol` siempre coincide
+    // con exactamente uno de los 3 perfiles (regla 9, alta transaccional).
+    console.error(
+      '[PersonasService.obtenerParaEditar] Usuario sin perfil correspondiente a su rol:',
+      { id, rol: usuario.rol },
+    );
+    throw new InternalServerErrorException({
+      error: 'Error inesperado al obtener los datos de la persona',
+      code: 'SERVER_ERROR',
+    });
   }
 
   async listarPorSedeYRol(

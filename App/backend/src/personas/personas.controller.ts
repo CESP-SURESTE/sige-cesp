@@ -126,6 +126,16 @@ export class PersonasController {
     return { data };
   }
 
+  @Get(':id')
+  @Roles(RolUsuario.ADMINISTRATIVO)
+  async obtenerParaEditar(
+    @Param('id') id: string,
+    @SedeActual() sedeId: string,
+  ) {
+    const data = await this.personasService.obtenerParaEditar(id, sedeId);
+    return { data };
+  }
+
   @Patch(':id/estatus')
   @Roles(RolUsuario.ADMINISTRATIVO)
   async cambiarEstatus(
