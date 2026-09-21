@@ -8,6 +8,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { useState } from 'react';
+import { Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { Avatar } from '@/components/admin/ui/Avatar';
 import { SkeletonTableRows } from '@/components/admin/ui/Skeleton';
@@ -27,6 +28,7 @@ import { SubirFotoPersonaModal } from '@/components/admin/ui/personas-listado/Su
 import { useBuscarDebounced } from '@/components/admin/ui/personas-listado/useBuscarDebounced';
 import { usePaginacionFiltrada } from '@/components/admin/ui/personas-listado/usePaginacionFiltrada';
 import { useCooldownReseteo } from '@/components/admin/ui/personas-listado/useCooldownReseteo';
+import { EditarAlumnoModal } from './EditarAlumnoModal';
 
 /**
  * Listado de alumnos — Fase 5, Día 19.
@@ -54,6 +56,8 @@ export default function AdminAlumnosPage() {
   const [alumnoAResetear, setAlumnoAResetear] =
     useState<PersonaListItemAlumno | null>(null);
   const [alumnoAFotografiar, setAlumnoAFotografiar] =
+    useState<PersonaListItemAlumno | null>(null);
+  const [alumnoAEditarDatos, setAlumnoAEditarDatos] =
     useState<PersonaListItemAlumno | null>(null);
   const queryClient = useQueryClient();
 
@@ -147,6 +151,7 @@ export default function AdminAlumnosPage() {
             <table className="min-w-full divide-y divide-mist text-sm">
               <thead className="bg-bone">
                 <tr>
+                  <Th></Th>
                   <Th>Foto</Th>
                   <Th>Nombre completo</Th>
                   <Th>Matrícula</Th>
@@ -158,7 +163,7 @@ export default function AdminAlumnosPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-mist">
-                <SkeletonTableRows columns={8} />
+                <SkeletonTableRows columns={9} />
               </tbody>
             </table>
           </div>
@@ -180,6 +185,7 @@ export default function AdminAlumnosPage() {
               minutosRestantes={minutosRestantes}
               onResetearPassword={setAlumnoAResetear}
               onFotografiar={setAlumnoAFotografiar}
+              onEditarDatos={setAlumnoAEditarDatos}
             />
             <div className="mt-4">
               <Paginacion
@@ -229,6 +235,18 @@ export default function AdminAlumnosPage() {
           }
         />
       )}
+
+      {alumnoAEditarDatos && (
+        <EditarAlumnoModal
+          usuarioId={alumnoAEditarDatos.usuarioId}
+          onClose={() => setAlumnoAEditarDatos(null)}
+          onGuardadoConExito={() =>
+            queryClient.invalidateQueries({
+              queryKey: ['admin', 'personas', 'ALUMNO'],
+            })
+          }
+        />
+      )}
     </div>
   );
 }
@@ -239,6 +257,7 @@ function TablaAlumnos({
   minutosRestantes,
   onResetearPassword,
   onFotografiar,
+  onEditarDatos,
 }: {
   alumnos: PersonaListItemAlumno[];
   /** Cooldown de reseteo de contraseña (`useCooldownReseteo`) — por fila. */
@@ -246,12 +265,14 @@ function TablaAlumnos({
   minutosRestantes: (usuarioId: string) => number;
   onResetearPassword: (alumno: PersonaListItemAlumno) => void;
   onFotografiar: (alumno: PersonaListItemAlumno) => void;
+  onEditarDatos: (alumno: PersonaListItemAlumno) => void;
 }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-mist">
       <table className="min-w-full divide-y divide-mist text-sm">
         <thead className="bg-bone">
           <tr>
+            <Th></Th>
             <Th>Foto</Th>
             <Th>Nombre completo</Th>
             <Th>Matrícula</Th>
@@ -265,6 +286,16 @@ function TablaAlumnos({
         <tbody className="divide-y divide-mist">
           {alumnos.map((alumno) => (
             <tr key={alumno.usuarioId}>
+              <Td>
+                <button
+                  type="button"
+                  onClick={() => onEditarDatos(alumno)}
+                  aria-label={`Editar datos de ${alumno.nombres}`}
+                  className="text-slate/60 hover:text-navy"
+                >
+                  <Pencil className="size-4" />
+                </button>
+              </Td>
               <Td>
                 <button
                   type="button"
@@ -313,7 +344,7 @@ function TablaAlumnos({
   );
 }
 
-function Th({ children }: { children: React.ReactNode }) {
+function Th({ children }: { children?: React.ReactNode }) {
   return (
     <th className="px-4 py-2 text-left text-xs font-semibold tracking-wide text-slate/60 uppercase">
       {children}

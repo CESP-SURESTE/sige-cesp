@@ -1,0 +1,386 @@
+'use client';
+
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { Controller, useForm, useWatch } from 'react-hook-form';
+import { toast } from 'sonner';
+import { z } from 'zod';
+import { ContactosFieldset } from '@/components/admin/ui/persona-alta/ContactosFieldset';
+import { DatosPersonalesFieldset } from '@/components/admin/ui/persona-alta/DatosPersonalesFieldset';
+import { FieldError } from '@/components/admin/ui/persona-alta/FieldError';
+import { INPUT_CLASS, LABEL_CLASS } from '@/components/admin/ui/persona-alta/estilos';
+import { InfoMedicaFieldset } from '@/components/admin/ui/persona-alta/InfoMedicaFieldset';
+import {
+  MENSAJE_ERROR_GENERICO,
+  resolverMensajeError,
+} from '@/components/admin/ui/persona-alta/mensajes-error';
+import {
+  contactosAlumnoSchema,
+  infoMedicaSchema,
+} from '@/components/admin/ui/persona-alta/schemas';
+import { Select } from '@/components/admin/ui/persona-alta/Select';
+import { listarCarreras } from '@/lib/api/carreras';
+import {
+  editarPersona,
+  obtenerPersonaParaEditar,
+  type PersonaParaEditar,
+} from '@/lib/api/personas';
+
+/**
+ * Modal de edición de datos de alumno — feature "Edición de datos de
+ * persona" (2026-09-20, spec `docs/superpowers/specs/2026-09-20-edicion-datos-persona-design.md`).
+ *
+ * Disparado por el lápiz de `app/admin/alumnos/page.tsx` (`TablaAlumnos`).
+ * Precarga vía `GET /personas/:id` (`obtenerPersonaParaEditar`), reusa el
+ * mismo `alumnoSchema`/fieldsets que `app/admin/alumnos/nuevo/page.tsx`
+ * (sin campo `estatus`/foto/password — esos tienen su propio flujo, fuera
+ * de este modal, ver spec).
+ */
+const alumnoEditarSchema = z.object({
+  codigoExterno: z.string().optional(),
+  perfilAlumno: z.object({
+    nombres: z.string().min(1, 'Los nombres son requeridos'),
+    apellidoPaterno: z.string().min(1, 'El apellido paterno es requerido'),
+    apellidoMaterno: z.string().optional(),
+    curp: z.string().optional(),
+    fechaNacimiento: z.string().min(1, 'La fecha de nacimiento es requerida'),
+    correoPersonal: z
+      .string()
+      .min(1, 'El correo personal es requerido')
+      .email('Formato de correo inválido'),
+    carreraId: z.string().min(1, 'Selecciona una carrera'),
+    periodoIngreso: z.string().min(1, 'El periodo de ingreso es requerido'),
+    cuatrimestreActual: z.coerce
+      .number()
+      .int('El cuatrimestre debe ser un número entero')
+      .min(1, 'El cuatrimestre debe ser al menos 1'),
+    telefono: z.string().optional(),
+    contactos: contactosAlumnoSchema,
+    infoMedica: infoMedicaSchema,
+  }),
+});
+
+type AlumnoEditarFormInput = z.input<typeof alumnoEditarSchema>;
+type AlumnoEditarFormOutput = z.output<typeof alumnoEditarSchema>;
+
+function valoresIniciales(persona: PersonaParaEditar): AlumnoEditarFormInput {
+  const perfil = persona.perfilAlumno!;
+  return {
+    codigoExterno: persona.codigoExterno ?? '',
+    perfilAlumno: {
+      nombres: perfil.nombres,
+      apellidoPaterno: perfil.apellidoPaterno,
+      apellidoMaterno: perfil.apellidoMaterno ?? '',
+      curp: perfil.curp ?? '',
+      fechaNacimiento: perfil.fechaNacimiento,
+      correoPersonal: perfil.correoPersonal,
+      carreraId: perfil.carreraId,
+      periodoIngreso: perfil.periodoIngreso,
+      cuatrimestreActual: perfil.cuatrimestreActual,
+      telefono: perfil.telefono ?? '',
+      contactos:
+        persona.contactos.length > 0
+          ? persona.contactos.map((c) => ({
+              nombre: c.nombre,
+              telefono: c.telefono,
+              correo: c.correo ?? '',
+              parentesco: c.parentesco,
+              tipo: (c.tipo ?? '') as AlumnoEditarFormInput['perfilAlumno']['contactos'][number]['tipo'],
+            }))
+          : [{ nombre: '', telefono: '', correo: '', parentesco: '', tipo: '' as never }],
+      infoMedica: {
+        tieneCondicionMedica: persona.infoMedica.tieneCondicionMedica,
+        tipoSangre: (persona.infoMedica.tipoSangre ??
+          '') as AlumnoEditarFormInput['perfilAlumno']['infoMedica']['tipoSangre'],
+        padecimiento: persona.infoMedica.padecimiento ?? '',
+        medicamentos: persona.infoMedica.medicamentos ?? '',
+        alergias: persona.infoMedica.alergias ?? '',
+        tratamientoAdicional: persona.infoMedica.tratamientoAdicional ?? '',
+      },
+    },
+  };
+}
+
+const MENSAJES_ERROR_ALUMNO: Record<string, string> = {
+  NOT_FOUND: 'La carrera seleccionada no existe o no pertenece a tu sede.',
+};
+
+export function EditarAlumnoModal({
+  usuarioId,
+  onClose,
+  onGuardadoConExito,
+}: {
+  usuarioId: string;
+  onClose: () => void;
+  onGuardadoConExito: () => void;
+}) {
+  const personaQuery = useQuery({
+    queryKey: ['admin', 'personas', 'editar', usuarioId],
+    queryFn: async () => {
+      try {
+        return await obtenerPersonaParaEditar(usuarioId);
+      } catch (err) {
+        console.error('[EditarAlumnoModal] Error al obtener la persona:', err);
+        throw err;
+      }
+    },
+  });
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-lg bg-white p-6 shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <h2 className="font-display text-lg font-semibold text-slate">Editar alumno</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-slate/60 hover:text-slate"
+          >
+            ✕
+          </button>
+        </div>
+
+        {personaQuery.isError ? (
+          <p className="mt-6 rounded-lg border border-error-border bg-error-bg px-3 py-2 text-sm text-crimson">
+            No se pudo cargar la información. Intenta de nuevo.
+          </p>
+        ) : personaQuery.isSuccess ? (
+          <FormularioEdicion
+            usuarioId={usuarioId}
+            persona={personaQuery.data}
+            onClose={onClose}
+            onGuardadoConExito={onGuardadoConExito}
+          />
+        ) : (
+          <p className="mt-6 text-sm text-slate/60">Cargando…</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function FormularioEdicion({
+  usuarioId,
+  persona,
+  onClose,
+  onGuardadoConExito,
+}: {
+  usuarioId: string;
+  persona: PersonaParaEditar;
+  onClose: () => void;
+  onGuardadoConExito: () => void;
+}) {
+  const carrerasQuery = useQuery({
+    queryKey: ['carreras'],
+    queryFn: async () => {
+      try {
+        return await listarCarreras();
+      } catch (err) {
+        console.error('[EditarAlumnoModal] Error al listar carreras:', err);
+        throw err;
+      }
+    },
+  });
+
+  const {
+    register,
+    handleSubmit,
+    control,
+    formState: { errors },
+  } = useForm<AlumnoEditarFormInput, unknown, AlumnoEditarFormOutput>({
+    resolver: zodResolver(alumnoEditarSchema),
+    defaultValues: valoresIniciales(persona),
+  });
+
+  const tieneCondicionMedica = useWatch({
+    control,
+    name: 'perfilAlumno.infoMedica.tieneCondicionMedica',
+  });
+
+  const mutation = useMutation({
+    mutationFn: (values: AlumnoEditarFormOutput) =>
+      editarPersona(usuarioId, {
+        codigoExterno: values.codigoExterno || undefined,
+        perfilAlumno: {
+          ...values.perfilAlumno,
+          apellidoMaterno: values.perfilAlumno.apellidoMaterno || undefined,
+          curp: values.perfilAlumno.curp || undefined,
+          telefono: values.perfilAlumno.telefono || undefined,
+          contactos: values.perfilAlumno.contactos.map((contacto) => ({
+            ...contacto,
+            correo: contacto.correo || undefined,
+          })),
+          infoMedica: {
+            tipoSangre: values.perfilAlumno.infoMedica.tipoSangre,
+            ...(values.perfilAlumno.infoMedica.tieneCondicionMedica
+              ? {
+                  tieneCondicionMedica: true,
+                  padecimiento: values.perfilAlumno.infoMedica.padecimiento || undefined,
+                  medicamentos: values.perfilAlumno.infoMedica.medicamentos || undefined,
+                  alergias: values.perfilAlumno.infoMedica.alergias || undefined,
+                  tratamientoAdicional:
+                    values.perfilAlumno.infoMedica.tratamientoAdicional || undefined,
+                }
+              : { tieneCondicionMedica: false }),
+          },
+        },
+      }),
+    onSuccess: () => {
+      toast.success('Alumno actualizado.');
+      onGuardadoConExito();
+      onClose();
+    },
+    onError: (error) => {
+      console.error('[EditarAlumnoModal] Error al editar alumno:', error);
+      toast.error(resolverMensajeError(error, MENSAJES_ERROR_ALUMNO) ?? MENSAJE_ERROR_GENERICO);
+    },
+  });
+
+  function onSubmit(values: AlumnoEditarFormOutput) {
+    mutation.mutate(values);
+  }
+
+  return (
+    <form onSubmit={handleSubmit(onSubmit)} className="mt-5 space-y-5" noValidate>
+      <div className="grid gap-5 xl:grid-cols-3">
+        <div className="flex flex-col gap-5">
+          <div>
+            <label htmlFor="codigoExterno" className={LABEL_CLASS}>
+              Código externo (opcional)
+            </label>
+            <input
+              id="codigoExterno"
+              type="text"
+              disabled={mutation.isPending}
+              className={INPUT_CLASS}
+              {...register('codigoExterno')}
+            />
+            <FieldError message={errors.codigoExterno?.message} />
+          </div>
+
+          <InfoMedicaFieldset
+            control={control}
+            register={register}
+            errors={errors}
+            disabled={mutation.isPending}
+            prefix="perfilAlumno"
+            tieneCondicionMedica={Boolean(tieneCondicionMedica)}
+          />
+        </div>
+
+        <DatosPersonalesFieldset
+          register={register}
+          errors={errors}
+          disabled={mutation.isPending}
+          prefix="perfilAlumno"
+        />
+
+        <fieldset className="space-y-3 rounded-lg border border-mist bg-bone/50 p-4">
+          <legend className="text-sm font-semibold text-slate">Datos académicos</legend>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label htmlFor="fechaNacimiento" className={LABEL_CLASS}>
+                Fecha de nacimiento
+              </label>
+              <input
+                id="fechaNacimiento"
+                type="date"
+                disabled={mutation.isPending}
+                className={INPUT_CLASS}
+                {...register('perfilAlumno.fechaNacimiento')}
+              />
+              <FieldError message={errors.perfilAlumno?.fechaNacimiento?.message} />
+            </div>
+            <div>
+              <label htmlFor="carreraId" className={LABEL_CLASS}>
+                Carrera
+              </label>
+              <Controller
+                control={control}
+                name="perfilAlumno.carreraId"
+                render={({ field }) => (
+                  <Select
+                    id="carreraId"
+                    value={field.value}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                    disabled={mutation.isPending || carrerasQuery.isLoading}
+                    placeholder={
+                      carrerasQuery.isLoading ? 'Cargando carreras…' : 'Selecciona una carrera'
+                    }
+                    options={(carrerasQuery.data ?? []).map((c) => ({
+                      value: c.id,
+                      label: `${c.clave} — ${c.nombre}`,
+                    }))}
+                  />
+                )}
+              />
+              <FieldError message={errors.perfilAlumno?.carreraId?.message} />
+            </div>
+            <div>
+              <label htmlFor="periodoIngreso" className={LABEL_CLASS}>
+                Periodo de ingreso
+              </label>
+              <input
+                id="periodoIngreso"
+                type="text"
+                disabled={mutation.isPending}
+                className={INPUT_CLASS}
+                {...register('perfilAlumno.periodoIngreso')}
+              />
+              <FieldError message={errors.perfilAlumno?.periodoIngreso?.message} />
+            </div>
+            <div>
+              <label htmlFor="cuatrimestreActual" className={LABEL_CLASS}>
+                Cuatrimestre actual
+              </label>
+              <input
+                id="cuatrimestreActual"
+                type="number"
+                min={1}
+                step={1}
+                disabled={mutation.isPending}
+                className={INPUT_CLASS}
+                {...register('perfilAlumno.cuatrimestreActual')}
+              />
+              <FieldError message={errors.perfilAlumno?.cuatrimestreActual?.message} />
+            </div>
+          </div>
+        </fieldset>
+      </div>
+
+      <ContactosFieldset
+        control={control}
+        register={register}
+        errors={errors}
+        disabled={mutation.isPending}
+        prefix="perfilAlumno"
+        mostrarTipo
+      />
+
+      <div className="flex justify-end gap-3">
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={mutation.isPending}
+          className="rounded-lg border border-mist px-4 py-2 text-sm font-medium text-slate hover:bg-mist/30 disabled:opacity-50"
+        >
+          Cancelar
+        </button>
+        <button
+          type="submit"
+          disabled={mutation.isPending}
+          className="rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-navy-deep disabled:opacity-50"
+        >
+          {mutation.isPending ? 'Guardando…' : 'Guardar cambios'}
+        </button>
+      </div>
+    </form>
+  );
+}
