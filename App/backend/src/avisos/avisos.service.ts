@@ -199,6 +199,9 @@ export class AvisosService {
             correoDestino: c.correoPersonal,
             asunto: `Nuevo aviso: ${aviso.titulo}`,
             cuerpoTexto: aviso.cuerpo,
+            cuerpoHtml: this.mailService.construirHtmlNotificacion(
+              aviso.cuerpo,
+            ),
           }),
         ),
       );

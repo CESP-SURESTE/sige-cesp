@@ -128,19 +128,23 @@ export class MailService {
     loginUrl: string,
   ): string {
     const { nombreCompleto, email, temporaryPassword } = params;
-    return `
-      <div style="font-family: Arial, sans-serif; font-size: 14px; color: #1f2937;">
-        <p>Hola <strong>${nombreCompleto}</strong>,</p>
-        <p>Se creó una cuenta nueva para ti en SIGE (Sistema de Gestión Escolar de CESP).</p>
-        <p>
-          <strong>Email de acceso:</strong> ${email}<br />
-          <strong>Contraseña temporal:</strong> ${temporaryPassword}
-        </p>
-        <p><a href="${loginUrl}">${loginUrl}</a></p>
-        <p>Por seguridad, se te pedirá cambiar esta contraseña la primera vez que ingreses.</p>
-        <p>SIGE CESP</p>
-      </div>
-    `.trim();
+    const contenido = `
+      <p style="margin:0 0 12px;">Hola <strong>${nombreCompleto}</strong>,</p>
+      <p style="margin:0 0 16px;">Se creó una cuenta nueva para ti en SIGE (Sistema de Gestión Escolar de CESP).</p>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f3f4f6;border-radius:6px;margin:0 0 20px;">
+        <tr>
+          <td style="padding:14px 16px;">
+            <p style="margin:0 0 10px;font-size:12px;color:#6b7280;">Email de acceso</p>
+            <p style="margin:0 0 14px;font-family:'Courier New',monospace;font-size:14px;color:#111827;">${email}</p>
+            <p style="margin:0 0 10px;font-size:12px;color:#6b7280;">Contraseña temporal</p>
+            <p style="margin:0;font-family:'Courier New',monospace;font-size:14px;color:#111827;">${temporaryPassword}</p>
+          </td>
+        </tr>
+      </table>
+      <p style="margin:0 0 20px;text-align:center;">${this.buildBoton(loginUrl, 'Iniciar sesión')}</p>
+      <p style="margin:0;color:#6b7280;font-size:12px;">Por seguridad, se te pedirá cambiar esta contraseña la primera vez que ingreses.</p>
+    `;
+    return this.buildEmailShell(contenido);
   }
 
   private buildTextoReseteo(params: EnviarCorreoReseteoPasswordParams): string {
@@ -160,14 +164,78 @@ export class MailService {
 
   private buildHtmlReseteo(params: EnviarCorreoReseteoPasswordParams): string {
     const { nombreCompleto, linkReseteo } = params;
+    const contenido = `
+      <p style="margin:0 0 12px;">Hola <strong>${nombreCompleto}</strong>,</p>
+      <p style="margin:0 0 20px;">Un administrativo de SIGE (Sistema de Gestión Escolar de CESP) solicitó restablecer tu contraseña.</p>
+      <p style="margin:0 0 20px;text-align:center;">${this.buildBoton(linkReseteo, 'Elegir contraseña nueva')}</p>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#fef2f2;border-radius:6px;">
+        <tr>
+          <td style="padding:14px 16px;font-size:12px;color:#991b1b;">
+            Si tú no solicitaste esto, ignora este correo — tu contraseña actual sigue siendo válida — y repórtalo a tu administrativo a cargo lo antes posible, ya que podría tratarse de un fraude o un mal uso de tu cuenta.
+          </td>
+        </tr>
+      </table>
+    `;
+    return this.buildEmailShell(contenido);
+  }
+
+  /**
+   * Envoltura HTML compartida para correos de texto plano (avisos, Fase 16;
+   * recordatorios de calendario, Fase 15) — antes se mandaban sin `html` en
+   * absoluto (solo `text`), lo que los dejaba sin ningún estilo en clientes
+   * que sí renderizan HTML. Escapa el texto (nunca confiar en `cuerpoTexto`
+   * como HTML, viene de contenido capturado por un ADMINISTRATIVO/MAESTRO)
+   * y solo convierte saltos de línea a `<br>`.
+   */
+  construirHtmlNotificacion(cuerpoTexto: string): string {
+    const escapado = cuerpoTexto
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/\n/g, '<br>');
+    return this.buildEmailShell(
+      `<p style="margin:0;white-space:pre-line;">${escapado}</p>`,
+    );
+  }
+
+  /** Botón de CTA — ancla estilada inline (los clientes de correo ignoran `<button>` y la mayoría de CSS externo). */
+  private buildBoton(url: string, texto: string): string {
+    return `<a href="${url}" style="display:inline-block;background-color:#1d4ed8;color:#ffffff;text-decoration:none;padding:10px 24px;border-radius:6px;font-weight:bold;font-size:14px;font-family:Arial,Helvetica,sans-serif;">${texto}</a>`;
+  }
+
+  /**
+   * Layout compartido de los 4 correos que manda el sistema (bienvenida,
+   * reseteo de password, avisos, recordatorios) — antes cada uno traía su
+   * propio `<div>` suelto sin marca ni estructura. Basado en tablas (no
+   * flexbox/grid) y estilos inline porque así lo requieren los clientes de
+   * correo (Outlook en particular no soporta CSS moderno ni `<style>` de
+   * forma confiable).
+   */
+  private buildEmailShell(contenidoHtml: string): string {
     return `
-      <div style="font-family: Arial, sans-serif; font-size: 14px; color: #1f2937;">
-        <p>Hola <strong>${nombreCompleto}</strong>,</p>
-        <p>Un administrativo de SIGE (Sistema de Gestión Escolar de CESP) solicitó restablecer tu contraseña.</p>
-        <p><a href="${linkReseteo}">Da clic aquí para elegir una contraseña nueva</a></p>
-        <p>Si tú no solicitaste esto, ignora este correo — tu contraseña actual sigue siendo válida — y repórtalo a tu administrativo a cargo lo antes posible, ya que podría tratarse de un fraude o un mal uso de tu cuenta.</p>
-        <p>SIGE CESP</p>
-      </div>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f3f4f6;padding:32px 16px;">
+        <tr>
+          <td align="center">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background-color:#ffffff;border-radius:8px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;">
+              <tr>
+                <td style="background-color:#1d4ed8;padding:20px 24px;">
+                  <span style="color:#ffffff;font-size:18px;font-weight:bold;">SIGE CESP</span>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:24px;color:#1f2937;font-size:14px;line-height:1.5;">
+                  ${contenidoHtml}
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:16px 24px;background-color:#f9fafb;color:#9ca3af;font-size:12px;">
+                  Sistema de Gestión Escolar de CESP — este es un correo automático, no respondas a esta dirección.
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
     `.trim();
   }
 
@@ -191,7 +259,7 @@ export class MailService {
     }
 
     const body = new URLSearchParams({
-      from: `SIGE CESP <postmaster@${domain}>`,
+      from: `SIGE CESP <no-reply.sige@${domain}>`,
       to: correoDestino,
       subject: asunto,
       text: cuerpoTexto,

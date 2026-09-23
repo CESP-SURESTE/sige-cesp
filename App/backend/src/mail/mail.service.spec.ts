@@ -66,7 +66,7 @@ describe('MailService', () => {
 
     const body = new URLSearchParams(init.body as string);
     expect(body.get('from')).toBe(
-      'SIGE CESP <postmaster@sandbox-test.mailgun.org>',
+      'SIGE CESP <no-reply.sige@sandbox-test.mailgun.org>',
     );
     // Destino REAL del envío (feature 2026-08-18) — `correoDestino`, NO el
     // login (`email`).

@@ -86,7 +86,10 @@ export function SeccionAsignaciones({ grupo }: { grupo: GrupoListItem }) {
   });
 
   const maestros: PersonaListItemMaestro[] = maestrosQuery.data?.data ?? [];
-  const asignaciones = asignacionesQuery.data ?? [];
+  const asignaciones = useMemo(
+    () => asignacionesQuery.data ?? [],
+    [asignacionesQuery.data],
+  );
   const materias = materiasQuery.data ?? [];
 
   const invalidarAsignaciones = () =>

@@ -2,6 +2,7 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
@@ -37,7 +38,11 @@ import {
  * de este modal, ver spec).
  */
 const alumnoEditarSchema = z.object({
-  codigoExterno: z.string().optional(),
+  // `codigoExterno` oculto a pedido del usuario (2026-09-23) — ver
+  // `CuentaFieldset.tsx`. No borrar. Al omitirlo del payload de `PATCH`
+  // (ver `onSubmit` más abajo), el backend lo deja intacto (Prisma ignora
+  // claves `undefined` en `data`) en vez de borrarlo.
+  // codigoExterno: z.string().optional(),
   perfilAlumno: z.object({
     nombres: z.string().min(1, 'Los nombres son requeridos'),
     apellidoPaterno: z.string().min(1, 'El apellido paterno es requerido'),
@@ -66,7 +71,7 @@ type AlumnoEditarFormOutput = z.output<typeof alumnoEditarSchema>;
 function valoresIniciales(persona: PersonaParaEditar): AlumnoEditarFormInput {
   const perfil = persona.perfilAlumno!;
   return {
-    codigoExterno: persona.codigoExterno ?? '',
+    // codigoExterno: persona.codigoExterno ?? '', — comentado junto con el campo, ver arriba.
     perfilAlumno: {
       nombres: perfil.nombres,
       apellidoPaterno: perfil.apellidoPaterno,
@@ -126,17 +131,33 @@ export function EditarAlumnoModal({
     },
   });
 
+  // Cierre con Escape — mismo criterio que el click en el overlay/botón ✕
+  // (`onClose`), que este modal no bloquea mientras `mutation.isPending`.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose();
+    }
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate/40 p-4"
       onClick={onClose}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="editar-alumno-titulo"
         className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-lg bg-white p-6 shadow-lg sm:p-8"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
-          <h2 className="font-display text-lg font-semibold text-slate">
+          <h2
+            id="editar-alumno-titulo"
+            className="font-display text-lg font-semibold text-slate"
+          >
             {personaQuery.data?.perfilAlumno
               ? `Editar a ${[
                   personaQuery.data.perfilAlumno.nombres,
@@ -229,7 +250,11 @@ function FormularioEdicion({
         // correcto. `infoMedica` es un `upsert` (no delete+recreate), así
         // que igual que los campos de arriba necesita `null` explícito para
         // limpiar — ver el bloque de abajo.
-        codigoExterno: values.codigoExterno || null,
+        // `codigoExterno` oculto (ver `CuentaFieldset.tsx`) — se omite del
+        // payload a propósito, no se manda `null`, para que el `update`
+        // parcial de Prisma lo deje intacto en vez de borrarlo sin que el
+        // admin lo haya tocado.
+        // codigoExterno: values.codigoExterno || null,
         perfilAlumno: {
           ...values.perfilAlumno,
           apellidoMaterno: values.perfilAlumno.apellidoMaterno || null,
@@ -359,6 +384,8 @@ function FormularioEdicion({
               <FieldError message={errors.perfilAlumno?.cuatrimestreActual?.message} />
             </div>
           </div>
+          {/* `codigoExterno` oculto a pedido del usuario (2026-09-23) — ver
+              `CuentaFieldset.tsx`. No borrar.
           <div>
             <label htmlFor="codigoExterno" className={LABEL_CLASS}>
               Código externo (opcional)
@@ -372,6 +399,7 @@ function FormularioEdicion({
             />
             <FieldError message={errors.codigoExterno?.message} />
           </div>
+          */}
         </fieldset>
 
         <InfoMedicaFieldset

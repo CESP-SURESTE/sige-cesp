@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import type { CategoriaEvento, OcurrenciaEvento } from '@/lib/api/calendario';
 
 /**
@@ -56,9 +57,23 @@ export interface DetalleEventoModalProps {
 }
 
 export function DetalleEventoModal({ evento, onCerrar }: DetalleEventoModalProps) {
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') onCerrar();
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onCerrar]);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate/40 p-4">
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-6 shadow-lg">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate/40 p-4"
+      onClick={onCerrar}
+    >
+      <div
+        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-6 shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-start justify-between gap-3">
           <h2 className="font-display text-lg font-semibold text-slate">{evento.titulo}</h2>
           <span

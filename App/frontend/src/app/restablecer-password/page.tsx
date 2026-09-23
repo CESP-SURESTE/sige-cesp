@@ -137,7 +137,10 @@ export default function RestablecerPasswordPage() {
     toast.success('Contraseña actualizada.');
     // `window.location.href` (no `router.push`+`router.refresh()`) — fuerza
     // una navegación completa que relee la cookie de sesión ya refrescada
-    // desde cero, en vez de depender del cache del router de Next.js.
+    // desde cero, en vez de depender del cache del router de Next.js. Mismo
+    // criterio ya documentado y probado en `app/cambiar-password/page.tsx`
+    // (`router.push()` no completaba la navegación en ese flujo).
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- navegación dura intencional: relee la cookie de sesión recién refrescada por refreshSession() arriba, router.push()/router.refresh() no bastan (ver docstring del archivo y de app/cambiar-password/page.tsx).
     window.location.href = '/';
   }
 
@@ -192,6 +195,12 @@ export default function RestablecerPasswordPage() {
             <label htmlFor="password" className="block text-sm font-medium text-slate/80">
               Contraseña nueva
             </label>
+            {/* Sin `disabled` durante el envío — mismo bug ya documentado y
+                corregido en `app/cambiar-password/page.tsx`: deshabilitar un
+                input de contraseña es la señal que gestores de contraseñas
+                con overlay inline (ej. Bitwarden) usan para
+                reposicionar/retirar su ícono inyectado en el DOM, justo en el
+                instante del submit. Solo se bloquea el botón de submit. */}
             <input
               id="password"
               type="password"
@@ -199,8 +208,7 @@ export default function RestablecerPasswordPage() {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              disabled={estado === 'enviando'}
-              className="mt-1 w-full rounded-lg border border-mist px-3 py-2 text-sm text-slate focus:border-navy focus:ring-2 focus:ring-navy/20 focus:outline-none disabled:opacity-50"
+              className="mt-1 w-full rounded-lg border border-mist px-3 py-2 text-sm text-slate focus:border-navy focus:ring-2 focus:ring-navy/20 focus:outline-none"
             />
           </div>
           <div>
@@ -214,8 +222,7 @@ export default function RestablecerPasswordPage() {
               required
               value={confirmarPassword}
               onChange={(e) => setConfirmarPassword(e.target.value)}
-              disabled={estado === 'enviando'}
-              className="mt-1 w-full rounded-lg border border-mist px-3 py-2 text-sm text-slate focus:border-navy focus:ring-2 focus:ring-navy/20 focus:outline-none disabled:opacity-50"
+              className="mt-1 w-full rounded-lg border border-mist px-3 py-2 text-sm text-slate focus:border-navy focus:ring-2 focus:ring-navy/20 focus:outline-none"
             />
           </div>
           <button

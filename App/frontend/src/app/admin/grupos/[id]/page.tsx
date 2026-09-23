@@ -118,7 +118,7 @@ export default function AdminGrupoDetallePage() {
   });
 
   const grupo = grupoQuery.data;
-  const alumnos = alumnosQuery.data ?? [];
+  const alumnos = useMemo(() => alumnosQuery.data ?? [], [alumnosQuery.data]);
   const inscritos = alumnos.length;
   const lleno = grupo ? inscritos >= grupo.capacidad : false;
 

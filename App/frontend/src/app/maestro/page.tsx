@@ -351,7 +351,7 @@ function SeccionDatosPersonales({
         />
         {maestro.tipoContratacion === 'TEMPORAL' && (
           <Campo
-            etiqueta="Días"
+            etiqueta="Días de contrato temporal"
             valor={
               maestro.diasTemporal != null
                 ? String(maestro.diasTemporal)
