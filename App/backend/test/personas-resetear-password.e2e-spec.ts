@@ -202,7 +202,7 @@ describe('PersonasController — POST /personas/:id/resetear-password (e2e)', ()
       nivelPermiso: NivelPermiso.AUXILIAR,
     });
     generateLink.mockResolvedValue({
-      data: { properties: { action_link: 'https://supabase.example/verify?token=abc' } },
+      data: { properties: { hashed_token: 'hash_token_prueba_abc' } },
       error: null,
     });
     mailFetch.mockResolvedValue({
@@ -242,11 +242,12 @@ describe('PersonasController — POST /personas/:id/resetear-password (e2e)', ()
     expect(registro.usuarioId).toBe(actorAdminId);
     expect(registro.sedeId).toBe(sedeMeridaId);
     expect(registro.detalle).toEqual({ rol: RolUsuario.ADMINISTRATIVO });
-    // El link generado por el mock (`https://supabase.example/verify?token=abc`)
-    // NUNCA debe aparecer en `detalle` — ni el link completo ni el token.
+    // El `hashed_token` generado por el mock (`hash_token_prueba_abc`), usado
+    // para construir el link propio de reseteo, NUNCA debe aparecer en
+    // `detalle` — ni el link completo ni el token.
     const detalleSerializado = JSON.stringify(registro.detalle);
-    expect(detalleSerializado).not.toContain('supabase.example');
-    expect(detalleSerializado).not.toContain('token=abc');
+    expect(detalleSerializado).not.toContain('restablecer-password');
+    expect(detalleSerializado).not.toContain('hash_token_prueba_abc');
   });
 
   it('devuelve 200 cuando un AUXILIAR resetea la contraseña de un MAESTRO (la jerarquía de nivelPermiso NUNCA aplica a targets no-ADMINISTRATIVO)', async () => {
@@ -254,7 +255,7 @@ describe('PersonasController — POST /personas/:id/resetear-password (e2e)', ()
       sedeId: sedeMeridaId,
     });
     generateLink.mockResolvedValue({
-      data: { properties: { action_link: 'https://supabase.example/verify?token=xyz' } },
+      data: { properties: { hashed_token: 'hash_token_prueba_xyz' } },
       error: null,
     });
     mailFetch.mockResolvedValue({
@@ -332,7 +333,7 @@ describe('PersonasController — POST /personas/:id/resetear-password (e2e)', ()
       nivelPermiso: NivelPermiso.AUXILIAR,
     });
     generateLink.mockResolvedValue({
-      data: { properties: { action_link: 'https://supabase.example/verify?token=abc' } },
+      data: { properties: { hashed_token: 'hash_token_prueba_mailgun_caido' } },
       error: null,
     });
     mailFetch.mockResolvedValue({

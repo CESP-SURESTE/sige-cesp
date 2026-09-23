@@ -151,6 +151,7 @@ export function SubirFotoModal({
             type="button"
             onClick={handleCerrar}
             disabled={subiendo || eliminando}
+            aria-label="Cerrar"
             className="text-slate/60 hover:text-slate disabled:opacity-50"
           >
             ✕
@@ -173,6 +174,15 @@ export function SubirFotoModal({
               onDragLeave={() => setArrastrando(false)}
               onDrop={handleDrop}
               onClick={() => !subiendo && inputRef.current?.click()}
+              role="button"
+              tabIndex={0}
+              aria-label="Seleccionar foto de perfil"
+              onKeyDown={(e) => {
+                if ((e.key === 'Enter' || e.key === ' ') && !subiendo) {
+                  e.preventDefault();
+                  inputRef.current?.click();
+                }
+              }}
               className={`mt-4 flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed p-6 text-center transition-colors ${
                 arrastrando ? 'border-navy bg-navy/5' : 'border-mist'
               } ${subiendo ? 'pointer-events-none opacity-50' : ''}`}
