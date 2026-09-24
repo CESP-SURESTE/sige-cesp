@@ -52,6 +52,9 @@ export interface ExpedienteEmergencia {
     fechaNacimiento: string | null;
     edad: number | null;
     activo: boolean;
+    /** URL firmada de Supabase Storage, o `null` si no tiene foto subida
+     * (feature "Foto de perfil", 2026-09-17). */
+    fotoUrl: string | null;
   };
   infoMedica: {
     tieneCondicionMedica: boolean;

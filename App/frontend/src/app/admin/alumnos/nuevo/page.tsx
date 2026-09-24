@@ -8,7 +8,9 @@ import { toast } from 'sonner';
 import { z } from 'zod';
 import { AltaPersonaFormShell } from '@/components/admin/ui/persona-alta/AltaPersonaFormShell';
 import { ContactosFieldset } from '@/components/admin/ui/persona-alta/ContactosFieldset';
-import { CuentaFieldset } from '@/components/admin/ui/persona-alta/CuentaFieldset';
+// `CuentaFieldset` (campo `codigoExterno`) oculto a pedido del usuario
+// (2026-09-23) — ver `CuentaFieldset.tsx` para el detalle. No borrar.
+// import { CuentaFieldset } from '@/components/admin/ui/persona-alta/CuentaFieldset';
 import { DatosPersonalesFieldset } from '@/components/admin/ui/persona-alta/DatosPersonalesFieldset';
 import { FieldError } from '@/components/admin/ui/persona-alta/FieldError';
 import { INPUT_CLASS, LABEL_CLASS } from '@/components/admin/ui/persona-alta/estilos';
@@ -74,7 +76,9 @@ import { crearAlumno, type AltaPersonaResult } from '@/lib/api/personas';
  */
 
 const alumnoSchema = z.object({
-  codigoExterno: z.string().optional(),
+  // `codigoExterno` oculto a pedido del usuario (2026-09-23) — ver
+  // `CuentaFieldset.tsx`. No borrar.
+  // codigoExterno: z.string().optional(),
   perfilAlumno: z.object({
     nombres: z.string().min(1, 'Los nombres son requeridos'),
     apellidoPaterno: z.string().min(1, 'El apellido paterno es requerido'),
@@ -111,7 +115,7 @@ type AlumnoFormInput = z.input<typeof alumnoSchema>;
 type AlumnoFormOutput = z.output<typeof alumnoSchema>;
 
 const DEFAULT_VALUES: AlumnoFormInput = {
-  codigoExterno: '',
+  // codigoExterno: '', — comentado junto con el campo, ver arriba.
   perfilAlumno: {
     nombres: '',
     apellidoPaterno: '',
@@ -187,7 +191,7 @@ export default function NuevoAlumnoPage() {
   const mutation = useMutation({
     mutationFn: (values: AlumnoFormOutput) =>
       crearAlumno({
-        codigoExterno: values.codigoExterno || undefined,
+        // codigoExterno: values.codigoExterno || undefined, — comentado junto con el campo.
         perfilAlumno: {
           ...values.perfilAlumno,
           apellidoMaterno: values.perfilAlumno.apellidoMaterno || undefined,
@@ -245,18 +249,14 @@ export default function NuevoAlumnoPage() {
       isPending={mutation.isPending}
     >
       <div className="grid gap-5 xl:grid-cols-3">
-        <div className="flex flex-col gap-5">
-          <CuentaFieldset register={register} errors={errors} disabled={mutation.isPending} />
-
-          <InfoMedicaFieldset
-            control={control}
-            register={register}
-            errors={errors}
-            disabled={mutation.isPending}
-            prefix="perfilAlumno"
-            tieneCondicionMedica={Boolean(tieneCondicionMedica)}
-          />
-        </div>
+        <InfoMedicaFieldset
+          control={control}
+          register={register}
+          errors={errors}
+          disabled={mutation.isPending}
+          prefix="perfilAlumno"
+          tieneCondicionMedica={Boolean(tieneCondicionMedica)}
+        />
 
         <DatosPersonalesFieldset
           register={register}

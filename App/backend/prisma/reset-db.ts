@@ -1,8 +1,10 @@
 /**
- * Reset TOTAL de la base — borra TODO (Supabase Auth + las 24 tablas de
- * Postgres) para dejar la DB lista para un reseed completo con datos
- * ficticios (2026-08-16, a pedido explícito del usuario: "limpia todos los
- * registros de la db... no quiero ver registros de prueba").
+ * Reset TOTAL de la base — borra TODO (Supabase Auth + todas las tablas de
+ * negocio de Postgres, EXCEPTO `admin_plataforma`, que es una identidad
+ * separada de las sedes y no se toca) — para dejar la DB lista para un
+ * reseed completo con datos ficticios (2026-08-16, a pedido explícito del
+ * usuario: "limpia todos los registros de la db... no quiero ver registros
+ * de prueba").
  *
  * ⚠️ DESTRUCTIVO E IRREVERSIBLE. NO se ejecuta nunca automáticamente (no es
  * `prisma/seed.ts` — ese sigue corriendo solo tras `prisma migrate dev`, y
@@ -83,13 +85,22 @@ async function purgarSupabaseAuth() {
   console.log(`  Supabase Auth: ${totalBorrados} cuentas borradas.`);
 }
 
+// admin_plataforma NO está en esta lista a propósito — esa identidad
+// (login de /plataforma) es independiente de las sedes y no se toca aquí
+// (decisión explícita del usuario, 2026-09-17).
 const TABLAS = [
   'sede_responsables',
-  'admin_plataforma',
+  'telefonos_emergencia_sede',
   'mallas_curriculares',
+  'grupo_materia_maestro',
   'grupo_alumnos',
   'grupos',
   'materias',
+  'contador_matricula',
+  'recordatorio_enviado',
+  'eventos_calendario',
+  'notificaciones',
+  'avisos',
   'contactos_alumno',
   'info_medica_alumno',
   'perfiles_alumno',

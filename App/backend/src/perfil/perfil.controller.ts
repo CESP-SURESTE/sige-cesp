@@ -1,11 +1,28 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Post,
+  UploadedFile,
+  UseFilters,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { RolUsuario } from '@prisma/client';
 import { ActorUsuarioId } from '../common/decorators/actor-usuario-id.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
+import { SedeActual } from '../common/decorators/sede-actual.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { SedeGuard } from '../common/guards/sede.guard';
+import { ArchivoFotoInvalidaFilter } from '../foto-perfil/archivo-foto-invalida.filter';
+import { FotoPerfilService } from '../foto-perfil/foto-perfil.service';
 import { MallaCurricularService } from '../malla-curricular/malla-curricular.service';
 import { PerfilService } from './perfil.service';
+
+const TRES_MB = 3 * 1024 * 1024;
 
 /**
  * `GET /perfil` — Fase 5, Día 16.
@@ -30,6 +47,12 @@ import { PerfilService } from './perfil.service';
  * MAESTRO — mismo patrón de `RolesGuard` a nivel de MÉTODO, pero
  * `@Roles(MAESTRO)`: el maestro autenticado ve sus grupos y materias
  * asignados (`GrupoMateriaMaestro`).
+ *
+ * `POST/DELETE /perfil/foto` (feature "Foto de perfil", 2026-09-17) — sin
+ * `@Roles(...)`, mismo criterio que `GET /perfil`: cualquier rol autenticado
+ * gestiona su propia foto. Delegan 100% en `FotoPerfilService`
+ * (`usuarioId === actorUsuarioId` en ambos casos — self-service), que
+ * `PersonasController` reutiliza para el caso admin-sobre-otra-persona.
  */
 @Controller('perfil')
 @UseGuards(SedeGuard)
@@ -37,11 +60,46 @@ export class PerfilController {
   constructor(
     private readonly perfilService: PerfilService,
     private readonly mallaCurricularService: MallaCurricularService,
+    private readonly fotoPerfilService: FotoPerfilService,
   ) {}
 
   @Get()
   async obtenerPropio(@ActorUsuarioId() actorUsuarioId: string) {
     const data = await this.perfilService.obtenerPerfilPropio(actorUsuarioId);
+    return { data };
+  }
+
+  @Post('foto')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(
+    FileInterceptor('archivo', { limits: { fileSize: TRES_MB } }),
+  )
+  @UseFilters(ArchivoFotoInvalidaFilter)
+  async subirFotoPropia(
+    @ActorUsuarioId() actorUsuarioId: string,
+    @SedeActual() sedeId: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    const data = await this.fotoPerfilService.subir(
+      actorUsuarioId,
+      sedeId,
+      actorUsuarioId,
+      file,
+    );
+    return { data };
+  }
+
+  @Delete('foto')
+  @HttpCode(HttpStatus.OK)
+  async eliminarFotoPropia(
+    @ActorUsuarioId() actorUsuarioId: string,
+    @SedeActual() sedeId: string,
+  ) {
+    const data = await this.fotoPerfilService.eliminar(
+      actorUsuarioId,
+      sedeId,
+      actorUsuarioId,
+    );
     return { data };
   }
 

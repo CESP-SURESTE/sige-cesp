@@ -8,7 +8,9 @@ import { toast } from 'sonner';
 import { z } from 'zod';
 import { AltaPersonaFormShell } from '@/components/admin/ui/persona-alta/AltaPersonaFormShell';
 import { ContactosFieldset } from '@/components/admin/ui/persona-alta/ContactosFieldset';
-import { CuentaFieldset } from '@/components/admin/ui/persona-alta/CuentaFieldset';
+// `CuentaFieldset` (campo `codigoExterno`) oculto a pedido del usuario
+// (2026-09-23) — ver `CuentaFieldset.tsx` para el detalle. No borrar.
+// import { CuentaFieldset } from '@/components/admin/ui/persona-alta/CuentaFieldset';
 import { DatosPersonalesFieldset } from '@/components/admin/ui/persona-alta/DatosPersonalesFieldset';
 import { FieldError } from '@/components/admin/ui/persona-alta/FieldError';
 import { INPUT_CLASS, LABEL_CLASS } from '@/components/admin/ui/persona-alta/estilos';
@@ -78,7 +80,9 @@ const MENSAJES_ERROR_ADMINISTRATIVO: Record<string, string> = {
 };
 
 const administrativoSchema = z.object({
-  codigoExterno: z.string().optional(),
+  // `codigoExterno` oculto a pedido del usuario (2026-09-23) — ver
+  // `CuentaFieldset.tsx`. No borrar.
+  // codigoExterno: z.string().optional(),
   perfilAdministrativo: z.object({
     nombres: z.string().min(1, 'Los nombres son requeridos'),
     apellidoPaterno: z.string().min(1, 'El apellido paterno es requerido'),
@@ -104,7 +108,7 @@ const administrativoSchema = z.object({
 type AdministrativoFormValues = z.infer<typeof administrativoSchema>;
 
 const DEFAULT_VALUES: AdministrativoFormValues = {
-  codigoExterno: '',
+  // codigoExterno: '', — comentado junto con el campo, ver arriba.
   perfilAdministrativo: {
     nombres: '',
     apellidoPaterno: '',
@@ -150,7 +154,7 @@ export default function NuevoAdministrativoPage() {
   const mutation = useMutation({
     mutationFn: (values: AdministrativoFormValues) =>
       crearAdministrativo({
-        codigoExterno: values.codigoExterno || undefined,
+        // codigoExterno: values.codigoExterno || undefined, — comentado junto con el campo.
         perfilAdministrativo: {
           ...values.perfilAdministrativo,
           apellidoMaterno: values.perfilAdministrativo.apellidoMaterno || undefined,
@@ -211,18 +215,14 @@ export default function NuevoAdministrativoPage() {
       isPending={mutation.isPending}
     >
       <div className="grid gap-5 xl:grid-cols-3">
-        <div className="flex flex-col gap-5">
-          <CuentaFieldset register={register} errors={errors} disabled={mutation.isPending} />
-
-          <InfoMedicaFieldset
-            control={control}
-            register={register}
-            errors={errors}
-            disabled={mutation.isPending}
-            prefix="perfilAdministrativo"
-            tieneCondicionMedica={Boolean(tieneCondicionMedica)}
-          />
-        </div>
+        <InfoMedicaFieldset
+          control={control}
+          register={register}
+          errors={errors}
+          disabled={mutation.isPending}
+          prefix="perfilAdministrativo"
+          tieneCondicionMedica={Boolean(tieneCondicionMedica)}
+        />
 
         <DatosPersonalesFieldset
           register={register}

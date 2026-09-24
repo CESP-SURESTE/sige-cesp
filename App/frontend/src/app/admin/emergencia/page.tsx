@@ -291,7 +291,11 @@ export default function AdminEmergenciaPage() {
               {telefonosQuery.data?.map((telefono) => (
                 <tr key={telefono.id} className="border-b border-mist last:border-0">
                   <td className="px-4 py-3 text-slate">{telefono.etiqueta}</td>
-                  <td className="px-4 py-3 text-slate/80">{telefono.telefono}</td>
+                  <td className="px-4 py-3 text-slate/80">
+                    <a href={`tel:${telefono.telefono}`} className="hover:underline">
+                      {telefono.telefono}
+                    </a>
+                  </td>
                   <td className="px-4 py-3 text-right">
                     <button
                       onClick={() => setModalTelefono({ abierto: true, telefono })}

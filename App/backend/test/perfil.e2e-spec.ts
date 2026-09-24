@@ -356,6 +356,16 @@ describe('PerfilController — GET /perfil (e2e)', () => {
   });
 
   afterAll(async () => {
+    // Limpieza acotada a los 3 `Usuario.id` reales que creó `beforeAll` —
+    // nunca por patrón de email/nombre (ese tipo de limpieza amplia ya
+    // causó un bug real en Día 24, ver CLAUDE.md raíz regla 14). El
+    // `onDelete: Cascade` de PerfilAlumno/PerfilMaestro/PerfilAdministrativo
+    // y sus Contacto* respectivos se encarga del resto.
+    await prisma.usuario.deleteMany({
+      where: {
+        id: { in: [alumnoMenorId, maestroId, administrativoAuxiliarId] },
+      },
+    });
     await app.close();
   });
 

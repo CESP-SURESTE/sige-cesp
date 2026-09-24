@@ -244,6 +244,9 @@ export interface Perfil {
   activo: boolean;
   /** ISO 8601 o `null` si nunca ha iniciado sesión. */
   ultimoAcceso: string | null;
+  /** URL firmada de Supabase Storage, o `null` si no tiene foto subida
+   * (feature "Foto de perfil", 2026-09-17). */
+  fotoUrl: string | null;
   sede: PerfilSede;
   /** Lleno solo si `rol === 'ALUMNO'`; `null` para los otros 2 roles. */
   alumno: PerfilAlumno | null;

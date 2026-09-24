@@ -65,4 +65,15 @@ export class AuthController {
     );
     return { data };
   }
+
+  @Post('completar-reseteo')
+  @HttpCode(200)
+  @UseGuards(SedeGuard)
+  async completarReseteo(
+    @ActorUsuarioId() actorUsuarioId: string,
+    @SedeActual() sedeId: string,
+  ) {
+    const data = await this.authService.completarReseteo(actorUsuarioId, sedeId);
+    return { data };
+  }
 }

@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { NivelPermiso, RolUsuario } from '@prisma/client';
+import { FotoPerfilService } from '../foto-perfil/foto-perfil.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 /**
@@ -98,10 +99,20 @@ import { PrismaService } from '../prisma/prisma.service';
  * necesita comparar contra el nivel de un tercero, solo reflejar la regla
  * "AUXILIAR no da de alta, ADMIN/SUPER_ADMIN sí" tal cual existe hoy en
  * `personas.service.ts`.
+ *
+ * `fotoUrl` (feature "Foto de perfil", 2026-09-17) — a nivel raíz, mismo
+ * nivel que `sede`, `null` si `Usuario.fotoStoragePath` es `null`. Se firma
+ * al vuelo vía `FotoPerfilService.firmarUrls` (nunca se cachea la URL
+ * firmada). `fotoStoragePath` se destructura fuera de `usuarioComun` para
+ * que la ruta interna de Storage nunca se filtre en la respuesta — mismo
+ * criterio que `perfilAlumno`/`perfilMaestro`/`perfilAdministrativo`.
  */
 @Injectable()
 export class PerfilService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly fotoPerfilService: FotoPerfilService,
+  ) {}
 
   async obtenerPerfilPropio(actorUsuarioId: string) {
     const usuario = await this.prisma.usuario.findUnique({
@@ -115,6 +126,7 @@ export class PerfilService {
         primerIngreso: true,
         activo: true,
         ultimoAcceso: true,
+        fotoStoragePath: true,
         sede: {
           select: {
             id: true,
@@ -305,15 +317,25 @@ export class PerfilService {
       });
     }
 
+    const fotoUrl = usuario.fotoStoragePath
+      ? (
+          await this.fotoPerfilService.firmarUrls([
+            { usuarioId: usuario.id, storagePath: usuario.fotoStoragePath },
+          ])
+        ).get(usuario.id) ?? null
+      : null;
+
     const {
       perfilAlumno,
       perfilMaestro,
       perfilAdministrativo,
+      fotoStoragePath: _fotoStoragePathSinUsar,
       ...usuarioComun
     } = usuario;
 
     return {
       ...usuarioComun,
+      fotoUrl,
       alumno:
         usuario.rol === RolUsuario.ALUMNO && perfilAlumno
           ? {

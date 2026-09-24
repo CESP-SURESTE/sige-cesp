@@ -4,8 +4,10 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { KeyRound, LogOut, User } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { LogOut, User } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { obtenerPerfil } from '@/lib/api/perfil';
 import { IconChevronAbajo } from './icons';
 
 /**
@@ -43,6 +45,10 @@ const contentAnimations = {
 export function ProfileDropdown({ email }: { email: string | null }) {
   const [abierto, setAbierto] = useState(false);
   const [cerrandoSesion, setCerrandoSesion] = useState(false);
+  // `onError` (ronda de fix del review final de rama, 2026-09-20): la URL
+  // firmada expira a los 900s — sin esto, una pestaña dejada abierta más de
+  // 15 min mostraba el ícono de imagen rota en vez de caer a la inicial.
+  const [errorFoto, setErrorFoto] = useState(false);
   const contenedorRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
@@ -74,6 +80,11 @@ export function ProfileDropdown({ email }: { email: string | null }) {
 
   const inicial = email ? email.charAt(0).toUpperCase() : '?';
 
+  const { data: perfil } = useQuery({
+    queryKey: ['admin', 'perfil'],
+    queryFn: obtenerPerfil,
+  });
+
   return (
     <div ref={contenedorRef} className="relative">
       <AnimatePresence>
@@ -92,9 +103,19 @@ export function ProfileDropdown({ email }: { email: string | null }) {
               layoutId="profile-avatar"
               transition={SPRING}
               aria-hidden="true"
-              className="flex size-8 shrink-0 items-center justify-center rounded-full bg-navy text-sm font-semibold text-bone"
+              className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-navy text-sm font-semibold text-bone"
             >
-              {inicial}
+              {perfil?.fotoUrl && !errorFoto ? (
+                // eslint-disable-next-line @next/next/no-img-element -- URL firmada de Supabase Storage (dominio externo), mismo criterio que FondoEventos en app/login/page.tsx
+                <img
+                  src={perfil.fotoUrl}
+                  alt=""
+                  className="size-full object-cover"
+                  onError={() => setErrorFoto(true)}
+                />
+              ) : (
+                inicial
+              )}
             </motion.span>
             <IconChevronAbajo className="size-4 text-slate/60" />
           </motion.button>
@@ -111,9 +132,19 @@ export function ProfileDropdown({ email }: { email: string | null }) {
                 layoutId="profile-avatar"
                 transition={SPRING}
                 aria-hidden="true"
-                className="flex size-8 shrink-0 items-center justify-center rounded-full bg-navy text-sm font-semibold text-bone"
+                className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-navy text-sm font-semibold text-bone"
               >
-                {inicial}
+                {perfil?.fotoUrl && !errorFoto ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- URL firmada de Supabase Storage (dominio externo), mismo criterio que FondoEventos en app/login/page.tsx
+                  <img
+                    src={perfil.fotoUrl}
+                    alt=""
+                    className="size-full object-cover"
+                    onError={() => setErrorFoto(true)}
+                  />
+                ) : (
+                  inicial
+                )}
               </motion.span>
               {email && (
                 <p className="truncate text-sm font-medium text-slate">{email}</p>
@@ -127,9 +158,6 @@ export function ProfileDropdown({ email }: { email: string | null }) {
               <div className="py-1">
                 <ItemMenu href="/admin/perfil" Icon={User} onClick={() => setAbierto(false)}>
                   Mi perfil
-                </ItemMenu>
-                <ItemMenu href="/cambiar-password" Icon={KeyRound} onClick={() => setAbierto(false)}>
-                  Cambiar contraseña
                 </ItemMenu>
               </div>
               <div className="border-t border-mist py-1">

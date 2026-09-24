@@ -1,7 +1,7 @@
 'use client';
 
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { ApiError } from '@/lib/api/http';
 import {
@@ -16,6 +16,7 @@ import {
 import { SkeletonCalendarGrid } from '@/components/maestro/ui/Skeleton';
 import { COLOR_POR_CATEGORIA, EventoModal } from './EventoModal';
 import { ConfirmarEliminarEventoModal } from './ConfirmarEliminarEventoModal';
+import { DetalleEventoModal } from './DetalleEventoModal';
 import { generarGridMensual, rangoDelGrid } from './mes-grid.util';
 
 /**
@@ -36,14 +37,19 @@ import { generarGridMensual, rangoDelGrid } from './mes-grid.util';
  * autor del evento: `OcurrenciaEvento` trae `puedeEditar: boolean` (Fase 15,
  * hallazgo Important — backend: `true` si el actor es autor del evento o un
  * ADMINISTRATIVO de la sede). Un maestro que ve un evento de sede/carrera/de
- * otro maestro lo recibe con `puedeEditar: false`: su chip se renderiza como
- * elemento inerte (no `<button>`), sin acceso al `EventoModal` en modo
- * edición ni, por transición, al `ConfirmarEliminarEventoModal`. Con
+ * otro maestro lo recibe con `puedeEditar: false`: su chip abre
+ * `DetalleEventoModal` (solo lectura, sin acceso al `EventoModal` de
+ * edición ni, por transición, al `ConfirmarEliminarEventoModal`). Con
  * `puedeEditar: true` el chip abre el modal de edición igual que en admin.
- * La capa de seguridad real sigue en el backend
- * (`CalendarioService.actualizar`/`eliminar` rechazan con `403
+ * El chip SIEMPRE es un `<button>` real (foco de teclado + accesible),
+ * nunca un elemento inerte — corregido 2026-09-15, pendiente no bloqueante
+ * que había quedado del fix wave de Fase 15 (`ESTADO.md`, 2026-09-02): antes
+ * de esto un evento sin permiso de edición se mostraba como `<div>` con solo
+ * `title` en hover, perdiendo descripción/fecha fin y sin ser navegable por
+ * teclado pese a parecer accionable. La capa de seguridad real sigue en el
+ * backend (`CalendarioService.actualizar`/`eliminar` rechazan con `403
  * ROL_NO_AUTORIZADO` a un maestro no-autor, que cae en
- * `MENSAJES_ERROR_EVENTO.ROL_NO_AUTORIZADO`) — ocultar el acceso es solo UX.
+ * `MENSAJES_ERROR_EVENTO.ROL_NO_AUTORIZADO`) — el modal de detalle es solo UX.
  *
  * `mesActual` es el único estado de navegación; `rangoDelGrid` siempre
  * cubre 42 días (6 semanas), muy por debajo del tope de 62 días que valida
@@ -103,11 +109,91 @@ function nombreDeMes(anio: number, mesIndiceCero: number): string {
 const DIAS_SEMANA_HEADER = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 const MAX_CHIPS_POR_CELDA = 3;
 
+/**
+ * Lista completa de eventos de un día — se abre desde el indicador "+N más"
+ * de una celda cuando hay más eventos de los que caben. Antes ese indicador
+ * era un `<p>` inerte (sin click ni acceso por teclado); ahora es un
+ * `<button>` que abre este modal chico con el resto de los eventos del día.
+ * Mismo criterio que el grid principal respecto a `puedeEditar`: el padre
+ * decide, vía `onSeleccionar`, si el click abre el modal de edición o el de
+ * solo lectura. Mismo patrón de cierre (Escape + click en overlay) que
+ * `DetalleEventoModal`/`EventoModal`.
+ */
+interface EventosDelDiaModalProps {
+  fecha: string;
+  eventos: OcurrenciaEvento[];
+  onSeleccionar: (evento: OcurrenciaEvento) => void;
+  onCerrar: () => void;
+}
+
+function EventosDelDiaModal({ fecha, eventos, onSeleccionar, onCerrar }: EventosDelDiaModalProps) {
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') onCerrar();
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onCerrar]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate/40 p-4"
+      onClick={onCerrar}
+    >
+      <div
+        className="max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-lg bg-white p-6 shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="font-display text-lg font-semibold text-slate">
+          Eventos del {Number(fecha.slice(8, 10))}
+        </h2>
+        <div className="mt-4 space-y-1.5">
+          {eventos.map((evento) => (
+            <button
+              key={`${evento.eventoId}-${evento.fecha}`}
+              type="button"
+              onClick={() => onSeleccionar(evento)}
+              className={[
+                'block w-full truncate rounded px-2 py-1.5 text-left text-sm font-medium',
+                COLOR_POR_CATEGORIA[evento.categoria],
+              ].join(' ')}
+            >
+              {evento.horaInicio ? `${evento.horaInicio} ` : ''}
+              {evento.titulo}
+            </button>
+          ))}
+        </div>
+        <div className="mt-6 flex justify-end">
+          <button
+            type="button"
+            onClick={onCerrar}
+            className="rounded-lg border border-mist px-4 py-2 text-sm font-medium text-slate hover:bg-mist/30"
+          >
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function MaestroCalendarioPage() {
   const queryClient = useQueryClient();
   const [mesActual, setMesActual] = useState<MesActual>(mesActualDeHoy);
   const [modalEvento, setModalEvento] = useState<EstadoModalEvento>(MODAL_CERRADO);
   const [eventoAEliminar, setEventoAEliminar] = useState<OcurrenciaEvento | null>(null);
+  const [eventoDetalle, setEventoDetalle] = useState<OcurrenciaEvento | null>(null);
+  const [diaExpandido, setDiaExpandido] = useState<string | null>(null);
+
+  /** Mismo criterio de `puedeEditar` que el chip del grid principal — usado
+   * tanto por el grid como por `EventosDelDiaModal` (el "+N más"). */
+  function seleccionarOcurrencia(ocurrencia: OcurrenciaEvento) {
+    if (!ocurrencia.puedeEditar) {
+      setEventoDetalle(ocurrencia);
+      return;
+    }
+    setModalEvento({ abierto: true, evento: ocurrencia });
+  }
 
   const rango = rangoDelGrid(mesActual.anio, mesActual.mesIndiceCero);
 
@@ -294,27 +380,15 @@ export default function MaestroCalendarioPage() {
 
                       // `puedeEditar` (backend, Fase 15): solo el autor del
                       // evento o un ADMINISTRATIVO de la sede pueden
-                      // editarlo/eliminarlo. Sin permiso, el chip se muestra
-                      // pero no abre el modal de edición (ni, por transición,
-                      // el de borrado). El backend igual rechaza con 403 —
-                      // esto es solo UX.
-                      if (!ocurrencia.puedeEditar) {
-                        return (
-                          <div
-                            key={`${ocurrencia.eventoId}-${ocurrencia.fecha}`}
-                            title={ocurrencia.titulo}
-                            className={claseChip}
-                          >
-                            {contenidoChip}
-                          </div>
-                        );
-                      }
-
+                      // editarlo/eliminarlo. Sin permiso, el chip abre el
+                      // detalle de solo lectura en vez del modal de edición
+                      // (ni, por transición, el de borrado). El backend
+                      // igual rechaza con 403 — esto es solo UX.
                       return (
                         <button
                           key={`${ocurrencia.eventoId}-${ocurrencia.fecha}`}
                           type="button"
-                          onClick={() => setModalEvento({ abierto: true, evento: ocurrencia })}
+                          onClick={() => seleccionarOcurrencia(ocurrencia)}
                           title={ocurrencia.titulo}
                           className={claseChip}
                         >
@@ -323,7 +397,13 @@ export default function MaestroCalendarioPage() {
                       );
                     })}
                     {restantes > 0 && (
-                      <p className="px-1.5 text-xs text-slate/50">+{restantes} más</p>
+                      <button
+                        type="button"
+                        onClick={() => setDiaExpandido(celda.fecha)}
+                        className="block w-full px-1.5 text-left text-xs text-slate/50 hover:text-slate hover:underline"
+                      >
+                        +{restantes} más
+                      </button>
                     )}
                   </div>
                 </div>
@@ -363,6 +443,22 @@ export default function MaestroCalendarioPage() {
           eliminando={eliminarMutation.isPending}
           onConfirmar={() => eliminarMutation.mutate(eventoAEliminar.eventoId)}
           onCancelar={() => setEventoAEliminar(null)}
+        />
+      )}
+
+      {eventoDetalle && (
+        <DetalleEventoModal evento={eventoDetalle} onCerrar={() => setEventoDetalle(null)} />
+      )}
+
+      {diaExpandido && (
+        <EventosDelDiaModal
+          fecha={diaExpandido}
+          eventos={ocurrenciasPorFecha.get(diaExpandido) ?? []}
+          onSeleccionar={(evento) => {
+            setDiaExpandido(null);
+            seleccionarOcurrencia(evento);
+          }}
+          onCerrar={() => setDiaExpandido(null)}
         />
       )}
     </div>

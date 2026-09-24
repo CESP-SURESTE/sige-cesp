@@ -159,7 +159,10 @@ export class GruposService {
       });
     } catch (err) {
       console.error('[GruposService.crear] error inesperado:', err);
-      throw err;
+      throw new InternalServerErrorException({
+        error: 'Error inesperado al crear el grupo',
+        code: 'SERVER_ERROR',
+      });
     }
   }
 
@@ -217,7 +220,10 @@ export class GruposService {
       return { data: grupos, page, limit, total };
     } catch (err) {
       console.error('[GruposService.listar] error inesperado:', err);
-      throw err;
+      throw new InternalServerErrorException({
+        error: 'Error inesperado al listar los grupos',
+        code: 'SERVER_ERROR',
+      });
     }
   }
 
@@ -254,7 +260,10 @@ export class GruposService {
     } catch (err) {
       if (err instanceof NotFoundException) throw err;
       console.error('[GruposService.obtenerPorId] error inesperado:', err);
-      throw err;
+      throw new InternalServerErrorException({
+        error: 'Error inesperado al obtener el grupo',
+        code: 'SERVER_ERROR',
+      });
     }
   }
 
@@ -475,7 +484,10 @@ export class GruposService {
         });
       }
       console.error('[GruposService.matricular] error inesperado:', err);
-      throw err;
+      throw new InternalServerErrorException({
+        error: 'Error inesperado al matricular al alumno',
+        code: 'SERVER_ERROR',
+      });
     }
   }
 
@@ -580,7 +592,10 @@ export class GruposService {
       }));
     } catch (err) {
       console.error('[GruposService.listarAlumnos] error inesperado:', err);
-      throw err;
+      throw new InternalServerErrorException({
+        error: 'Error inesperado al listar los alumnos del grupo',
+        code: 'SERVER_ERROR',
+      });
     }
   }
 
@@ -674,7 +689,10 @@ export class GruposService {
         });
       }
       console.error('[GruposService.asignarMaestro] error inesperado:', err);
-      throw err;
+      throw new InternalServerErrorException({
+        error: 'Error inesperado al asignar al maestro',
+        code: 'SERVER_ERROR',
+      });
     }
   }
 

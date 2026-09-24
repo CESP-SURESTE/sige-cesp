@@ -70,24 +70,40 @@ export type TipoSangre =
 export interface InfoMedicaInput {
   tieneCondicionMedica: boolean;
   tipoSangre: TipoSangre;
-  padecimiento?: string;
-  medicamentos?: string;
-  alergias?: string;
-  tratamientoAdicional?: string;
+  /**
+   * `string | null` (fix de revisión final de rama, 2026-09-20, feature
+   * "Edición de datos de persona") — el backend hace `infoMedicaX.upsert`
+   * (no delete+recreate), así que `undefined` en el `PATCH` significa "no
+   * tocar la columna" y NUNCA borra un valor viejo; los 3 modales de edición
+   * mandan `null` explícito para limpiar. Sigue siendo opcional/omitible
+   * para el flujo de alta (`crearAlumno`/`crearMaestro`/`crearAdministrativo`),
+   * que nunca manda `null`.
+   */
+  padecimiento?: string | null;
+  medicamentos?: string | null;
+  alergias?: string | null;
+  tratamientoAdicional?: string | null;
 }
 
 export interface PerfilAlumnoInput {
   nombres: string;
   apellidoPaterno: string;
-  apellidoMaterno?: string;
-  curp?: string;
+  /**
+   * `string | null` (fix de revisión final de rama, 2026-09-20, feature
+   * "Edición de datos de persona") — `EditarAlumnoModal` manda `null`
+   * explícito para borrar un valor previo (el `PATCH` es un `update`
+   * parcial de Prisma: `undefined` significa "no tocar la columna", `null`
+   * sí la limpia). Sigue omitible para el flujo de alta.
+   */
+  apellidoMaterno?: string | null;
+  curp?: string | null;
   /** ISO date (`YYYY-MM-DD`). */
   fechaNacimiento: string;
   correoPersonal: string;
   carreraId: string;
   periodoIngreso: string;
   cuatrimestreActual: number;
-  telefono?: string;
+  telefono?: string | null;
   /** 1-3 elementos — `ContactoAlumnoDto` (con `tipo`), exclusivo de alumno. */
   contactos: ContactoAlumnoInput[];
   infoMedica: InfoMedicaInput;
@@ -123,9 +139,11 @@ export type TipoContratacion = 'BASE' | 'TEMPORAL' | 'CONTRATO';
 export interface PerfilMaestroInput {
   nombres: string;
   apellidoPaterno: string;
-  apellidoMaterno?: string;
+  /** `string | null` (fix 2026-09-20, "Edición de datos de persona") — ver
+   * la nota de `PerfilAlumnoInput.apellidoMaterno`, mismo criterio. */
+  apellidoMaterno?: string | null;
   curp: string;
-  cedulaProfesional?: string;
+  cedulaProfesional?: string | null;
   correoPersonal: string;
   telefono: string;
   /** ISO date (`YYYY-MM-DD`). */
@@ -150,7 +168,9 @@ export interface CrearMaestroInput {
 export interface PerfilAdministrativoInput {
   nombres: string;
   apellidoPaterno: string;
-  apellidoMaterno?: string;
+  /** `string | null` (fix 2026-09-20, "Edición de datos de persona") — ver
+   * la nota de `PerfilAlumnoInput.apellidoMaterno`, mismo criterio. */
+  apellidoMaterno?: string | null;
   curp: string;
   correoPersonal: string;
   telefono: string;
@@ -278,6 +298,9 @@ export interface PersonaListItemAlumno {
   /** `Usuario.activo` (regla 3 de `CLAUDE.md` raíz — baja lógica, nunca se
    * oculta la fila, se muestra distinguida). */
   activo: boolean;
+  /** URL firmada de Supabase Storage, o `null` si no tiene foto subida
+   * (feature "Foto de perfil", 2026-09-17). */
+  fotoUrl: string | null;
 }
 
 export interface PersonaListItemMaestro {
@@ -304,6 +327,9 @@ export interface PersonaListItemMaestro {
    * `null` en otro caso o en altas previas al 2026-09-07. */
   contratoFechaFin: string | null;
   activo: boolean;
+  /** URL firmada de Supabase Storage, o `null` si no tiene foto subida
+   * (feature "Foto de perfil", 2026-09-17). */
+  fotoUrl: string | null;
 }
 
 /**
@@ -327,6 +353,9 @@ export interface PersonaListItemAdministrativo {
    * estatus. */
   tipoLicencia: TipoLicencia | null;
   activo: boolean;
+  /** URL firmada de Supabase Storage, o `null` si no tiene foto subida
+   * (feature "Foto de perfil", 2026-09-17). */
+  fotoUrl: string | null;
 }
 
 function construirQueryString(
@@ -415,5 +444,126 @@ export function cambiarEstatusPersona(
   return apiFetchAuth<{ ok: true }>(`/personas/${usuarioId}/estatus`, {
     method: 'PATCH',
     body: JSON.stringify({ estatus, ...extra }),
+  });
+}
+
+/**
+ * `POST /personas/:id/resetear-password` — dispara el envío de un enlace de
+ * restablecimiento al correo personal de la persona (`usuarioId`). Sin
+ * body — el backend resuelve todo desde `:id` + el JWT del actor. Sin
+ * cooldown en esta capa — lo maneja `useCooldownReseteo` en el componente.
+ */
+export function resetearPasswordPersona(usuarioId: string): Promise<{ ok: true }> {
+  return apiFetchAuth<{ ok: true }>(`/personas/${usuarioId}/resetear-password`, {
+    method: 'POST',
+  });
+}
+
+/**
+ * `GET/PATCH /personas/:id` — feature "Edición de datos de persona"
+ * (2026-09-20). Shape espejo de `PersonaParaEditar`/`PersonaEditableAlumno`/
+ * `PersonaEditableMaestro`/`PersonaEditableAdministrativo`/
+ * `PersonaEditableContacto`/`PersonaEditableInfoMedica`
+ * (`App/backend/src/personas/personas.service.ts`) para el `GET`, y de
+ * `EditarPersonaDto` (que reusa `PerfilAlumnoDto`/`PerfilMaestroDto`/
+ * `PerfilAdministrativoDto` de `crear-persona.dto.ts`, backend) para el
+ * `PATCH` — mismo shape que `CrearAlumnoInput`/`CrearMaestroInput`/
+ * `CrearAdministrativoInput` de este mismo archivo, SIN `matricula`/`email`
+ * (inmutables, ver spec) y sin `nivelPermiso` opcional-con-default (acá si
+ * cambia se audita `CAMBIO_PERMISO`, ver backend).
+ */
+export interface PersonaEditableContacto {
+  nombre: string;
+  telefono: string;
+  correo: string | null;
+  parentesco: string;
+  tipo?: TipoContacto;
+}
+
+export interface PersonaEditableInfoMedica {
+  tieneCondicionMedica: boolean;
+  tipoSangre: TipoSangre | null;
+  padecimiento: string | null;
+  medicamentos: string | null;
+  alergias: string | null;
+  tratamientoAdicional: string | null;
+}
+
+export interface PersonaEditableAlumno {
+  nombres: string;
+  apellidoPaterno: string;
+  apellidoMaterno: string | null;
+  curp: string | null;
+  /** ISO date (`YYYY-MM-DD`). */
+  fechaNacimiento: string;
+  correoPersonal: string;
+  carreraId: string;
+  periodoIngreso: string;
+  cuatrimestreActual: number;
+  telefono: string | null;
+}
+
+export interface PersonaEditableMaestro {
+  nombres: string;
+  apellidoPaterno: string;
+  apellidoMaterno: string | null;
+  curp: string;
+  cedulaProfesional: string | null;
+  correoPersonal: string;
+  telefono: string;
+  fechaContratacion: string;
+  tipoContratacion: TipoContratacion | null;
+  diasTemporal: number | null;
+  contratoFechaInicio: string | null;
+  contratoFechaFin: string | null;
+}
+
+export interface PersonaEditableAdministrativo {
+  nombres: string;
+  apellidoPaterno: string;
+  apellidoMaterno: string | null;
+  curp: string;
+  correoPersonal: string;
+  telefono: string;
+  fechaContratacion: string;
+  puesto: PuestoAdministrativo;
+  nivelPermiso: NivelPermiso;
+}
+
+export interface PersonaParaEditar {
+  rol: 'ALUMNO' | 'MAESTRO' | 'ADMINISTRATIVO';
+  codigoExterno: string | null;
+  perfilAlumno?: PersonaEditableAlumno;
+  perfilMaestro?: PersonaEditableMaestro;
+  perfilAdministrativo?: PersonaEditableAdministrativo;
+  contactos: PersonaEditableContacto[];
+  infoMedica: PersonaEditableInfoMedica;
+}
+
+export function obtenerPersonaParaEditar(
+  usuarioId: string,
+): Promise<PersonaParaEditar> {
+  return apiFetchAuth<PersonaParaEditar>(`/personas/${usuarioId}`);
+}
+
+export interface EditarPersonaInput {
+  /** `string | null` (fix 2026-09-20, revisión final de "Edición de datos de
+   * persona") — `Usuario.codigoExterno` es `String? @unique`; los 3 modales
+   * de edición mandan `null` (nunca `''`) cuando la persona no tiene código
+   * externo, para no chocar con el índice único cuando dos personas
+   * distintas se editan sin código. */
+  codigoExterno?: string | null;
+  perfilAlumno?: PerfilAlumnoInput;
+  perfilMaestro?: PerfilMaestroInput;
+  perfilAdministrativo?: PerfilAdministrativoInput;
+}
+
+export function editarPersona(
+  usuarioId: string,
+  input: EditarPersonaInput,
+): Promise<{ ok: true }> {
+  return apiFetchAuth<{ ok: true }>(`/personas/${usuarioId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
   });
 }

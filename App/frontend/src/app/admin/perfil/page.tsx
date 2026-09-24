@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError } from '@/lib/api/http';
 import {
   obtenerPerfil,
@@ -11,7 +11,9 @@ import {
   type PerfilAdministrativo,
   type PuestoAdministrativo,
 } from '@/lib/api/perfil';
+import { Avatar } from '@/components/admin/ui/Avatar';
 import { SkeletonProfileCard } from '@/components/admin/ui/Skeleton';
+import { SubirFotoModal } from './SubirFotoModal';
 
 /**
  * Perfil de administrativo — Fase 5, Día 18.
@@ -103,6 +105,8 @@ export default function AdminPerfilPage() {
 
 function PerfilContenido({ perfil }: { perfil: Perfil }) {
   const [seccion, setSeccion] = useState<SeccionId>('permiso');
+  const queryClient = useQueryClient();
+  const [modalFotoAbierto, setModalFotoAbierto] = useState(false);
 
   // `administrativo` viene lleno para `rol === 'ADMINISTRATIVO'` (el único
   // caso que aplica en este árbol de rutas — ver nota de
@@ -120,10 +124,18 @@ function PerfilContenido({ perfil }: { perfil: Perfil }) {
   }
 
   const administrativo = perfil.administrativo;
+  const iniciales = (
+    administrativo.nombres.charAt(0) + administrativo.apellidoPaterno.charAt(0)
+  ).toUpperCase();
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
-      <EncabezadoPerfil administrativo={administrativo} />
+      <EncabezadoPerfil
+        administrativo={administrativo}
+        fotoUrl={perfil.fotoUrl}
+        iniciales={iniciales}
+        onCambiarFoto={() => setModalFotoAbierto(true)}
+      />
       <div className="flex flex-col gap-4 rounded-lg border border-mist bg-white p-4 shadow-sm sm:flex-row sm:gap-6 sm:p-6">
         <SidebarSecciones activa={seccion} onCambiar={setSeccion} />
         <div className="min-w-0 flex-1">
@@ -135,6 +147,16 @@ function PerfilContenido({ perfil }: { perfil: Perfil }) {
           />
         </div>
       </div>
+
+      {modalFotoAbierto && (
+        <SubirFotoModal
+          fotoUrlActual={perfil.fotoUrl}
+          onClose={() => setModalFotoAbierto(false)}
+          onCambioConExito={() =>
+            queryClient.invalidateQueries({ queryKey: ['admin', 'perfil'] })
+          }
+        />
+      )}
     </div>
   );
 }
@@ -167,17 +189,27 @@ function BannerArcos() {
 
 /**
  * Encabezado del perfil — banner + avatar + nombre + badges de puesto y
- * estatus. El avatar muestra las iniciales (nombre + apellido paterno) en
- * vez de `IconPerfil` — a diferencia de maestro/alumno, no hay un dato
- * externo corto (cédula/matrícula) que sirva de subtítulo natural, así que
- * las iniciales aportan más identidad visual. Sin badge de "menor de edad"
- * (no aplica — `PerfilAdministrativo` no tiene `fechaNacimiento`).
+ * estatus. El avatar (`Avatar`, feature "Foto de perfil" 2026-09-17) muestra
+ * la foto real si `perfil.fotoUrl` existe, o las iniciales (nombre +
+ * apellido paterno) como respaldo — a diferencia de maestro/alumno, no hay
+ * un dato externo corto (cédula/matrícula) que sirva de subtítulo natural,
+ * así que las iniciales aportan más identidad visual cuando no hay foto. Es
+ * el disparador del modal de subida propia (`SubirFotoModal`). Sin badge de
+ * "menor de edad" (no aplica — `PerfilAdministrativo` no tiene
+ * `fechaNacimiento`).
  */
-function EncabezadoPerfil({ administrativo }: { administrativo: PerfilAdministrativo }) {
+function EncabezadoPerfil({
+  administrativo,
+  fotoUrl,
+  iniciales,
+  onCambiarFoto,
+}: {
+  administrativo: PerfilAdministrativo;
+  fotoUrl: string | null;
+  iniciales: string;
+  onCambiarFoto: () => void;
+}) {
   const nombreCompleto = nombreCompletoDe(administrativo);
-  const iniciales = (
-    administrativo.nombres[0] + administrativo.apellidoPaterno[0]
-  ).toUpperCase();
 
   return (
     <div className="overflow-hidden rounded-lg border border-mist bg-white shadow-sm">
@@ -185,11 +217,22 @@ function EncabezadoPerfil({ administrativo }: { administrativo: PerfilAdministra
         <BannerArcos />
       </div>
       <div className="flex flex-col items-center px-6 pb-6">
-        <div className="relative -mt-12 flex h-24 w-24 items-center justify-center rounded-full border-4 border-white bg-mist text-navy shadow-sm sm:-mt-16 sm:h-32 sm:w-32">
-          <span className="font-display text-2xl font-semibold sm:text-4xl">
-            {iniciales}
+        <button
+          type="button"
+          onClick={onCambiarFoto}
+          aria-label="Cambiar foto de perfil"
+          className="group relative -mt-12 sm:-mt-16"
+        >
+          <Avatar
+            fotoUrl={fotoUrl}
+            iniciales={iniciales}
+            tamano="xl"
+            className="border-4 border-white shadow-sm"
+          />
+          <span className="absolute inset-0 flex items-center justify-center rounded-full bg-slate/0 text-xs font-medium text-transparent transition-colors group-hover:bg-slate/40 group-hover:text-white">
+            Cambiar
           </span>
-        </div>
+        </button>
         <h1 className="mt-4 text-center font-display text-2xl font-semibold text-navy">
           {nombreCompleto}
         </h1>

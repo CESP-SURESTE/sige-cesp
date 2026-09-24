@@ -3,13 +3,16 @@
 import Link from 'next/link';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { Pencil } from 'lucide-react';
 import { toast } from 'sonner';
+import { Avatar } from '@/components/admin/ui/Avatar';
 import { SkeletonTableRows } from '@/components/admin/ui/Skeleton';
 import { ApiError } from '@/lib/api/http';
 import { obtenerPerfil } from '@/lib/api/perfil';
 import {
   cambiarEstatusPersona,
   listarAdministrativos,
+  resetearPasswordPersona,
   type EstatusEmpleado,
   type MotivoBaja,
   type NivelPermiso,
@@ -22,8 +25,12 @@ import { Paginacion } from '@/components/admin/ui/personas-listado/Paginacion';
 import { EstadoActivoBadge } from '@/components/admin/ui/personas-listado/EstadoActivoBadge';
 import { EstatusEmpleadoBadge } from '@/components/admin/ui/personas-listado/EstatusEmpleadoBadge';
 import { CambiarEstatusModal } from '@/components/admin/ui/personas-listado/CambiarEstatusModal';
+import { ResetearPasswordModal } from '@/components/admin/ui/personas-listado/ResetearPasswordModal';
+import { SubirFotoPersonaModal } from '@/components/admin/ui/personas-listado/SubirFotoPersonaModal';
 import { useBuscarDebounced } from '@/components/admin/ui/personas-listado/useBuscarDebounced';
 import { usePaginacionFiltrada } from '@/components/admin/ui/personas-listado/usePaginacionFiltrada';
+import { useCooldownReseteo } from '@/components/admin/ui/personas-listado/useCooldownReseteo';
+import { EditarAdministrativoModal } from './EditarAdministrativoModal';
 
 /**
  * Listado de administrativos — Fase 10 (unificación CRUD admin, Task 5).
@@ -61,6 +68,13 @@ import { usePaginacionFiltrada } from '@/components/admin/ui/personas-listado/us
  * SOLO para UX (ocultar de antemano lo que va a fallar), el backend sigue
  * siendo la fuente de verdad real, este chequeo del cliente nunca
  * reemplaza al `403` del servidor.
+ *
+ * El lápiz de "Editar datos" (Task 6, `EditarAdministrativoModal.tsx`) usa
+ * un gate DISTINTO (`puedeEditarDatos`, calculado junto a
+ * `puedeGestionarAdministrativo` en `TablaAdministrativos`): SOLO la
+ * jerarquía de `nivelPermiso`, SIN la exclusión de la fila del propio actor
+ * — a diferencia de "Cambiar estatus"/"Restablecer contraseña", editar los
+ * propios datos (corregir un typo propio) sí tiene sentido.
  */
 const JERARQUIA_NIVEL_PERMISO: Record<NivelPermiso, number> = {
   AUXILIAR: 0,
@@ -73,6 +87,12 @@ export default function AdminAdministrativosPage() {
   const { estatus, setEstatus, page, setPage, limit } =
     usePaginacionFiltrada(buscar);
   const [administrativoAEditar, setAdministrativoAEditar] =
+    useState<PersonaListItemAdministrativo | null>(null);
+  const [administrativoAResetear, setAdministrativoAResetear] =
+    useState<PersonaListItemAdministrativo | null>(null);
+  const [administrativoAFotografiar, setAdministrativoAFotografiar] =
+    useState<PersonaListItemAdministrativo | null>(null);
+  const [administrativoAEditarDatos, setAdministrativoAEditarDatos] =
     useState<PersonaListItemAdministrativo | null>(null);
 
   const perfilActorQuery = useQuery({
@@ -160,6 +180,30 @@ export default function AdminAdministrativosPage() {
     },
   });
 
+  const { estaEnCooldown, minutosRestantes, iniciarCooldown } =
+    useCooldownReseteo(perfilActorQuery.data?.id);
+
+  const resetearMutation = useMutation({
+    mutationFn: (usuarioId: string) => resetearPasswordPersona(usuarioId),
+    onSuccess: (_data, usuarioId) => {
+      toast.success('Enlace de restablecimiento enviado.');
+      iniciarCooldown(usuarioId);
+      setAdministrativoAResetear(null);
+    },
+    onError: (err) => {
+      // Regla 12 de `CLAUDE.md` raíz.
+      console.error(
+        '[AdminAdministrativosPage] Error al resetear contraseña:',
+        err,
+      );
+      const mensaje =
+        err instanceof ApiError
+          ? err.message
+          : 'Ocurrió un error inesperado. Intenta de nuevo.';
+      toast.error(mensaje);
+    },
+  });
+
   return (
     <div className="rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -191,6 +235,8 @@ export default function AdminAdministrativosPage() {
             <table className="min-w-full divide-y divide-mist text-sm">
               <thead className="bg-bone">
                 <tr>
+                  <Th></Th>
+                  <Th>Foto</Th>
                   <Th>Nombre completo</Th>
                   <Th>Puesto</Th>
                   <Th>Nivel de permiso</Th>
@@ -200,7 +246,7 @@ export default function AdminAdministrativosPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-mist">
-                <SkeletonTableRows columns={6} />
+                <SkeletonTableRows columns={8} />
               </tbody>
             </table>
           </div>
@@ -223,6 +269,11 @@ export default function AdminAdministrativosPage() {
                 perfilActorQuery.data?.administrativo?.nivelPermiso
               }
               onCambiarEstatus={setAdministrativoAEditar}
+              estaEnCooldown={estaEnCooldown}
+              minutosRestantes={minutosRestantes}
+              onResetearPassword={setAdministrativoAResetear}
+              onFotografiar={setAdministrativoAFotografiar}
+              onEditarDatos={setAdministrativoAEditarDatos}
             />
             <div className="mt-4">
               <Paginacion
@@ -250,6 +301,57 @@ export default function AdminAdministrativosPage() {
           onCancelar={() => setAdministrativoAEditar(null)}
         />
       )}
+
+      {administrativoAResetear && (
+        <ResetearPasswordModal
+          nombreCompleto={[
+            administrativoAResetear.nombres,
+            administrativoAResetear.apellidoPaterno,
+            administrativoAResetear.apellidoMaterno,
+          ]
+            .filter(Boolean)
+            .join(' ')}
+          enviando={resetearMutation.isPending}
+          onConfirmar={() =>
+            resetearMutation.mutate(administrativoAResetear.usuarioId)
+          }
+          onCancelar={() => setAdministrativoAResetear(null)}
+        />
+      )}
+
+      {administrativoAFotografiar && (
+        <SubirFotoPersonaModal
+          usuarioId={administrativoAFotografiar.usuarioId}
+          nombreCompleto={[
+            administrativoAFotografiar.nombres,
+            administrativoAFotografiar.apellidoPaterno,
+            administrativoAFotografiar.apellidoMaterno,
+          ]
+            .filter(Boolean)
+            .join(' ')}
+          fotoUrlActual={administrativoAFotografiar.fotoUrl}
+          onClose={() => setAdministrativoAFotografiar(null)}
+          onCambioConExito={() =>
+            queryClient.invalidateQueries({
+              queryKey: ['admin', 'personas', 'ADMINISTRATIVO'],
+            })
+          }
+        />
+      )}
+
+      {administrativoAEditarDatos && (
+        <EditarAdministrativoModal
+          usuarioId={administrativoAEditarDatos.usuarioId}
+          nivelPermisoActor={perfilActorQuery.data?.administrativo?.nivelPermiso}
+          esUsuarioActor={administrativoAEditarDatos.usuarioId === perfilActorQuery.data?.id}
+          onClose={() => setAdministrativoAEditarDatos(null)}
+          onGuardadoConExito={() =>
+            queryClient.invalidateQueries({
+              queryKey: ['admin', 'personas', 'ADMINISTRATIVO'],
+            })
+          }
+        />
+      )}
     </div>
   );
 }
@@ -259,6 +361,11 @@ function TablaAdministrativos({
   usuarioIdActor,
   nivelPermisoActor,
   onCambiarEstatus,
+  estaEnCooldown,
+  minutosRestantes,
+  onResetearPassword,
+  onFotografiar,
+  onEditarDatos,
 }: {
   administrativos: PersonaListItemAdministrativo[];
   /** `id` del actor logueado (`GET /perfil`) — `undefined` mientras esa
@@ -270,12 +377,20 @@ function TablaAdministrativos({
    * — mismo `undefined`-mientras-carga que `usuarioIdActor` de arriba. */
   nivelPermisoActor: NivelPermiso | undefined;
   onCambiarEstatus: (administrativo: PersonaListItemAdministrativo) => void;
+  /** Cooldown de reseteo de contraseña (`useCooldownReseteo`) — por fila. */
+  estaEnCooldown: (usuarioId: string) => boolean;
+  minutosRestantes: (usuarioId: string) => number;
+  onResetearPassword: (administrativo: PersonaListItemAdministrativo) => void;
+  onFotografiar: (administrativo: PersonaListItemAdministrativo) => void;
+  onEditarDatos: (administrativo: PersonaListItemAdministrativo) => void;
 }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-mist">
       <table className="min-w-full divide-y divide-mist text-sm">
         <thead className="bg-bone">
           <tr>
+            <Th></Th>
+            <Th>Foto</Th>
             <Th>Nombre completo</Th>
             <Th>Puesto</Th>
             <Th>Nivel de permiso</Th>
@@ -285,33 +400,80 @@ function TablaAdministrativos({
           </tr>
         </thead>
         <tbody className="divide-y divide-mist">
-          {administrativos.map((administrativo) => (
-            <tr key={administrativo.usuarioId}>
-              <Td>
-                {[
-                  administrativo.nombres,
-                  administrativo.apellidoPaterno,
-                  administrativo.apellidoMaterno,
-                ]
-                  .filter(Boolean)
-                  .join(' ')}
-              </Td>
-              <Td>{PUESTO_LABEL[administrativo.puesto]}</Td>
-              <Td>{NIVEL_PERMISO_LABEL[administrativo.nivelPermiso]}</Td>
-              <Td>
-                <EstatusEmpleadoBadge
-                  estatus={administrativo.estatus}
-                  tipoLicencia={administrativo.tipoLicencia}
-                />
-              </Td>
-              <Td>
-                <EstadoActivoBadge activo={administrativo.activo} />
-              </Td>
-              <Td>
-                {administrativo.usuarioId !== usuarioIdActor &&
-                  (nivelPermisoActor === undefined ||
-                    JERARQUIA_NIVEL_PERMISO[nivelPermisoActor] >=
-                      JERARQUIA_NIVEL_PERMISO[administrativo.nivelPermiso]) && (
+          {administrativos.map((administrativo) => {
+            // Minor de la revisión final de rama (2026-09-16) — condición
+            // única reusada para AMBAS acciones: el backend aplica la MISMA
+            // jerarquía de `nivelPermiso` (regla 7) a `PATCH
+            // /personas/:id/estatus` y a `POST /personas/:id/resetear-password`
+            // cuando el target es ADMINISTRATIVO, así que mostrar
+            // "Restablecer contraseña" sin este gate garantizaba un 403 en
+            // la UI para el mismo conjunto de filas que ya ocultan "Cambiar
+            // estatus".
+            const puedeGestionarAdministrativo =
+              administrativo.usuarioId !== usuarioIdActor &&
+              (nivelPermisoActor === undefined ||
+                JERARQUIA_NIVEL_PERMISO[nivelPermisoActor] >=
+                  JERARQUIA_NIVEL_PERMISO[administrativo.nivelPermiso]);
+
+            // Task 6 — gate DISTINTO al de arriba: solo la jerarquía de
+            // `nivelPermiso`, SIN la exclusión de la fila del propio actor.
+            // Editar los propios datos (corregir un typo propio) sí tiene
+            // sentido, a diferencia de "Cambiar estatus"/"Restablecer
+            // contraseña" sobre uno mismo.
+            const puedeEditarDatos =
+              nivelPermisoActor === undefined ||
+              JERARQUIA_NIVEL_PERMISO[nivelPermisoActor] >=
+                JERARQUIA_NIVEL_PERMISO[administrativo.nivelPermiso];
+
+            return (
+              <tr key={administrativo.usuarioId}>
+                <Td>
+                  {puedeEditarDatos && (
+                    <button
+                      type="button"
+                      onClick={() => onEditarDatos(administrativo)}
+                      aria-label={`Editar datos de ${administrativo.nombres}`}
+                      className="text-slate/60 hover:text-navy"
+                    >
+                      <Pencil className="size-4" />
+                    </button>
+                  )}
+                </Td>
+                <Td>
+                  <button
+                    type="button"
+                    onClick={() => onFotografiar(administrativo)}
+                    aria-label={`Cambiar foto de ${administrativo.nombres}`}
+                  >
+                    <Avatar
+                      fotoUrl={administrativo.fotoUrl}
+                      iniciales={`${administrativo.nombres.charAt(0)}${administrativo.apellidoPaterno.charAt(0)}`.toUpperCase()}
+                      tamano="sm"
+                    />
+                  </button>
+                </Td>
+                <Td>
+                  {[
+                    administrativo.nombres,
+                    administrativo.apellidoPaterno,
+                    administrativo.apellidoMaterno,
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                </Td>
+                <Td>{PUESTO_LABEL[administrativo.puesto]}</Td>
+                <Td>{NIVEL_PERMISO_LABEL[administrativo.nivelPermiso]}</Td>
+                <Td>
+                  <EstatusEmpleadoBadge
+                    estatus={administrativo.estatus}
+                    tipoLicencia={administrativo.tipoLicencia}
+                  />
+                </Td>
+                <Td>
+                  <EstadoActivoBadge activo={administrativo.activo} />
+                </Td>
+                <Td>
+                  {puedeGestionarAdministrativo && (
                     <button
                       type="button"
                       onClick={() => onCambiarEstatus(administrativo)}
@@ -320,16 +482,32 @@ function TablaAdministrativos({
                       Cambiar estatus
                     </button>
                   )}
-              </Td>
-            </tr>
-          ))}
+                  {puedeGestionarAdministrativo && (
+                    <button
+                      type="button"
+                      onClick={() => onResetearPassword(administrativo)}
+                      disabled={estaEnCooldown(administrativo.usuarioId)}
+                      className="ml-3 text-navy hover:underline disabled:cursor-not-allowed disabled:text-slate/40 disabled:no-underline"
+                      title={
+                        estaEnCooldown(administrativo.usuarioId)
+                          ? `Disponible en ${minutosRestantes(administrativo.usuarioId)} min`
+                          : undefined
+                      }
+                    >
+                      Restablecer contraseña
+                    </button>
+                  )}
+                </Td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
   );
 }
 
-function Th({ children }: { children: React.ReactNode }) {
+function Th({ children }: { children?: React.ReactNode }) {
   return (
     <th className="px-4 py-2 text-left text-xs font-semibold tracking-wide text-slate/60 uppercase">
       {children}

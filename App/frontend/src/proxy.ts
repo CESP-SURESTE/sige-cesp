@@ -37,7 +37,13 @@ const ROL_POR_PREFIJO: { prefijo: string; rol: Rol }[] = [
 // `app/login/` es solo del usuario (regla 11 de CLAUDE.md) — no vive bajo
 // admin/alumno. `/no-autorizado` tiene que quedar accesible para cualquier
 // sesión (o ninguna), si no, redirigir ahí terminaría en loop.
-const RUTAS_PUBLICAS = ['/login', '/no-autorizado'];
+// `/restablecer-password` (Task 4, reseteo de contraseña disparado por
+// administrativo) aterriza aquí con la sesión de recuperación que Supabase
+// establece sola al abrir el link de `generateLink({ type: 'recovery' })` —
+// esa sesión SÍ cuenta como "autenticada" para los claims que lee este
+// middleware, así que la ruta debe quedar pública para no redirigir a la
+// persona a su home antes de que pueda elegir la contraseña nueva.
+const RUTAS_PUBLICAS = ['/login', '/no-autorizado', '/restablecer-password'];
 
 // Dia 12 - primer ingreso obligatorio. `/cambiar-password` NO es publica
 // (necesita sesion real para saber a quien pertenece el cambio), pero queda

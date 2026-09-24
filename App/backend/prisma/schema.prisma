@@ -80,6 +80,7 @@ enum AccionAuditoria {
   CAMBIO_ESTATUS
   ELIMINACION
   CONSULTA_EMERGENCIA
+  RESETEO_PASSWORD
 }
 
 enum NivelCarrera {
@@ -357,6 +358,12 @@ model Usuario {
   primerIngreso Boolean    @default(true) @map("primer_ingreso")
   activo        Boolean    @default(true)
   ultimoAcceso  DateTime?  @map("ultimo_acceso")
+  /// Ruta dentro del bucket privado `fotos-perfil` (`{usuarioId}/foto.{ext}`),
+  /// NUNCA una URL — las URLs firmadas se generan al vuelo por request
+  /// (`FotoPerfilService.firmarUrls`). `null` = sin foto subida, cae al
+  /// avatar de iniciales en el frontend. Sin backfill para altas anteriores
+  /// (mismo criterio que `tipoSangre`/`tipoLicencia`).
+  fotoStoragePath String?  @map("foto_storage_path")
   createdAt     DateTime   @default(now()) @map("created_at")
   updatedAt     DateTime   @updatedAt @map("updated_at")
 

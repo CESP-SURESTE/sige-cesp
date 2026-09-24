@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError } from '@/lib/api/http';
 import {
   obtenerMisAsignaciones,
@@ -12,11 +12,12 @@ import {
   type PerfilMaestro,
   type TipoContratacion,
 } from '@/lib/api/perfil';
-import { IconPerfil } from '@/components/maestro/ui/shell/icons';
+import { Avatar } from '@/components/maestro/ui/Avatar';
 import {
   SkeletonLines,
   SkeletonProfileCard,
 } from '@/components/maestro/ui/Skeleton';
+import { SubirFotoModal } from './SubirFotoModal';
 
 /**
  * Perfil de maestro — Fase 5, Día 17.
@@ -104,6 +105,8 @@ export default function MaestroPerfilPage() {
 
 function PerfilContenido({ perfil }: { perfil: Perfil }) {
   const [seccion, setSeccion] = useState<SeccionId>('datos');
+  const queryClient = useQueryClient();
+  const [modalFotoAbierto, setModalFotoAbierto] = useState(false);
 
   // `maestro` viene lleno para `rol === 'MAESTRO'` (el único caso que aplica
   // en este árbol de rutas — ver nota de `SedeGuard`/`proxy.ts` arriba). Se
@@ -121,16 +124,34 @@ function PerfilContenido({ perfil }: { perfil: Perfil }) {
   }
 
   const maestro = perfil.maestro;
+  const iniciales = (
+    maestro.nombres.charAt(0) + maestro.apellidoPaterno.charAt(0)
+  ).toUpperCase();
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
-      <EncabezadoPerfil maestro={maestro} />
+      <EncabezadoPerfil
+        maestro={maestro}
+        fotoUrl={perfil.fotoUrl}
+        iniciales={iniciales}
+        onCambiarFoto={() => setModalFotoAbierto(true)}
+      />
       <div className="flex flex-col gap-4 rounded-lg border border-mist bg-white p-4 shadow-sm sm:flex-row sm:gap-6 sm:p-6">
         <SidebarSecciones activa={seccion} onCambiar={setSeccion} />
         <div className="min-w-0 flex-1">
           <PanelSeccion seccion={seccion} maestro={maestro} email={perfil.email} sede={perfil.sede} />
         </div>
       </div>
+
+      {modalFotoAbierto && (
+        <SubirFotoModal
+          fotoUrlActual={perfil.fotoUrl}
+          onClose={() => setModalFotoAbierto(false)}
+          onCambioConExito={() =>
+            queryClient.invalidateQueries({ queryKey: ['maestro', 'perfil'] })
+          }
+        />
+      )}
     </div>
   );
 }
@@ -161,13 +182,27 @@ function BannerArcos() {
 }
 
 /**
- * Encabezado del perfil — banner + avatar + nombre + badge de estatus.
- * El avatar es un ícono placeholder (`IconPerfil`, no una foto real). El
- * subtítulo usa la cédula profesional en vez de matrícula/carrera (el
- * maestro no tiene esos campos) — si no tiene cédula capturada, se muestra
- * solo el nombre. Sin badge de "menor de edad" (no aplica a `PerfilMaestro`).
+ * Encabezado del perfil — banner + avatar + nombre + badge de estatus. El
+ * avatar (`Avatar`, feature "Foto de perfil" 2026-09-17) muestra la foto
+ * real si `perfil.fotoUrl` existe, o las iniciales como respaldo — reemplaza
+ * al ícono placeholder (`IconPerfil`) que se usaba antes de que existiera la
+ * subida de foto. Es el disparador del modal de subida propia
+ * (`SubirFotoModal`). El subtítulo usa la cédula profesional en vez de
+ * matrícula/carrera (el maestro no tiene esos campos) — si no tiene cédula
+ * capturada, se muestra solo el nombre. Sin badge de "menor de edad" (no
+ * aplica a `PerfilMaestro`).
  */
-function EncabezadoPerfil({ maestro }: { maestro: PerfilMaestro }) {
+function EncabezadoPerfil({
+  maestro,
+  fotoUrl,
+  iniciales,
+  onCambiarFoto,
+}: {
+  maestro: PerfilMaestro;
+  fotoUrl: string | null;
+  iniciales: string;
+  onCambiarFoto: () => void;
+}) {
   const nombreCompleto = nombreCompletoDe(maestro);
 
   return (
@@ -176,9 +211,22 @@ function EncabezadoPerfil({ maestro }: { maestro: PerfilMaestro }) {
         <BannerArcos />
       </div>
       <div className="flex flex-col items-center px-6 pb-6">
-        <div className="relative -mt-12 flex h-24 w-24 items-center justify-center rounded-full border-4 border-white bg-mist text-navy shadow-sm sm:-mt-16 sm:h-32 sm:w-32">
-          <IconPerfil className="h-12 w-12 sm:h-16 sm:w-16" />
-        </div>
+        <button
+          type="button"
+          onClick={onCambiarFoto}
+          aria-label="Cambiar foto de perfil"
+          className="group relative -mt-12 sm:-mt-16"
+        >
+          <Avatar
+            fotoUrl={fotoUrl}
+            iniciales={iniciales}
+            tamano="xl"
+            className="border-4 border-white shadow-sm"
+          />
+          <span className="absolute inset-0 flex items-center justify-center rounded-full bg-slate/0 text-xs font-medium text-transparent transition-colors group-hover:bg-slate/40 group-hover:text-white">
+            Cambiar
+          </span>
+        </button>
         <h1 className="mt-4 text-center font-display text-2xl font-semibold text-navy">
           {nombreCompleto}
         </h1>
@@ -303,7 +351,7 @@ function SeccionDatosPersonales({
         />
         {maestro.tipoContratacion === 'TEMPORAL' && (
           <Campo
-            etiqueta="Días"
+            etiqueta="Días de contrato temporal"
             valor={
               maestro.diasTemporal != null
                 ? String(maestro.diasTemporal)

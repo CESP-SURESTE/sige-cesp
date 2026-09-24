@@ -123,9 +123,11 @@ export default function MaestroAvisosPage() {
         </p>
       </div>
 
-      <div className="flex gap-6 border-b border-mist">
+      <div role="tablist" className="flex gap-6 border-b border-mist">
         <button
           type="button"
+          role="tab"
+          aria-selected={tab === 'publicados'}
           onClick={() => setTab('publicados')}
           className={[
             'pb-2 text-sm font-medium transition-colors',
@@ -138,6 +140,8 @@ export default function MaestroAvisosPage() {
         </button>
         <button
           type="button"
+          role="tab"
+          aria-selected={tab === 'recibidos'}
           onClick={() => setTab('recibidos')}
           className={[
             'pb-2 text-sm font-medium transition-colors',
@@ -151,7 +155,7 @@ export default function MaestroAvisosPage() {
       </div>
 
       {tab === 'publicados' && (
-        <div className="space-y-4">
+        <div role="tabpanel" className="space-y-4">
           <div className="flex justify-end">
             <button
               type="button"
@@ -243,7 +247,7 @@ export default function MaestroAvisosPage() {
       )}
 
       {tab === 'recibidos' && (
-        <div className="space-y-4">
+        <div role="tabpanel" className="space-y-4">
           <div className="overflow-x-auto rounded-lg border-l-4 border-navy bg-white shadow-sm">
             <table className="w-full text-sm">
               <thead>

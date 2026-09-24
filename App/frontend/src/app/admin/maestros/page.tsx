@@ -8,12 +8,16 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { useState } from 'react';
+import { Pencil } from 'lucide-react';
 import { toast } from 'sonner';
+import { Avatar } from '@/components/admin/ui/Avatar';
 import { SkeletonTableRows } from '@/components/admin/ui/Skeleton';
+import { obtenerPerfil } from '@/lib/api/perfil';
 import { ApiError } from '@/lib/api/http';
 import {
   cambiarEstatusPersona,
   listarMaestros,
+  resetearPasswordPersona,
   type EstatusEmpleado,
   type MotivoBaja,
   type PersonaListItemMaestro,
@@ -25,8 +29,12 @@ import { Paginacion } from '@/components/admin/ui/personas-listado/Paginacion';
 import { EstadoActivoBadge } from '@/components/admin/ui/personas-listado/EstadoActivoBadge';
 import { EstatusEmpleadoBadge } from '@/components/admin/ui/personas-listado/EstatusEmpleadoBadge';
 import { CambiarEstatusModal } from '@/components/admin/ui/personas-listado/CambiarEstatusModal';
+import { ResetearPasswordModal } from '@/components/admin/ui/personas-listado/ResetearPasswordModal';
+import { SubirFotoPersonaModal } from '@/components/admin/ui/personas-listado/SubirFotoPersonaModal';
 import { useBuscarDebounced } from '@/components/admin/ui/personas-listado/useBuscarDebounced';
 import { usePaginacionFiltrada } from '@/components/admin/ui/personas-listado/usePaginacionFiltrada';
+import { useCooldownReseteo } from '@/components/admin/ui/personas-listado/useCooldownReseteo';
+import { EditarMaestroModal } from './EditarMaestroModal';
 
 /**
  * Listado de maestros — Fase 5, Día 19; acción "Cambiar estatus" agregada en
@@ -51,6 +59,27 @@ export default function AdminMaestrosPage() {
     usePaginacionFiltrada(buscar);
   const [maestroAEditar, setMaestroAEditar] =
     useState<PersonaListItemMaestro | null>(null);
+  const [maestroAResetear, setMaestroAResetear] =
+    useState<PersonaListItemMaestro | null>(null);
+  const [maestroAFotografiar, setMaestroAFotografiar] =
+    useState<PersonaListItemMaestro | null>(null);
+  const [maestroAEditarDatos, setMaestroAEditarDatos] =
+    useState<PersonaListItemMaestro | null>(null);
+
+  const perfilActorQuery = useQuery({
+    queryKey: ['admin', 'perfil'],
+    queryFn: async () => {
+      try {
+        return await obtenerPerfil();
+      } catch (err) {
+        console.error(
+          '[AdminMaestrosPage] Error al obtener el perfil del actor:',
+          err,
+        );
+        throw err;
+      }
+    },
+  });
 
   const {
     data: resultado,
@@ -106,6 +135,27 @@ export default function AdminMaestrosPage() {
     },
   });
 
+  const { estaEnCooldown, minutosRestantes, iniciarCooldown } =
+    useCooldownReseteo(perfilActorQuery.data?.id);
+
+  const resetearMutation = useMutation({
+    mutationFn: (usuarioId: string) => resetearPasswordPersona(usuarioId),
+    onSuccess: (_data, usuarioId) => {
+      toast.success('Enlace de restablecimiento enviado.');
+      iniciarCooldown(usuarioId);
+      setMaestroAResetear(null);
+    },
+    onError: (err) => {
+      // Regla 12 de `CLAUDE.md` raíz.
+      console.error('[AdminMaestrosPage] Error al resetear contraseña:', err);
+      const mensaje =
+        err instanceof ApiError
+          ? err.message
+          : 'Ocurrió un error inesperado. Intenta de nuevo.';
+      toast.error(mensaje);
+    },
+  });
+
   return (
     <div className="rounded-lg border-l-4 border-navy bg-white p-6 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -135,6 +185,8 @@ export default function AdminMaestrosPage() {
             <table className="min-w-full divide-y divide-mist text-sm">
               <thead className="bg-bone">
                 <tr>
+                  <Th></Th>
+                  <Th>Foto</Th>
                   <Th>Nombre completo</Th>
                   <Th>Cédula profesional</Th>
                   <Th>Contratación</Th>
@@ -144,7 +196,7 @@ export default function AdminMaestrosPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-mist">
-                <SkeletonTableRows columns={6} />
+                <SkeletonTableRows columns={8} />
               </tbody>
             </table>
           </div>
@@ -163,6 +215,11 @@ export default function AdminMaestrosPage() {
             <TablaMaestros
               maestros={resultado.data}
               onCambiarEstatus={setMaestroAEditar}
+              estaEnCooldown={estaEnCooldown}
+              minutosRestantes={minutosRestantes}
+              onResetearPassword={setMaestroAResetear}
+              onFotografiar={setMaestroAFotografiar}
+              onEditarDatos={setMaestroAEditarDatos}
             />
             <div className="mt-4">
               <Paginacion
@@ -190,6 +247,55 @@ export default function AdminMaestrosPage() {
           onCancelar={() => setMaestroAEditar(null)}
         />
       )}
+
+      {maestroAResetear && (
+        <ResetearPasswordModal
+          nombreCompleto={[
+            maestroAResetear.nombres,
+            maestroAResetear.apellidoPaterno,
+            maestroAResetear.apellidoMaterno,
+          ]
+            .filter(Boolean)
+            .join(' ')}
+          enviando={resetearMutation.isPending}
+          onConfirmar={() =>
+            resetearMutation.mutate(maestroAResetear.usuarioId)
+          }
+          onCancelar={() => setMaestroAResetear(null)}
+        />
+      )}
+
+      {maestroAFotografiar && (
+        <SubirFotoPersonaModal
+          usuarioId={maestroAFotografiar.usuarioId}
+          nombreCompleto={[
+            maestroAFotografiar.nombres,
+            maestroAFotografiar.apellidoPaterno,
+            maestroAFotografiar.apellidoMaterno,
+          ]
+            .filter(Boolean)
+            .join(' ')}
+          fotoUrlActual={maestroAFotografiar.fotoUrl}
+          onClose={() => setMaestroAFotografiar(null)}
+          onCambioConExito={() =>
+            queryClient.invalidateQueries({
+              queryKey: ['admin', 'personas', 'MAESTRO'],
+            })
+          }
+        />
+      )}
+
+      {maestroAEditarDatos && (
+        <EditarMaestroModal
+          usuarioId={maestroAEditarDatos.usuarioId}
+          onClose={() => setMaestroAEditarDatos(null)}
+          onGuardadoConExito={() =>
+            queryClient.invalidateQueries({
+              queryKey: ['admin', 'personas', 'MAESTRO'],
+            })
+          }
+        />
+      )}
     </div>
   );
 }
@@ -197,15 +303,28 @@ export default function AdminMaestrosPage() {
 function TablaMaestros({
   maestros,
   onCambiarEstatus,
+  estaEnCooldown,
+  minutosRestantes,
+  onResetearPassword,
+  onFotografiar,
+  onEditarDatos,
 }: {
   maestros: PersonaListItemMaestro[];
   onCambiarEstatus: (maestro: PersonaListItemMaestro) => void;
+  /** Cooldown de reseteo de contraseña (`useCooldownReseteo`) — por fila. */
+  estaEnCooldown: (usuarioId: string) => boolean;
+  minutosRestantes: (usuarioId: string) => number;
+  onResetearPassword: (maestro: PersonaListItemMaestro) => void;
+  onFotografiar: (maestro: PersonaListItemMaestro) => void;
+  onEditarDatos: (maestro: PersonaListItemMaestro) => void;
 }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-mist">
       <table className="min-w-full divide-y divide-mist text-sm">
         <thead className="bg-bone">
           <tr>
+            <Th></Th>
+            <Th>Foto</Th>
             <Th>Nombre completo</Th>
             <Th>Cédula profesional</Th>
             <Th>Contratación</Th>
@@ -217,6 +336,29 @@ function TablaMaestros({
         <tbody className="divide-y divide-mist">
           {maestros.map((maestro) => (
             <tr key={maestro.usuarioId}>
+              <Td>
+                <button
+                  type="button"
+                  onClick={() => onEditarDatos(maestro)}
+                  aria-label={`Editar datos de ${maestro.nombres}`}
+                  className="text-slate/60 hover:text-navy"
+                >
+                  <Pencil className="size-4" />
+                </button>
+              </Td>
+              <Td>
+                <button
+                  type="button"
+                  onClick={() => onFotografiar(maestro)}
+                  aria-label={`Cambiar foto de ${maestro.nombres}`}
+                >
+                  <Avatar
+                    fotoUrl={maestro.fotoUrl}
+                    iniciales={`${maestro.nombres.charAt(0)}${maestro.apellidoPaterno.charAt(0)}`.toUpperCase()}
+                    tamano="sm"
+                  />
+                </button>
+              </Td>
               <Td>
                 {[maestro.nombres, maestro.apellidoPaterno, maestro.apellidoMaterno]
                   .filter(Boolean)
@@ -241,6 +383,19 @@ function TablaMaestros({
                 >
                   Cambiar estatus
                 </button>
+                <button
+                  type="button"
+                  onClick={() => onResetearPassword(maestro)}
+                  disabled={estaEnCooldown(maestro.usuarioId)}
+                  className="ml-3 text-navy hover:underline disabled:cursor-not-allowed disabled:text-slate/40 disabled:no-underline"
+                  title={
+                    estaEnCooldown(maestro.usuarioId)
+                      ? `Disponible en ${minutosRestantes(maestro.usuarioId)} min`
+                      : undefined
+                  }
+                >
+                  Restablecer contraseña
+                </button>
               </Td>
             </tr>
           ))}
@@ -250,7 +405,7 @@ function TablaMaestros({
   );
 }
 
-function Th({ children }: { children: React.ReactNode }) {
+function Th({ children }: { children?: React.ReactNode }) {
   return (
     <th className="px-4 py-2 text-left text-xs font-semibold tracking-wide text-slate/60 uppercase">
       {children}

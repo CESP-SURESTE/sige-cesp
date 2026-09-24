@@ -88,3 +88,15 @@ export function IconCampana({ className }: IconProps) {
     </svg>
   );
 }
+
+/** Dos personas — badge de grupo del navbar (extensión de `SedeCarreraBadge`, 2026-09-16). */
+export function IconGrupo({ className }: IconProps) {
+  return (
+    <svg {...BASE} className={className} aria-hidden="true">
+      <circle cx="9" cy="8.5" r="2.5" />
+      <path d="M4 18c.6-2.6 2.4-4 5-4s4.4 1.4 5 4" />
+      <path d="M15.5 6.2c1.1.3 1.9 1.2 1.9 2.4s-.8 2.1-1.9 2.4" />
+      <path d="M15 14.3c1.9.4 3.2 1.7 3.7 3.7" />
+    </svg>
+  );
+}

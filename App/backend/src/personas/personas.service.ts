@@ -18,16 +18,20 @@ import {
   RolUsuario,
   TipoContratacion,
   TipoLicencia,
+  TipoSangre,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
+import { FotoPerfilService } from '../foto-perfil/foto-perfil.service';
 import {
   CrearPersonaDto,
   InfoMedicaDto,
   PerfilMaestroDto,
 } from './dto/crear-persona.dto';
+import { EditarPersonaDto } from './dto/editar-persona.dto';
 import { ListarPersonasQueryDto } from './dto/listar-personas.query.dto';
 import { generateTemporaryPassword } from './temporary-password';
+import { obtenerCorreosPersonales } from '../common/publicacion/correos-destinatarios.util';
 
 export interface PersonaListItemAlumno {
   usuarioId: string;
@@ -39,6 +43,10 @@ export interface PersonaListItemAlumno {
   estatusAcademico: EstatusAcademico;
   cuatrimestreActual: number;
   activo: boolean;
+  /** URL firmada (900s) de la foto de perfil — `null` si la persona no tiene
+   * una subida (feature "Foto de perfil", 2026-09-17). Resuelta en batch por
+   * página vía `resolverFotosPerfil`, nunca persistida (regla 1). */
+  fotoUrl: string | null;
 }
 
 export interface PersonaListItemMaestro {
@@ -66,6 +74,8 @@ export interface PersonaListItemMaestro {
   contratoFechaInicio: string | null;
   contratoFechaFin: string | null;
   activo: boolean;
+  /** Ver `PersonaListItemAlumno.fotoUrl`. */
+  fotoUrl: string | null;
 }
 
 /**
@@ -90,6 +100,8 @@ export interface PersonaListItemAdministrativo {
    * estatus actual es LICENCIA. */
   tipoLicencia: TipoLicencia | null;
   activo: boolean;
+  /** Ver `PersonaListItemAlumno.fotoUrl`. */
+  fotoUrl: string | null;
 }
 
 export interface ListarPersonasResult {
@@ -125,6 +137,90 @@ export interface ResumenPorSedeResult {
   totalCarreras: number;
   alumnosPorCarrera: AlumnosPorCarreraItem[];
   altasRecientes: AltaRecienteItem[];
+}
+
+/** `GET /personas/:id` (precarga del modal de edición) — contacto sin `id`
+ * ni `orden`: el frontend no necesita ninguno de los 2 para prellenar el
+ * form (el guardado reemplaza todo el array, ver `editarPersona`). `tipo`
+ * solo viene poblado para contactos de ALUMNO. */
+export interface PersonaEditableContacto {
+  nombre: string;
+  telefono: string;
+  correo: string | null;
+  parentesco: string;
+  tipo?: 'TUTOR' | 'EMERGENCIA';
+}
+
+/** `GET /personas/:id` — idéntico para los 3 roles. `tipoSangre` puede ser
+ * `null` en perfiles de altas anteriores al 2026-09-07 (columna nullable,
+ * sin backfill — ver nota de `InfoMedicaDto` en `crear-persona.dto.ts`). */
+export interface PersonaEditableInfoMedica {
+  tieneCondicionMedica: boolean;
+  tipoSangre: TipoSangre | null;
+  padecimiento: string | null;
+  medicamentos: string | null;
+  alergias: string | null;
+  tratamientoAdicional: string | null;
+}
+
+export interface PersonaEditableAlumno {
+  nombres: string;
+  apellidoPaterno: string;
+  apellidoMaterno: string | null;
+  curp: string | null;
+  /** ISO `YYYY-MM-DD`. */
+  fechaNacimiento: string;
+  correoPersonal: string;
+  carreraId: string;
+  periodoIngreso: string;
+  cuatrimestreActual: number;
+  telefono: string | null;
+}
+
+export interface PersonaEditableMaestro {
+  nombres: string;
+  apellidoPaterno: string;
+  apellidoMaterno: string | null;
+  curp: string;
+  cedulaProfesional: string | null;
+  correoPersonal: string;
+  telefono: string;
+  /** ISO `YYYY-MM-DD`. */
+  fechaContratacion: string;
+  tipoContratacion: TipoContratacion | null;
+  diasTemporal: number | null;
+  /** ISO `YYYY-MM-DD`, o `null`. */
+  contratoFechaInicio: string | null;
+  /** ISO `YYYY-MM-DD`, o `null`. */
+  contratoFechaFin: string | null;
+}
+
+export interface PersonaEditableAdministrativo {
+  nombres: string;
+  apellidoPaterno: string;
+  apellidoMaterno: string | null;
+  curp: string;
+  correoPersonal: string;
+  telefono: string;
+  /** ISO `YYYY-MM-DD`. */
+  fechaContratacion: string;
+  puesto: string;
+  nivelPermiso: NivelPermiso;
+}
+
+/**
+ * `GET /personas/:id` — precarga del modal de edición (feature "Edición de
+ * datos de persona", 2026-09-20). Exactamente uno de `perfilAlumno`/
+ * `perfilMaestro`/`perfilAdministrativo` viene presente, según `rol`.
+ */
+export interface PersonaParaEditar {
+  rol: RolUsuario;
+  codigoExterno: string | null;
+  perfilAlumno?: PersonaEditableAlumno;
+  perfilMaestro?: PersonaEditableMaestro;
+  perfilAdministrativo?: PersonaEditableAdministrativo;
+  contactos: PersonaEditableContacto[];
+  infoMedica: PersonaEditableInfoMedica;
 }
 
 /**
@@ -271,6 +367,7 @@ export class PersonasService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly mailService: MailService,
+    private readonly fotoPerfilService: FotoPerfilService,
     @Optional()
     @Inject(PERSONAS_SUPABASE_CLIENT_OVERRIDE)
     private readonly clientOverride?: SupabaseAdminClient,
@@ -1210,6 +1307,573 @@ export class PersonasService {
    * `GET /perfil` (perfil completo del propio usuario, Días 16-18), no este
    * listado resumen.
    */
+  /**
+   * Firma en batch (`FotoPerfilService.firmarUrls`) las fotos de una página
+   * de resultados — filtra primero a quienes SÍ tienen `fotoStoragePath`
+   * (nunca se firma de más), y solo de la página actual, nunca de toda la
+   * tabla.
+   */
+  private async resolverFotosPerfil(
+    items: { usuarioId: string; fotoStoragePath: string | null }[],
+  ): Promise<Map<string, string>> {
+    const conFoto = items.filter(
+      (item): item is { usuarioId: string; fotoStoragePath: string } =>
+        item.fotoStoragePath !== null,
+    );
+    if (conFoto.length === 0) {
+      return new Map();
+    }
+    return this.fotoPerfilService.firmarUrls(
+      conFoto.map((item) => ({
+        usuarioId: item.usuarioId,
+        storagePath: item.fotoStoragePath,
+      })),
+    );
+  }
+
+  /**
+   * Espejo de `datosInfoMedica` (inverso): normaliza la fila de
+   * `InfoMedica*` (o `null`, perfiles sin fila — no debería pasar en la
+   * práctica desde que `tipoSangre` es requerido en el alta, pero
+   * defensivo por si acaso) al shape `PersonaEditableInfoMedica`.
+   */
+  private mapInfoMedicaEditable(
+    infoMedica: {
+      tieneCondicionMedica: boolean;
+      tipoSangre: TipoSangre | null;
+      padecimiento: string | null;
+      medicamentos: string | null;
+      alergias: string | null;
+      tratamientoAdicional: string | null;
+    } | null,
+  ): PersonaEditableInfoMedica {
+    if (!infoMedica) {
+      return {
+        tieneCondicionMedica: false,
+        tipoSangre: null,
+        padecimiento: null,
+        medicamentos: null,
+        alergias: null,
+        tratamientoAdicional: null,
+      };
+    }
+    return infoMedica;
+  }
+
+  /**
+   * `GET /personas/:id` — precarga del modal de edición (feature "Edición
+   * de datos de persona", 2026-09-20). Sin auditoría (decisión explícita
+   * del spec, sección "Contrato de API" — un `ADMINISTRATIVO` abriendo el
+   * modal de edición de alguien de su sede no es un evento que valga la
+   * pena rastrear, a diferencia de `GET /emergencia/expediente/...`).
+   */
+  async obtenerParaEditar(
+    id: string,
+    sedeId: string,
+  ): Promise<PersonaParaEditar> {
+    const CONTACTO_SELECT = {
+      nombre: true,
+      telefono: true,
+      correo: true,
+      parentesco: true,
+    } as const;
+    const INFO_MEDICA_SELECT = {
+      tieneCondicionMedica: true,
+      tipoSangre: true,
+      padecimiento: true,
+      medicamentos: true,
+      alergias: true,
+      tratamientoAdicional: true,
+    } as const;
+
+    const usuario = await this.prisma.usuario.findFirst({
+      where: { id, sedeId },
+      select: {
+        rol: true,
+        codigoExterno: true,
+        perfilAlumno: {
+          select: {
+            nombres: true,
+            apellidoPaterno: true,
+            apellidoMaterno: true,
+            curp: true,
+            fechaNacimiento: true,
+            correoPersonal: true,
+            carreraId: true,
+            periodoIngreso: true,
+            cuatrimestreActual: true,
+            telefono: true,
+            contactos: {
+              orderBy: { orden: 'asc' },
+              select: { ...CONTACTO_SELECT, tipo: true },
+            },
+            infoMedica: { select: INFO_MEDICA_SELECT },
+          },
+        },
+        perfilMaestro: {
+          select: {
+            nombres: true,
+            apellidoPaterno: true,
+            apellidoMaterno: true,
+            curp: true,
+            cedulaProfesional: true,
+            correoPersonal: true,
+            telefono: true,
+            fechaContratacion: true,
+            tipoContratacion: true,
+            diasTemporal: true,
+            contratoFechaInicio: true,
+            contratoFechaFin: true,
+            contactos: { orderBy: { orden: 'asc' }, select: CONTACTO_SELECT },
+            infoMedica: { select: INFO_MEDICA_SELECT },
+          },
+        },
+        perfilAdministrativo: {
+          select: {
+            nombres: true,
+            apellidoPaterno: true,
+            apellidoMaterno: true,
+            curp: true,
+            correoPersonal: true,
+            telefono: true,
+            fechaContratacion: true,
+            puesto: true,
+            nivelPermiso: true,
+            contactos: { orderBy: { orden: 'asc' }, select: CONTACTO_SELECT },
+            infoMedica: { select: INFO_MEDICA_SELECT },
+          },
+        },
+      },
+    });
+
+    if (!usuario) {
+      throw new NotFoundException({
+        error: 'Persona no encontrada en tu sede',
+        code: 'NOT_FOUND',
+      });
+    }
+
+    if (usuario.rol === RolUsuario.ALUMNO && usuario.perfilAlumno) {
+      const perfil = usuario.perfilAlumno;
+      return {
+        rol: usuario.rol,
+        codigoExterno: usuario.codigoExterno,
+        perfilAlumno: {
+          nombres: perfil.nombres,
+          apellidoPaterno: perfil.apellidoPaterno,
+          apellidoMaterno: perfil.apellidoMaterno,
+          curp: perfil.curp,
+          fechaNacimiento: perfil.fechaNacimiento.toISOString().slice(0, 10),
+          correoPersonal: perfil.correoPersonal,
+          carreraId: perfil.carreraId,
+          periodoIngreso: perfil.periodoIngreso,
+          cuatrimestreActual: perfil.cuatrimestreActual,
+          telefono: perfil.telefono,
+        },
+        contactos: perfil.contactos,
+        infoMedica: this.mapInfoMedicaEditable(perfil.infoMedica),
+      };
+    }
+
+    if (usuario.rol === RolUsuario.MAESTRO && usuario.perfilMaestro) {
+      const perfil = usuario.perfilMaestro;
+      return {
+        rol: usuario.rol,
+        codigoExterno: usuario.codigoExterno,
+        perfilMaestro: {
+          nombres: perfil.nombres,
+          apellidoPaterno: perfil.apellidoPaterno,
+          apellidoMaterno: perfil.apellidoMaterno,
+          curp: perfil.curp,
+          cedulaProfesional: perfil.cedulaProfesional,
+          correoPersonal: perfil.correoPersonal,
+          telefono: perfil.telefono,
+          fechaContratacion: perfil.fechaContratacion
+            .toISOString()
+            .slice(0, 10),
+          tipoContratacion: perfil.tipoContratacion,
+          diasTemporal: perfil.diasTemporal,
+          contratoFechaInicio: perfil.contratoFechaInicio
+            ? perfil.contratoFechaInicio.toISOString().slice(0, 10)
+            : null,
+          contratoFechaFin: perfil.contratoFechaFin
+            ? perfil.contratoFechaFin.toISOString().slice(0, 10)
+            : null,
+        },
+        contactos: perfil.contactos,
+        infoMedica: this.mapInfoMedicaEditable(perfil.infoMedica),
+      };
+    }
+
+    if (
+      usuario.rol === RolUsuario.ADMINISTRATIVO &&
+      usuario.perfilAdministrativo
+    ) {
+      const perfil = usuario.perfilAdministrativo;
+      return {
+        rol: usuario.rol,
+        codigoExterno: usuario.codigoExterno,
+        perfilAdministrativo: {
+          nombres: perfil.nombres,
+          apellidoPaterno: perfil.apellidoPaterno,
+          apellidoMaterno: perfil.apellidoMaterno,
+          curp: perfil.curp,
+          correoPersonal: perfil.correoPersonal,
+          telefono: perfil.telefono,
+          fechaContratacion: perfil.fechaContratacion
+            .toISOString()
+            .slice(0, 10),
+          puesto: perfil.puesto,
+          nivelPermiso: perfil.nivelPermiso,
+        },
+        contactos: perfil.contactos,
+        infoMedica: this.mapInfoMedicaEditable(perfil.infoMedica),
+      };
+    }
+
+    // Defensivo — no debería ocurrir nunca: `usuario.rol` siempre coincide
+    // con exactamente uno de los 3 perfiles (regla 9, alta transaccional).
+    console.error(
+      '[PersonasService.obtenerParaEditar] Usuario sin perfil correspondiente a su rol:',
+      { id, rol: usuario.rol },
+    );
+    throw new InternalServerErrorException({
+      error: 'Error inesperado al obtener los datos de la persona',
+      code: 'SERVER_ERROR',
+    });
+  }
+
+  /**
+   * `PATCH /personas/:id` — guarda los cambios del modal de edición (feature
+   * "Edición de datos de persona", 2026-09-20). Mismo patrón que
+   * `cambiarEstatus`: `id` es el `Usuario` objetivo, se valida contra su
+   * `rol` real (no contra un discriminador del body).
+   *
+   * Reemplazo completo de `contactos` (`deleteMany` + recrear, dentro de la
+   * transacción) — evita lógica de diff/merge, el modal siempre manda el
+   * array completo (mismo criterio documentado en el spec).
+   *
+   * Auditoría: `EDICION` si cambió cualquier campo del perfil/contactos/
+   * infoMedica/`codigoExterno`; un registro ADICIONAL `CAMBIO_PERMISO` si
+   * `nivelPermiso` cambió (solo aplica a ADMINISTRATIVO) — primer uso real
+   * de ese valor del enum. No se intenta evitar auditar cuando "no hay
+   * cambios reales" (a diferencia de `PATCH /carreras`) — decisión explícita
+   * del spec: el diff no vale el costo con contactos+infoMedica en el mismo
+   * submit.
+   */
+  async editarPersona(
+    id: string,
+    dto: EditarPersonaDto,
+    sedeId: string,
+    actorUsuarioId: string,
+  ): Promise<{ ok: true }> {
+    // Regla 12 de CLAUDE.md raíz — el `try` envuelve el método COMPLETO
+    // (lecturas previas + validación + transacción), no solo el
+    // `$transaction`, mismo patrón que `cambiarEstatus`: este codebase no
+    // tiene un `ExceptionFilter` global, así que un fallo real de Prisma/DB
+    // en cualquiera de las lecturas de abajo (`usuario.findFirst`, el
+    // pre-check de `codigoExterno`, `carrera.findFirst`, o el
+    // `perfilAdministrativo.findUnique` del actor) quedaría sin loguear si
+    // el `try` arrancara más abajo.
+    try {
+      const usuario = await this.prisma.usuario.findFirst({
+        where: { id, sedeId },
+        select: {
+          rol: true,
+          codigoExterno: true,
+          perfilAdministrativo: { select: { nivelPermiso: true } },
+        },
+      });
+
+      if (!usuario) {
+        throw new NotFoundException({
+          error: 'Persona no encontrada en tu sede',
+          code: 'NOT_FOUND',
+        });
+      }
+
+      // Mismo pre-check de `codigoExterno` que `altaPersona`, EXCLUYENDO a la
+      // propia persona (editar sin cambiar su propio código no debe fallar).
+      if (dto.codigoExterno && dto.codigoExterno !== usuario.codigoExterno) {
+        const codigoExternoEnUso = await this.prisma.usuario.findUnique({
+          where: { codigoExterno: dto.codigoExterno },
+          select: { id: true },
+        });
+        if (codigoExternoEnUso && codigoExternoEnUso.id !== id) {
+          throw new ConflictException({
+            error: 'Ya existe un usuario con ese código externo',
+            code: 'CONFLICT',
+          });
+        }
+      }
+
+      let nivelPermisoAnterior: NivelPermiso | undefined;
+      let nivelPermisoNuevo: NivelPermiso | undefined;
+
+      if (usuario.rol === RolUsuario.ALUMNO) {
+        if (!dto.perfilAlumno) {
+          throw new BadRequestException({
+            error: 'perfilAlumno es requerido para editar un ALUMNO',
+            code: 'VALIDATION_ERROR',
+          });
+        }
+        const carrera = await this.prisma.carrera.findFirst({
+          where: { id: dto.perfilAlumno.carreraId, sedeId },
+          select: { duracion: true },
+        });
+        if (!carrera) {
+          throw new NotFoundException({
+            error: 'Carrera no encontrada en tu sede',
+            code: 'NOT_FOUND',
+          });
+        }
+        if (
+          dto.perfilAlumno.cuatrimestreActual < 1 ||
+          dto.perfilAlumno.cuatrimestreActual > carrera.duracion
+        ) {
+          throw new BadRequestException({
+            error: `cuatrimestreActual debe estar entre 1 y ${carrera.duracion} para esa carrera`,
+            code: 'VALIDATION_ERROR',
+          });
+        }
+      } else if (usuario.rol === RolUsuario.MAESTRO) {
+        if (!dto.perfilMaestro) {
+          throw new BadRequestException({
+            error: 'perfilMaestro es requerido para editar un MAESTRO',
+            code: 'VALIDATION_ERROR',
+          });
+        }
+        // Misma regla cruzada que `altaPersona`.
+        if (
+          dto.perfilMaestro.tipoContratacion === TipoContratacion.CONTRATO &&
+          dto.perfilMaestro.contratoFechaInicio &&
+          dto.perfilMaestro.contratoFechaFin &&
+          new Date(dto.perfilMaestro.contratoFechaFin).getTime() <=
+            new Date(dto.perfilMaestro.contratoFechaInicio).getTime()
+        ) {
+          throw new BadRequestException({
+            error:
+              'contratoFechaFin no puede ser anterior o igual a contratoFechaInicio',
+            code: 'VALIDATION_ERROR',
+          });
+        }
+      } else {
+        if (!dto.perfilAdministrativo) {
+          throw new BadRequestException({
+            error: 'perfilAdministrativo es requerido para editar un ADMINISTRATIVO',
+            code: 'VALIDATION_ERROR',
+          });
+        }
+        nivelPermisoAnterior = usuario.perfilAdministrativo?.nivelPermiso;
+        nivelPermisoNuevo =
+          dto.perfilAdministrativo.nivelPermiso ?? nivelPermisoAnterior;
+
+        // Jerarquía de `nivelPermiso` (regla 7) — igual que `cambiarEstatus`:
+        // el actor debe tener nivel suficiente sobre el nivel ACTUAL del
+        // target Y sobre el nivel NUEVO que le quiere asignar.
+        const perfilActor = await this.prisma.perfilAdministrativo.findUnique({
+          where: { usuarioId: actorUsuarioId },
+          select: { nivelPermiso: true },
+        });
+        const nivelActor = perfilActor?.nivelPermiso ?? NivelPermiso.AUXILIAR;
+
+        if (nivelActor === NivelPermiso.AUXILIAR) {
+          throw new ForbiddenException({
+            error: 'Un usuario con nivel AUXILIAR no puede editar personal administrativo',
+            code: 'NIVEL_PERMISO_INSUFICIENTE',
+          });
+        }
+
+        const rangoActor = PersonasService.JERARQUIA_NIVEL_PERMISO[nivelActor];
+        const rangoObjetivoActual =
+          PersonasService.JERARQUIA_NIVEL_PERMISO[
+            nivelPermisoAnterior ?? NivelPermiso.AUXILIAR
+          ];
+        const rangoObjetivoNuevo =
+          PersonasService.JERARQUIA_NIVEL_PERMISO[
+            nivelPermisoNuevo ?? NivelPermiso.AUXILIAR
+          ];
+
+        if (rangoActor < rangoObjetivoActual || rangoActor < rangoObjetivoNuevo) {
+          throw new ForbiddenException({
+            error: 'No tienes nivel de permiso suficiente para editar a este administrativo',
+            code: 'NIVEL_PERMISO_INSUFICIENTE',
+          });
+        }
+      }
+
+      await this.prisma.$transaction(async (tx) => {
+        await tx.usuario.update({
+          where: { id },
+          data: { codigoExterno: dto.codigoExterno },
+        });
+
+        if (usuario.rol === RolUsuario.ALUMNO && dto.perfilAlumno) {
+          const perfil = await tx.perfilAlumno.update({
+            where: { usuarioId: id },
+            data: {
+              nombres: dto.perfilAlumno.nombres,
+              apellidoPaterno: dto.perfilAlumno.apellidoPaterno,
+              apellidoMaterno: dto.perfilAlumno.apellidoMaterno,
+              curp: dto.perfilAlumno.curp,
+              fechaNacimiento: new Date(dto.perfilAlumno.fechaNacimiento),
+              correoPersonal: dto.perfilAlumno.correoPersonal,
+              carreraId: dto.perfilAlumno.carreraId,
+              periodoIngreso: dto.perfilAlumno.periodoIngreso,
+              cuatrimestreActual: dto.perfilAlumno.cuatrimestreActual,
+              telefono: dto.perfilAlumno.telefono,
+            },
+          });
+
+          await tx.contactoAlumno.deleteMany({ where: { alumnoId: perfil.id } });
+          for (const contacto of this.conOrdenSecuencial(dto.perfilAlumno.contactos)) {
+            await tx.contactoAlumno.create({
+              data: {
+                alumnoId: perfil.id,
+                tipo: contacto.tipo,
+                nombre: contacto.nombre,
+                telefono: contacto.telefono,
+                correo: contacto.correo,
+                parentesco: contacto.parentesco,
+                orden: contacto.orden,
+              },
+            });
+          }
+
+          await tx.infoMedicaAlumno.upsert({
+            where: { alumnoId: perfil.id },
+            create: { alumnoId: perfil.id, ...this.datosInfoMedica(dto.perfilAlumno.infoMedica) },
+            update: this.datosInfoMedica(dto.perfilAlumno.infoMedica),
+          });
+        } else if (usuario.rol === RolUsuario.MAESTRO && dto.perfilMaestro) {
+          const perfil = await tx.perfilMaestro.update({
+            where: { usuarioId: id },
+            data: {
+              nombres: dto.perfilMaestro.nombres,
+              apellidoPaterno: dto.perfilMaestro.apellidoPaterno,
+              apellidoMaterno: dto.perfilMaestro.apellidoMaterno,
+              curp: dto.perfilMaestro.curp,
+              cedulaProfesional: dto.perfilMaestro.cedulaProfesional,
+              correoPersonal: dto.perfilMaestro.correoPersonal,
+              telefono: dto.perfilMaestro.telefono,
+              fechaContratacion: new Date(dto.perfilMaestro.fechaContratacion),
+              ...this.datosContratacionMaestro(dto.perfilMaestro),
+            },
+          });
+
+          await tx.contactoMaestro.deleteMany({ where: { maestroId: perfil.id } });
+          for (const contacto of this.conOrdenSecuencial(dto.perfilMaestro.contactos)) {
+            await tx.contactoMaestro.create({
+              data: {
+                maestroId: perfil.id,
+                nombre: contacto.nombre,
+                telefono: contacto.telefono,
+                correo: contacto.correo,
+                parentesco: contacto.parentesco,
+                orden: contacto.orden,
+              },
+            });
+          }
+
+          await tx.infoMedicaMaestro.upsert({
+            where: { maestroId: perfil.id },
+            create: { maestroId: perfil.id, ...this.datosInfoMedica(dto.perfilMaestro.infoMedica) },
+            update: this.datosInfoMedica(dto.perfilMaestro.infoMedica),
+          });
+        } else if (usuario.rol === RolUsuario.ADMINISTRATIVO && dto.perfilAdministrativo) {
+          const perfil = await tx.perfilAdministrativo.update({
+            where: { usuarioId: id },
+            data: {
+              nombres: dto.perfilAdministrativo.nombres,
+              apellidoPaterno: dto.perfilAdministrativo.apellidoPaterno,
+              apellidoMaterno: dto.perfilAdministrativo.apellidoMaterno,
+              curp: dto.perfilAdministrativo.curp,
+              correoPersonal: dto.perfilAdministrativo.correoPersonal,
+              telefono: dto.perfilAdministrativo.telefono,
+              fechaContratacion: new Date(dto.perfilAdministrativo.fechaContratacion),
+              puesto: dto.perfilAdministrativo.puesto,
+              nivelPermiso: nivelPermisoNuevo,
+            },
+          });
+
+          await tx.contactoAdministrativo.deleteMany({
+            where: { administrativoId: perfil.id },
+          });
+          for (const contacto of this.conOrdenSecuencial(dto.perfilAdministrativo.contactos)) {
+            await tx.contactoAdministrativo.create({
+              data: {
+                administrativoId: perfil.id,
+                nombre: contacto.nombre,
+                telefono: contacto.telefono,
+                correo: contacto.correo,
+                parentesco: contacto.parentesco,
+                orden: contacto.orden,
+              },
+            });
+          }
+
+          await tx.infoMedicaAdministrativo.upsert({
+            where: { administrativoId: perfil.id },
+            create: {
+              administrativoId: perfil.id,
+              ...this.datosInfoMedica(dto.perfilAdministrativo.infoMedica),
+            },
+            update: this.datosInfoMedica(dto.perfilAdministrativo.infoMedica),
+          });
+        }
+
+        await tx.registroAuditoria.create({
+          data: {
+            usuarioId: actorUsuarioId,
+            sedeId,
+            accion: AccionAuditoria.EDICION,
+            entidad: 'Usuario',
+            entidadId: id,
+            detalle: { rol: usuario.rol },
+          },
+        });
+
+        if (
+          nivelPermisoAnterior !== undefined &&
+          nivelPermisoNuevo !== undefined &&
+          nivelPermisoAnterior !== nivelPermisoNuevo
+        ) {
+          await tx.registroAuditoria.create({
+            data: {
+              usuarioId: actorUsuarioId,
+              sedeId,
+              accion: AccionAuditoria.CAMBIO_PERMISO,
+              entidad: 'Usuario',
+              entidadId: id,
+              detalle: { nivelPermisoAnterior, nivelPermisoNuevo },
+            },
+          });
+        }
+      });
+
+      return { ok: true };
+    } catch (err) {
+      if (
+        err instanceof NotFoundException ||
+        err instanceof BadRequestException ||
+        err instanceof ForbiddenException ||
+        err instanceof ConflictException
+      ) {
+        throw err;
+      }
+      // Regla 12 de CLAUDE.md raíz — loguear el error completo server-side
+      // antes de responder, aunque el cliente no reciba el detalle.
+      console.error(
+        '[PersonasService.editarPersona] Error inesperado editando persona:',
+        err,
+      );
+      throw new InternalServerErrorException({
+        error: 'Error inesperado al editar la persona',
+        code: 'SERVER_ERROR',
+      });
+    }
+  }
+
   async listarPorSedeYRol(
     sedeId: string,
     query: ListarPersonasQueryDto,
@@ -1273,7 +1937,7 @@ export class PersonasService {
             estatusAcademico: true,
             cuatrimestreActual: true,
             carrera: { select: { id: true, nombre: true } },
-            usuario: { select: { activo: true } },
+            usuario: { select: { activo: true, fotoStoragePath: true } },
           },
           orderBy: [
             { apellidoPaterno: 'asc' },
@@ -1284,6 +1948,13 @@ export class PersonasService {
           take: limit,
         }),
       ]);
+
+      const fotosUrl = await this.resolverFotosPerfil(
+        alumnos.map((alumno) => ({
+          usuarioId: alumno.usuarioId,
+          fotoStoragePath: alumno.usuario.fotoStoragePath,
+        })),
+      );
 
       return {
         data: alumnos.map((alumno) => ({
@@ -1296,6 +1967,7 @@ export class PersonasService {
           estatusAcademico: alumno.estatusAcademico,
           cuatrimestreActual: alumno.cuatrimestreActual,
           activo: alumno.usuario.activo,
+          fotoUrl: fotosUrl.get(alumno.usuarioId) ?? null,
         })),
         page,
         limit,
@@ -1366,7 +2038,7 @@ export class PersonasService {
           diasTemporal: true,
           contratoFechaInicio: true,
           contratoFechaFin: true,
-          usuario: { select: { activo: true } },
+          usuario: { select: { activo: true, fotoStoragePath: true } },
         },
         orderBy: [
           { apellidoPaterno: 'asc' },
@@ -1377,6 +2049,13 @@ export class PersonasService {
         take: limit,
       }),
     ]);
+
+    const fotosUrl = await this.resolverFotosPerfil(
+      maestros.map((maestro) => ({
+        usuarioId: maestro.usuarioId,
+        fotoStoragePath: maestro.usuario.fotoStoragePath,
+      })),
+    );
 
     return {
       data: maestros.map((maestro) => ({
@@ -1396,6 +2075,7 @@ export class PersonasService {
           ? maestro.contratoFechaFin.toISOString().slice(0, 10)
           : null,
         activo: maestro.usuario.activo,
+        fotoUrl: fotosUrl.get(maestro.usuarioId) ?? null,
       })),
       page,
       limit,
@@ -1470,7 +2150,7 @@ export class PersonasService {
           nivelPermiso: true,
           estatus: true,
           tipoLicencia: true,
-          usuario: { select: { activo: true } },
+          usuario: { select: { activo: true, fotoStoragePath: true } },
         },
         orderBy: [
           { apellidoPaterno: 'asc' },
@@ -1481,6 +2161,13 @@ export class PersonasService {
         take: limit,
       }),
     ]);
+
+    const fotosUrl = await this.resolverFotosPerfil(
+      administrativos.map((administrativo) => ({
+        usuarioId: administrativo.usuarioId,
+        fotoStoragePath: administrativo.usuario.fotoStoragePath,
+      })),
+    );
 
     return {
       data: administrativos.map((administrativo) => ({
@@ -1493,6 +2180,7 @@ export class PersonasService {
         estatus: administrativo.estatus,
         tipoLicencia: administrativo.tipoLicencia,
         activo: administrativo.usuario.activo,
+        fotoUrl: fotosUrl.get(administrativo.usuarioId) ?? null,
       })),
       page,
       limit,
@@ -1911,6 +2599,194 @@ export class PersonasService {
       );
       throw new InternalServerErrorException({
         error: 'Error inesperado al cambiar el estatus',
+        code: 'SERVER_ERROR',
+      });
+    }
+  }
+
+  /**
+   * `POST /personas/:id/resetear-password` — disparado por un ADMINISTRATIVO
+   * desde el CRUD (sin autoservicio, decisión explícita del usuario). Genera
+   * un link de recuperación NATIVO de Supabase Auth (`generateLink`, tipo
+   * `recovery`) y lo envía por Mailgun al `correoPersonal` de la persona — el
+   * cambio de contraseña real ocurre después, 100% client-side, cuando la
+   * persona abre ese link (`supabase.auth.updateUser()`, ver
+   * `app/restablecer-password/page.tsx`).
+   *
+   * A diferencia de `cambiarEstatus`, el correo NO es best-effort: si Mailgun
+   * falla, este método propaga el error como `500 SERVER_ERROR` (ver
+   * `MailService.enviarCorreoReseteoPassword`).
+   */
+  async resetearPassword(
+    id: string,
+    sedeId: string,
+    actorUsuarioId: string,
+  ): Promise<{ ok: true }> {
+    try {
+      const usuario = await this.prisma.usuario.findFirst({
+        where: { id, sedeId },
+        select: {
+          id: true,
+          email: true,
+          rol: true,
+          perfilAlumno: {
+            select: { nombres: true, apellidoPaterno: true, apellidoMaterno: true },
+          },
+          perfilMaestro: {
+            select: { nombres: true, apellidoPaterno: true, apellidoMaterno: true },
+          },
+          perfilAdministrativo: {
+            select: {
+              nombres: true,
+              apellidoPaterno: true,
+              apellidoMaterno: true,
+              nivelPermiso: true,
+            },
+          },
+        },
+      });
+
+      if (!usuario) {
+        throw new NotFoundException({
+          error: 'Persona no encontrada en tu sede',
+          code: 'NOT_FOUND',
+        });
+      }
+
+      if (usuario.rol === RolUsuario.ADMINISTRATIVO && usuario.perfilAdministrativo) {
+        const perfilActor = await this.prisma.perfilAdministrativo.findUnique({
+          where: { usuarioId: actorUsuarioId },
+          select: { nivelPermiso: true },
+        });
+        const nivelActor = perfilActor?.nivelPermiso ?? NivelPermiso.AUXILIAR;
+
+        if (nivelActor === NivelPermiso.AUXILIAR) {
+          throw new ForbiddenException({
+            error:
+              'Un usuario con nivel AUXILIAR no puede resetear la contraseña de personal administrativo',
+            code: 'NIVEL_PERMISO_INSUFICIENTE',
+          });
+        }
+
+        const rangoActor = PersonasService.JERARQUIA_NIVEL_PERMISO[nivelActor];
+        const rangoObjetivo =
+          PersonasService.JERARQUIA_NIVEL_PERMISO[
+            usuario.perfilAdministrativo.nivelPermiso
+          ];
+
+        if (rangoActor < rangoObjetivo) {
+          throw new ForbiddenException({
+            error:
+              'No tienes nivel de permiso suficiente para resetear la contraseña de este administrativo',
+            code: 'NIVEL_PERMISO_INSUFICIENTE',
+          });
+        }
+      }
+
+      const perfil =
+        usuario.perfilAlumno ?? usuario.perfilMaestro ?? usuario.perfilAdministrativo;
+      const nombreCompleto = perfil
+        ? [perfil.nombres, perfil.apellidoPaterno, perfil.apellidoMaterno]
+            .filter(Boolean)
+            .join(' ')
+        : usuario.email;
+
+      const correos = await obtenerCorreosPersonales(this.prisma, [id]);
+      const correoPersonal = correos[0]?.correoPersonal;
+
+      if (!correoPersonal) {
+        console.error(
+          '[PersonasService.resetearPassword] La persona no tiene correoPersonal registrado:',
+          { id },
+        );
+        throw new InternalServerErrorException({
+          error: 'Error inesperado al resetear la contraseña',
+          code: 'SERVER_ERROR',
+        });
+      }
+
+      const client = await this.getClient();
+      const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:3000';
+      const { data, error } = await client.auth.admin.generateLink({
+        type: 'recovery',
+        email: usuario.email,
+        options: { redirectTo: `${frontendUrl}/restablecer-password` },
+      });
+
+      if (error || !data?.properties?.hashed_token) {
+        console.error(
+          '[PersonasService.resetearPassword] Error generando el link de recuperación en Supabase Auth:',
+          error,
+        );
+        throw new InternalServerErrorException({
+          error: 'Error inesperado al resetear la contraseña',
+          code: 'SERVER_ERROR',
+        });
+      }
+
+      // Construimos nuestro propio link en vez de reenviar `action_link`
+      // (el que hostea Supabase en `/auth/v1/verify`): ese endpoint verifica
+      // el token del lado de Supabase y redirige con la sesión ya armada en
+      // el FRAGMENTO de la URL (`#access_token=...&type=recovery`, flujo
+      // "implicit") — pero `createBrowserClient` de `@supabase/ssr` fuerza
+      // `flowType: 'pkce'` sin forma de overridearlo (`createBrowserClient.js`
+      // pisa cualquier `flowType` que se le pase), y el cliente rechaza
+      // internamente cualquier callback de tipo "implicit" en silencio (solo
+      // loguea con `_debug`, que está apagado por default) — la página nunca
+      // recibe el evento `PASSWORD_RECOVERY` y cae al timeout de "enlace
+      // inválido". Enviando el `hashed_token` como query param propio, el
+      // frontend puede llamar `supabase.auth.verifyOtp({ token_hash, type:
+      // 'recovery' })` directo — ese método no depende de `flowType` ni de
+      // parsear el fragmento, funciona igual con el cliente en modo PKCE.
+      const linkReseteo = `${frontendUrl}/restablecer-password?token_hash=${encodeURIComponent(
+        data.properties.hashed_token,
+      )}&type=recovery`;
+
+      // El correo NO es best-effort acá (ver comentario del método) — si
+      // lanza, cae al catch de abajo y se mapea a 500 SERVER_ERROR.
+      await this.mailService.enviarCorreoReseteoPassword({
+        nombreCompleto,
+        correoDestino: correoPersonal,
+        linkReseteo,
+      });
+
+      try {
+        await this.prisma.registroAuditoria.create({
+          data: {
+            usuarioId: actorUsuarioId,
+            sedeId,
+            accion: AccionAuditoria.RESETEO_PASSWORD,
+            entidad: 'Usuario',
+            entidadId: id,
+            detalle: { rol: usuario.rol },
+          },
+        });
+      } catch (err) {
+        // El link ya se generó y el correo ya se envió — no hay nada que
+        // compensar si solo falla la auditoría (regla 12, mismo criterio que
+        // el fallback de `AuthService.cambiarPassword`).
+        console.error(
+          '[PersonasService.resetearPassword] El correo se envió pero falló el RegistroAuditoria:',
+          err,
+        );
+      }
+
+      return { ok: true };
+    } catch (err) {
+      if (
+        err instanceof NotFoundException ||
+        err instanceof ForbiddenException ||
+        err instanceof InternalServerErrorException
+      ) {
+        throw err;
+      }
+
+      console.error(
+        '[PersonasService.resetearPassword] Error inesperado reseteando contraseña:',
+        err,
+      );
+      throw new InternalServerErrorException({
+        error: 'Error inesperado al resetear la contraseña',
         code: 'SERVER_ERROR',
       });
     }

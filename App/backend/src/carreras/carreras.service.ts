@@ -89,7 +89,7 @@ export class CarrerasService {
     const existente = await this.prisma.carrera.findFirst({
       where: {
         sedeId,
-        nombre,
+        nombre: { equals: nombre, mode: 'insensitive' },
         ...(excluirId ? { id: { not: excluirId } } : {}),
       },
       select: { id: true },

@@ -14,6 +14,9 @@ import {
   type Carrera,
   type Salon,
   type Grupo,
+  type TelefonoEmergenciaSede,
+  type Aviso,
+  type EventoCalendario,
   RolUsuario,
   EstatusAcademico,
   TipoContacto,
@@ -24,7 +27,13 @@ import {
   ModalidadCarrera,
   EstatusCarrera,
   AreaPersonalServicios,
+  TipoSangre,
+  AlcanceDestino,
+  TipoNotificacion,
+  CategoriaEvento,
 } from '@prisma/client';
+import { resolverDestinatarios } from '../src/common/publicacion/alcance-publicacion.util';
+import type { PrismaService } from '../src/prisma/prisma.service';
 
 export const prisma = new PrismaClient();
 
@@ -111,9 +120,31 @@ export interface ContactoSeed {
 
 interface InfoMedicaSeed {
   tieneCondicionMedica: false;
+  tipoSangre: TipoSangre;
 }
 
-const INFO_MEDICA_DEFAULT: InfoMedicaSeed = { tieneCondicionMedica: false };
+const VALORES_TIPO_SANGRE = Object.values(TipoSangre);
+
+/**
+ * `tipoSangre` es requerido a nivel de aplicación desde 2026-09-07 (ver
+ * CLAUDE.md raíz), pero el seed no lo traía — se deriva de forma
+ * determinística de un dato ya único de la persona (email o CURP, según
+ * el rol) en vez de pedirlo como parámetro nuevo en cada llamada de
+ * `seed.ts`/`seed-variado.ts`: mismo resultado en cada corrida (seed
+ * idempotente), variado entre personas (no todas quedan con el mismo
+ * tipo de sangre), sin tocar los ~45 objetos de persona ya definidos ahí.
+ */
+function derivarTipoSangre(claveUnica: string): TipoSangre {
+  let hash = 0;
+  for (let i = 0; i < claveUnica.length; i++) {
+    hash = (hash * 31 + claveUnica.charCodeAt(i)) >>> 0;
+  }
+  return VALORES_TIPO_SANGRE[hash % VALORES_TIPO_SANGRE.length];
+}
+
+function construirInfoMedica(claveUnica: string): InfoMedicaSeed {
+  return { tieneCondicionMedica: false, tipoSangre: derivarTipoSangre(claveUnica) };
+}
 
 export async function altaUsuarioSeed(
   email: string,
@@ -192,7 +223,7 @@ export async function seedAlumno(params: {
           },
         ],
       },
-      infoMedica: { create: INFO_MEDICA_DEFAULT },
+      infoMedica: { create: construirInfoMedica(params.email) },
     },
   });
 }
@@ -249,7 +280,7 @@ export async function seedMaestro(params: {
           },
         ],
       },
-      infoMedica: { create: INFO_MEDICA_DEFAULT },
+      infoMedica: { create: construirInfoMedica(params.email) },
     },
   });
 }
@@ -309,7 +340,7 @@ export async function seedAdministrativo(params: {
           },
         ],
       },
-      infoMedica: { create: INFO_MEDICA_DEFAULT },
+      infoMedica: { create: construirInfoMedica(params.email) },
     },
   });
 }
@@ -348,7 +379,130 @@ export async function seedPersonalServicios(params: {
           },
         ],
       },
-      infoMedica: { create: INFO_MEDICA_DEFAULT },
+      infoMedica: { create: construirInfoMedica(params.curp) },
+    },
+  });
+}
+
+export async function seedTelefonoEmergencia(params: {
+  sedeId: string;
+  etiqueta: string;
+  telefono: string;
+  orden: number;
+}): Promise<TelefonoEmergenciaSede> {
+  const existente = await prisma.telefonoEmergenciaSede.findFirst({
+    where: { sedeId: params.sedeId, etiqueta: params.etiqueta },
+  });
+  if (existente) return existente;
+
+  return prisma.telefonoEmergenciaSede.create({
+    data: {
+      sedeId: params.sedeId,
+      etiqueta: params.etiqueta,
+      telefono: params.telefono,
+      orden: params.orden,
+    },
+  });
+}
+
+/** Deriva un teléfono distinto pero con la misma forma/lada que `base`, sumando `offset` al último dígito — evita inventar números sueltos por sede a mano. */
+function variarTelefono(base: string, offset: number): string {
+  const numero = Number(base) + offset;
+  return String(numero).padStart(base.length, '0');
+}
+
+export async function seedAviso(params: {
+  sedeId: string;
+  autorUsuarioId: string;
+  titulo: string;
+  cuerpo: string;
+  alcanceTipo: AlcanceDestino;
+  alcanceId?: string;
+}): Promise<Aviso> {
+  let aviso = await prisma.aviso.findFirst({
+    where: { sedeId: params.sedeId, titulo: params.titulo },
+  });
+
+  if (!aviso) {
+    aviso = await prisma.aviso.create({
+      data: {
+        sedeId: params.sedeId,
+        autorUsuarioId: params.autorUsuarioId,
+        titulo: params.titulo,
+        cuerpo: params.cuerpo,
+        alcanceTipo: params.alcanceTipo,
+        alcanceId: params.alcanceId,
+      },
+    });
+  }
+
+  // Mismo fan-out que `AvisosService.publicar` en producción — reutiliza
+  // la función real, no reimplementa la resolución de destinatarios.
+  // Se recalcula SIEMPRE (aviso nuevo o ya existente de una corrida previa)
+  // y solo se crea `Notificacion` para quien todavía no la tiene — así un
+  // reseed incremental (personas agregadas a la config después de la
+  // primera corrida) también las notifica, en vez de quedarse mudo para
+  // siempre por el `findFirst` de arriba.
+  const destinatarios = await resolverDestinatarios(
+    prisma as unknown as PrismaService,
+    params.sedeId,
+    params.alcanceTipo,
+    params.alcanceId ?? null,
+  );
+
+  const yaNotificados = await prisma.notificacion.findMany({
+    where: { referenciaId: aviso.id, tipo: TipoNotificacion.AVISO },
+    select: { usuarioId: true },
+  });
+  const yaNotificadosIds = new Set(yaNotificados.map((n) => n.usuarioId));
+
+  const cuerpoCorto = params.cuerpo.slice(0, 140);
+  const receptoresFaltantes = destinatarios.filter(
+    (id) => id !== params.autorUsuarioId && !yaNotificadosIds.has(id),
+  );
+  if (receptoresFaltantes.length > 0) {
+    await prisma.notificacion.createMany({
+      data: receptoresFaltantes.map((usuarioId) => ({
+        usuarioId,
+        sedeId: params.sedeId,
+        tipo: TipoNotificacion.AVISO,
+        referenciaId: aviso.id,
+        titulo: aviso.titulo,
+        cuerpoCorto,
+      })),
+    });
+  }
+
+  return aviso;
+}
+
+export async function seedEvento(params: {
+  sedeId: string;
+  autorUsuarioId: string;
+  titulo: string;
+  descripcion?: string;
+  fechaInicio: Date;
+  horaInicio?: string;
+  categoria: CategoriaEvento;
+  alcanceTipo: AlcanceDestino;
+  alcanceId?: string;
+}): Promise<EventoCalendario> {
+  const existente = await prisma.eventoCalendario.findFirst({
+    where: { sedeId: params.sedeId, titulo: params.titulo },
+  });
+  if (existente) return existente;
+
+  return prisma.eventoCalendario.create({
+    data: {
+      sedeId: params.sedeId,
+      autorUsuarioId: params.autorUsuarioId,
+      titulo: params.titulo,
+      descripcion: params.descripcion,
+      fechaInicio: params.fechaInicio,
+      horaInicio: params.horaInicio,
+      categoria: params.categoria,
+      alcanceTipo: params.alcanceTipo,
+      alcanceId: params.alcanceId,
     },
   });
 }
@@ -623,6 +777,52 @@ export async function seedSede(config: SedeSeedConfig) {
   for (const personal of config.personalServicios) {
     await seedPersonalServicios({ sedeId: sede.id, ...personal });
   }
+
+  // Módulos de actividad — teléfono de emergencia, aviso y evento por
+  // sede, para que la app no se sienta vacía al navegarla (2026-09-17).
+  // El autor es el administrativo ADMIN de la sede (config.administrativos[0]),
+  // ya sembrado arriba en esta misma función.
+  const adminAutor = await prisma.usuario.findUniqueOrThrow({
+    where: { email: config.administrativos[0].emailInstitucional },
+  });
+
+  await seedTelefonoEmergencia({
+    sedeId: sede.id,
+    etiqueta: 'Dirección',
+    telefono: config.telefono,
+    orden: 1,
+  });
+  await seedTelefonoEmergencia({
+    sedeId: sede.id,
+    etiqueta: 'Enfermería',
+    telefono: variarTelefono(config.telefono, 1),
+    orden: 2,
+  });
+  await seedTelefonoEmergencia({
+    sedeId: sede.id,
+    etiqueta: 'Seguridad',
+    telefono: variarTelefono(config.telefono, 2),
+    orden: 3,
+  });
+
+  await seedAviso({
+    sedeId: sede.id,
+    autorUsuarioId: adminAutor.id,
+    titulo: 'Bienvenida al ciclo escolar 2026',
+    cuerpo: `Bienvenidos al nuevo ciclo escolar en ${config.nombre}. Recuerden revisar sus horarios y mantener actualizados sus datos de contacto de emergencia.`,
+    alcanceTipo: AlcanceDestino.SEDE,
+  });
+
+  await seedEvento({
+    sedeId: sede.id,
+    autorUsuarioId: adminAutor.id,
+    titulo: 'Examen parcial — primer parcial',
+    descripcion: 'Primer examen parcial del cuatrimestre para todos los grupos.',
+    fechaInicio: new Date('2026-10-15'),
+    horaInicio: '09:00',
+    categoria: CategoriaEvento.EXAMEN,
+    alcanceTipo: AlcanceDestino.SEDE,
+  });
 
   return { sede, carreras, salones, grupos };
 }

@@ -8,7 +8,9 @@ import { toast } from 'sonner';
 import { z } from 'zod';
 import { AltaPersonaFormShell } from '@/components/admin/ui/persona-alta/AltaPersonaFormShell';
 import { ContactosFieldset } from '@/components/admin/ui/persona-alta/ContactosFieldset';
-import { CuentaFieldset } from '@/components/admin/ui/persona-alta/CuentaFieldset';
+// `CuentaFieldset` (campo `codigoExterno`) oculto a pedido del usuario
+// (2026-09-23) — ver `CuentaFieldset.tsx` para el detalle. No borrar.
+// import { CuentaFieldset } from '@/components/admin/ui/persona-alta/CuentaFieldset';
 import { DatosPersonalesFieldset } from '@/components/admin/ui/persona-alta/DatosPersonalesFieldset';
 import { FieldError } from '@/components/admin/ui/persona-alta/FieldError';
 import { INPUT_CLASS, LABEL_CLASS } from '@/components/admin/ui/persona-alta/estilos';
@@ -138,14 +140,16 @@ const perfilMaestroSchema = z
   });
 
 const maestroSchema = z.object({
-  codigoExterno: z.string().optional(),
+  // `codigoExterno` oculto a pedido del usuario (2026-09-23) — ver
+  // `CuentaFieldset.tsx`. No borrar.
+  // codigoExterno: z.string().optional(),
   perfilMaestro: perfilMaestroSchema,
 });
 
 type MaestroFormValues = z.infer<typeof maestroSchema>;
 
 const DEFAULT_VALUES: MaestroFormValues = {
-  codigoExterno: '',
+  // codigoExterno: '', — comentado junto con el campo, ver arriba.
   perfilMaestro: {
     nombres: '',
     apellidoPaterno: '',
@@ -199,7 +203,7 @@ export default function NuevoMaestroPage() {
   const mutation = useMutation({
     mutationFn: (values: MaestroFormValues) =>
       crearMaestro({
-        codigoExterno: values.codigoExterno || undefined,
+        // codigoExterno: values.codigoExterno || undefined, — comentado junto con el campo.
         perfilMaestro: {
           ...values.perfilMaestro,
           apellidoMaterno: values.perfilMaestro.apellidoMaterno || undefined,
@@ -268,18 +272,14 @@ export default function NuevoMaestroPage() {
       isPending={mutation.isPending}
     >
       <div className="grid gap-5 xl:grid-cols-3">
-        <div className="flex flex-col gap-5">
-          <CuentaFieldset register={register} errors={errors} disabled={mutation.isPending} />
-
-          <InfoMedicaFieldset
-            control={control}
-            register={register}
-            errors={errors}
-            disabled={mutation.isPending}
-            prefix="perfilMaestro"
-            tieneCondicionMedica={Boolean(tieneCondicionMedica)}
-          />
-        </div>
+        <InfoMedicaFieldset
+          control={control}
+          register={register}
+          errors={errors}
+          disabled={mutation.isPending}
+          prefix="perfilMaestro"
+          tieneCondicionMedica={Boolean(tieneCondicionMedica)}
+        />
 
         <DatosPersonalesFieldset
           register={register}

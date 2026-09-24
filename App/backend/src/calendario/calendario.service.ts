@@ -969,7 +969,21 @@ export class CalendarioService {
 
     try {
       const eventos = await this.prisma.eventoCalendario.findMany({
-        where: { sedeId: undefined }, // sin filtro de sede: el job corre para TODAS las sedes.
+        // Sin filtro de sede: el job corre para TODAS las sedes. Prefiltro
+        // por fecha (mismo criterio que `listarParaGestion`) — un evento
+        // matchea si su `fechaInicio` cae en la ventana, o si es recurrente
+        // y su serie sigue activa dentro de ella (`recurrenciaHasta >=
+        // desde`) aunque haya arrancado antes. Evita traer a memoria eventos
+        // ya terminados o que aún no aplican.
+        where: {
+          OR: [
+            { fechaInicio: { gte: desde, lte: hasta } },
+            {
+              recurrenciaHasta: { not: null, gte: desde },
+              fechaInicio: { lte: hasta },
+            },
+          ],
+        },
       });
 
       for (const evento of eventos) {
@@ -1089,6 +1103,9 @@ export class CalendarioService {
             correoDestino: d.correoPersonal,
             asunto: `Recordatorio: ${evento.titulo}`,
             cuerpoTexto: `Tienes un evento próximo: ${evento.titulo} el ${fechaISO}.`,
+            cuerpoHtml: this.mailService.construirHtmlNotificacion(
+              `Tienes un evento próximo: ${evento.titulo} el ${fechaISO}.`,
+            ),
           }),
         ),
       );
