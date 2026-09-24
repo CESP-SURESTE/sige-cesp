@@ -15,6 +15,7 @@ import { SkeletonTableRows } from '@/components/admin/ui/Skeleton';
 import { ApiError } from '@/lib/api/http';
 import { obtenerPerfil } from '@/lib/api/perfil';
 import {
+  cambiarEstatusPersona,
   listarAlumnos,
   resetearPasswordPersona,
   type EstatusAcademico,
@@ -23,6 +24,8 @@ import {
 import { BuscadorFiltro } from '@/components/admin/ui/personas-listado/BuscadorFiltro';
 import { Paginacion } from '@/components/admin/ui/personas-listado/Paginacion';
 import { EstadoActivoBadge } from '@/components/admin/ui/personas-listado/EstadoActivoBadge';
+import { EstatusAcademicoBadge } from '@/components/admin/ui/personas-listado/EstatusAcademicoBadge';
+import { CambiarEstatusAlumnoModal } from '@/components/admin/ui/personas-listado/CambiarEstatusAlumnoModal';
 import { ResetearPasswordModal } from '@/components/admin/ui/personas-listado/ResetearPasswordModal';
 import { SubirFotoPersonaModal } from '@/components/admin/ui/personas-listado/SubirFotoPersonaModal';
 import { useBuscarDebounced } from '@/components/admin/ui/personas-listado/useBuscarDebounced';
@@ -58,6 +61,8 @@ export default function AdminAlumnosPage() {
   const [alumnoAFotografiar, setAlumnoAFotografiar] =
     useState<PersonaListItemAlumno | null>(null);
   const [alumnoAEditarDatos, setAlumnoAEditarDatos] =
+    useState<PersonaListItemAlumno | null>(null);
+  const [alumnoACambiarEstatus, setAlumnoACambiarEstatus] =
     useState<PersonaListItemAlumno | null>(null);
   const queryClient = useQueryClient();
 
@@ -118,6 +123,27 @@ export default function AdminAlumnosPage() {
         err instanceof ApiError
           ? err.message
           : 'Ocurrió un error inesperado. Intenta de nuevo.';
+      toast.error(mensaje);
+    },
+  });
+
+  const cambiarEstatusMutation = useMutation({
+    mutationFn: (vars: { usuarioId: string; estatus: EstatusAcademico }) =>
+      cambiarEstatusPersona(vars.usuarioId, vars.estatus),
+    onSuccess: () => {
+      toast.success('Estatus actualizado');
+      setAlumnoACambiarEstatus(null);
+      void queryClient.invalidateQueries({
+        queryKey: ['admin', 'personas', 'ALUMNO'],
+      });
+    },
+    onError: (err) => {
+      // Regla 12 de `CLAUDE.md` raíz.
+      console.error('[AdminAlumnosPage] Error al cambiar el estatus:', err);
+      const mensaje =
+        err instanceof ApiError
+          ? err.message
+          : 'No se pudo cambiar el estatus. Intenta de nuevo más tarde.';
       toast.error(mensaje);
     },
   });
@@ -186,6 +212,7 @@ export default function AdminAlumnosPage() {
               onResetearPassword={setAlumnoAResetear}
               onFotografiar={setAlumnoAFotografiar}
               onEditarDatos={setAlumnoAEditarDatos}
+              onCambiarEstatus={setAlumnoACambiarEstatus}
             />
             <div className="mt-4">
               <Paginacion
@@ -247,6 +274,25 @@ export default function AdminAlumnosPage() {
           }
         />
       )}
+
+      {alumnoACambiarEstatus && (
+        <CambiarEstatusAlumnoModal
+          persona={{
+            estatus: alumnoACambiarEstatus.estatusAcademico,
+            nombres: alumnoACambiarEstatus.nombres,
+            apellidoPaterno: alumnoACambiarEstatus.apellidoPaterno,
+            apellidoMaterno: alumnoACambiarEstatus.apellidoMaterno,
+          }}
+          guardando={cambiarEstatusMutation.isPending}
+          onGuardar={(estatusNuevo) =>
+            cambiarEstatusMutation.mutate({
+              usuarioId: alumnoACambiarEstatus.usuarioId,
+              estatus: estatusNuevo,
+            })
+          }
+          onCancelar={() => setAlumnoACambiarEstatus(null)}
+        />
+      )}
     </div>
   );
 }
@@ -258,6 +304,7 @@ function TablaAlumnos({
   onResetearPassword,
   onFotografiar,
   onEditarDatos,
+  onCambiarEstatus,
 }: {
   alumnos: PersonaListItemAlumno[];
   /** Cooldown de reseteo de contraseña (`useCooldownReseteo`) — por fila. */
@@ -266,6 +313,7 @@ function TablaAlumnos({
   onResetearPassword: (alumno: PersonaListItemAlumno) => void;
   onFotografiar: (alumno: PersonaListItemAlumno) => void;
   onEditarDatos: (alumno: PersonaListItemAlumno) => void;
+  onCambiarEstatus: (alumno: PersonaListItemAlumno) => void;
 }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-mist">
@@ -317,16 +365,25 @@ function TablaAlumnos({
               <Td>{alumno.matricula}</Td>
               <Td>{alumno.carrera.nombre}</Td>
               <Td>{alumno.cuatrimestreActual}</Td>
-              <Td>{ESTATUS_ACADEMICO_LABEL[alumno.estatusAcademico]}</Td>
+              <Td>
+                <EstatusAcademicoBadge estatus={alumno.estatusAcademico} />
+              </Td>
               <Td>
                 <EstadoActivoBadge activo={alumno.activo} />
               </Td>
               <Td>
                 <button
                   type="button"
+                  onClick={() => onCambiarEstatus(alumno)}
+                  className="text-navy hover:underline"
+                >
+                  Cambiar estatus
+                </button>
+                <button
+                  type="button"
                   onClick={() => onResetearPassword(alumno)}
                   disabled={estaEnCooldown(alumno.usuarioId)}
-                  className="text-navy hover:underline disabled:cursor-not-allowed disabled:text-slate/40 disabled:no-underline"
+                  className="ml-3 text-navy hover:underline disabled:cursor-not-allowed disabled:text-slate/40 disabled:no-underline"
                   title={
                     estaEnCooldown(alumno.usuarioId)
                       ? `Disponible en ${minutosRestantes(alumno.usuarioId)} min`
