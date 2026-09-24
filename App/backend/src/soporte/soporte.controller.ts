@@ -1,22 +1,32 @@
-import { Body, Controller, Get, Patch, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Patch,
+  Post,
+  UploadedFile,
+  UseFilters,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { RolUsuario } from '@prisma/client';
+import { ActorUsuarioId } from '../common/decorators/actor-usuario-id.decorator';
 import { PlatformAdminActual } from '../common/decorators/platform-admin-actual.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
+import { SedeActual } from '../common/decorators/sede-actual.decorator';
 import { PlatformAdminGuard } from '../common/guards/platform-admin.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { SedeGuard } from '../common/guards/sede.guard';
+import { ArchivoCapturaInvalidaFilter } from './archivo-captura-invalida.filter';
 import { ActualizarConfigSoporteDto } from './dto/actualizar-config-soporte.dto';
+import { CrearReporteBugDto } from './dto/crear-reporte-bug.dto';
 import { SoporteService } from './soporte.service';
 
-/**
- * `SoporteController` — feature "Bot de soporte" (2026-09-24).
- *
- * Mezcla 2 actores distintos, igual que `SedesController`: guards por
- * MÉTODO, no a nivel de clase. `GET /soporte/config` lo consulta
- * ADMINISTRATIVO/MAESTRO (JWT de Supabase, `SedeGuard`+`RolesGuard`);
- * `PATCH /soporte/config` y las rutas de `/reportes` de gestión (Task 5)
- * son de `AdminPlataforma` (`PlatformAdminGuard`).
- */
+const TRES_MB = 3 * 1024 * 1024;
+
 @Controller('soporte')
 export class SoporteController {
   constructor(protected readonly soporteService: SoporteService) {}
@@ -38,6 +48,29 @@ export class SoporteController {
     const data = await this.soporteService.actualizarConfig(
       dto.activo,
       adminId,
+    );
+    return { data };
+  }
+
+  @Post('reportes')
+  @HttpCode(HttpStatus.CREATED)
+  @UseGuards(SedeGuard, RolesGuard)
+  @Roles(RolUsuario.ADMINISTRATIVO, RolUsuario.MAESTRO)
+  @UseInterceptors(
+    FileInterceptor('captura', { limits: { fileSize: TRES_MB } }),
+  )
+  @UseFilters(ArchivoCapturaInvalidaFilter)
+  async crearReporte(
+    @Body() dto: CrearReporteBugDto,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @SedeActual() sedeId: string,
+    @ActorUsuarioId() usuarioId: string,
+  ) {
+    const data = await this.soporteService.crearReporte(
+      sedeId,
+      usuarioId,
+      dto.descripcion,
+      file,
     );
     return { data };
   }
