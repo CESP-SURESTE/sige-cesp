@@ -22,6 +22,7 @@ import { NotificacionesModule } from './notificaciones/notificaciones.module';
 import { CalendarioModule } from './calendario/calendario.module';
 import { AvisosModule } from './avisos/avisos.module';
 import { EmergenciaModule } from './emergencia/emergencia.module';
+import { SoporteModule } from './soporte/soporte.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { EmergenciaModule } from './emergencia/emergencia.module';
     CalendarioModule,
     AvisosModule,
     EmergenciaModule,
+    SoporteModule,
   ],
   controllers: [AppController],
   providers: [AppService],
