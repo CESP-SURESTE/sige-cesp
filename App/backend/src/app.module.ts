@@ -14,6 +14,7 @@ import { MallaCurricularModule } from './malla-curricular/malla-curricular.modul
 import { PerfilModule } from './perfil/perfil.module';
 import { PlatformAdminModule } from './platform-admin/platform-admin.module';
 import { MailModule } from './mail/mail.module';
+import { TelegramModule } from './telegram/telegram.module';
 import { GruposModule } from './grupos/grupos.module';
 import { SalonesModule } from './salones/salones.module';
 import { MateriasModule } from './materias/materias.module';
@@ -32,6 +33,7 @@ import { EmergenciaModule } from './emergencia/emergencia.module';
     SedesModule,
     AuthModule,
     MailModule,
+    TelegramModule,
     PersonasModule,
     CarrerasModule,
     MallaCurricularModule,
