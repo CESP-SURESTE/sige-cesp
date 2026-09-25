@@ -10,6 +10,7 @@ import { ProfileDropdown } from './ProfileDropdown';
 import { NotificacionesBell } from './NotificacionesBell';
 import { useSidebarState } from './useSidebarState';
 import { IconChevronDoble, IconCerrar, IconMenu, IconUbicacion } from './icons';
+import { BotSoporte } from './BotSoporte';
 
 /**
  * Shell del área admin — rediseño de navegación (panel lateral), pedido
@@ -65,6 +66,8 @@ export function AdminShell({
         <Topbar email={email} onAbrirMobile={() => setAbiertoMobile(true)} />
         <main className="flex-1 p-4 sm:p-6">{children}</main>
       </div>
+
+      <BotSoporte />
     </div>
   );
 }
