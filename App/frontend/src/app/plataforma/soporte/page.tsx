@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import { ApiError } from '@/lib/api/http';
 import { PlataformaNav } from '../PlataformaNav';
 import {
   actualizarConfigSoportePlataforma,
@@ -23,7 +25,14 @@ export default function SoportePlataformaPage() {
 
   const configQuery = useQuery({
     queryKey: ['plataforma', 'soporte', 'config'],
-    queryFn: obtenerConfigSoportePlataforma,
+    queryFn: async () => {
+      try {
+        return await obtenerConfigSoportePlataforma();
+      } catch (err) {
+        console.error('[SoportePlataformaPage] Error al obtener config de soporte:', err);
+        throw err;
+      }
+    },
   });
 
   const toggleMutation = useMutation({
@@ -31,16 +40,31 @@ export default function SoportePlataformaPage() {
     onSuccess: (data) => {
       queryClient.setQueryData(['plataforma', 'soporte', 'config'], data);
     },
+    onError: (err, vars) => {
+      console.error('[SoportePlataformaPage] Error al actualizar config de soporte:', {
+        activo: vars,
+        err,
+      });
+      toast.error(
+        err instanceof ApiError ? err.message : 'No se pudo actualizar el estado del bot de soporte.',
+      );
+    },
   });
 
   const reportesQuery = useQuery({
     queryKey: ['plataforma', 'soporte', 'reportes', filtroEstatus, page],
-    queryFn: () =>
-      listarReportesBug({
-        estatus: filtroEstatus || undefined,
-        page,
-        limit: 20,
-      }),
+    queryFn: async () => {
+      try {
+        return await listarReportesBug({
+          estatus: filtroEstatus || undefined,
+          page,
+          limit: 20,
+        });
+      } catch (err) {
+        console.error('[SoportePlataformaPage] Error al listar reportes de bug:', err);
+        throw err;
+      }
+    },
   });
 
   const estatusMutation = useMutation({
@@ -50,6 +74,16 @@ export default function SoportePlataformaPage() {
       void queryClient.invalidateQueries({
         queryKey: ['plataforma', 'soporte', 'reportes'],
       });
+    },
+    onError: (err, vars) => {
+      console.error('[SoportePlataformaPage] Error al cambiar estatus de reporte:', {
+        id: vars.id,
+        estatus: vars.estatus,
+        err,
+      });
+      toast.error(
+        err instanceof ApiError ? err.message : 'No se pudo cambiar el estatus del reporte.',
+      );
     },
   });
 
