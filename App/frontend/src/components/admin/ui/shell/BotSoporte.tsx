@@ -203,6 +203,7 @@ function VistaReporte({
       await crearReporteBug(descripcion.trim(), archivo ?? undefined);
       onEnviado();
     } catch (err) {
+      console.error('[BotSoporte] Error al enviar reporte:', err);
       setError(
         err instanceof ApiError
           ? err.message
