@@ -27,7 +27,14 @@ export function BotSoporte() {
 
   const { data: config } = useQuery({
     queryKey: ['soporte', 'config'],
-    queryFn: obtenerConfigSoporte,
+    queryFn: async () => {
+      try {
+        return await obtenerConfigSoporte();
+      } catch (err) {
+        console.error('[BotSoporte] Error al obtener configuración:', err);
+        throw err;
+      }
+    },
     staleTime: 5 * 60 * 1000,
   });
 

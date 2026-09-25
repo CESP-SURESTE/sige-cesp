@@ -11,50 +11,55 @@ export interface CategoriaFaq {
 
 export const CATEGORIAS_FAQ_SOPORTE: CategoriaFaq[] = [
   {
-    id: 'personas',
-    titulo: 'Alumnos, maestros y administrativos',
+    id: 'perfil',
+    titulo: 'Mi perfil',
     preguntas: [
       {
-        pregunta: '¿Cómo doy de alta a un alumno?',
+        pregunta: '¿Cómo cambio mi contraseña?',
         respuesta:
-          'Ve a "Alumnos" en el menú lateral y usa el botón "+ Nuevo alumno". El sistema genera la matrícula y la contraseña temporal automáticamente.',
+          'Ve a tu perfil (ícono de tu cuenta) y busca la opción "Cambiar contraseña". Te pedirá tu contraseña actual y la nueva.',
       },
       {
-        pregunta: '¿Cómo cambio la contraseña de alguien que la olvidó?',
+        pregunta: '¿Cómo subo o cambio mi foto de perfil?',
         respuesta:
-          'En el listado de la persona (Alumnos/Maestros/Administrativos), usa el botón "Restablecer contraseña" de su fila. Le llega un correo con el enlace para elegir una nueva.',
+          'Desde tu perfil, usa la opción de subir foto. Acepta JPG, PNG o WEBP, hasta 3MB.',
       },
       {
-        pregunta: '¿Cómo doy de baja a un maestro o administrativo?',
+        pregunta: 'Olvidé mi contraseña, ¿qué hago?',
         respuesta:
-          'Desde su listado, cambia su estatus a "Baja" y elige el motivo. Dependiendo del motivo, esto también revoca su acceso al sistema.',
+          'Pide a un administrativo de tu sede que te restablezca la contraseña desde el listado de maestros — te llegará un correo con el enlace para elegir una nueva.',
       },
     ],
   },
   {
     id: 'grupos',
-    titulo: 'Grupos y materias',
+    titulo: 'Mis grupos y materias',
     preguntas: [
       {
-        pregunta: '¿Cómo creo un grupo nuevo?',
+        pregunta: '¿Dónde veo los grupos y materias que tengo asignados?',
         respuesta:
-          'Ve a "Grupos" y usa el botón "+ Nuevo grupo". Necesitas tener ya creados la carrera y el salón donde va a estar.',
+          'En tu perfil, en la sección "Mis grupos y materias" verás cada grupo con las materias que impartes en él.',
       },
       {
-        pregunta: '¿Cómo asigno un maestro a una materia?',
+        pregunta: 'No veo un grupo que debería tener asignado',
         respuesta:
-          'Entra al detalle del grupo (clic en la fila) y usa la sección de materias asignadas para agregar al maestro correspondiente.',
+          'La asignación de materias a un maestro la hace un administrativo desde el detalle del grupo. Pide que revisen tu asignación ahí.',
       },
     ],
   },
   {
-    id: 'otros',
-    titulo: 'Otros',
+    id: 'avisos-calendario',
+    titulo: 'Avisos y calendario',
     preguntas: [
       {
-        pregunta: '¿Cómo subo la malla curricular de una carrera?',
+        pregunta: '¿Cómo publico un aviso para mi grupo?',
         respuesta:
-          'Entra a "Carreras", edita la carrera y usa la sección de malla curricular para subir el PDF.',
+          'Ve a "Avisos", pestaña "Publicados", y usa el botón para crear uno nuevo. Como maestro solo puedes publicar avisos dirigidos a un grupo donde des clase.',
+      },
+      {
+        pregunta: '¿Cómo agrego un evento al calendario de mi grupo?',
+        respuesta:
+          'Ve a "Calendario" y crea un evento nuevo con alcance "Grupo", eligiendo uno de los grupos donde impartes materia.',
       },
     ],
   },

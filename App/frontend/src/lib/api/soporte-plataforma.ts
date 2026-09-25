@@ -20,7 +20,7 @@ export interface ReporteBugItem {
 }
 
 export function obtenerConfigSoportePlataforma(): Promise<{ activo: boolean }> {
-  return platformFetch<{ activo: boolean }>('/soporte/config');
+  return platformFetch<{ activo: boolean }>('/soporte/config/plataforma');
 }
 
 export function actualizarConfigSoportePlataforma(

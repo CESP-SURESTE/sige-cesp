@@ -43,6 +43,13 @@ export class SoporteController {
     return { data };
   }
 
+  @Get('config/plataforma')
+  @UseGuards(PlatformAdminGuard)
+  async obtenerConfigPlataforma() {
+    const data = await this.soporteService.obtenerConfig();
+    return { data };
+  }
+
   @Patch('config')
   @UseGuards(PlatformAdminGuard)
   async actualizarConfig(

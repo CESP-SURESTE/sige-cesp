@@ -138,6 +138,25 @@ describe('Soporte — GET/PATCH /soporte/config (e2e)', () => {
     expect((res.body as ErrorBody).code).toBe('ROL_NO_AUTORIZADO');
   });
 
+  it('GET /soporte/config/plataforma responde con el token de plataforma', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/soporte/config/plataforma')
+      .set('Authorization', `Bearer ${platformToken}`);
+    expect(res.status).toBe(200);
+    expect(typeof (res.body as ConfigBody).data.activo).toBe('boolean');
+  });
+
+  it('GET /soporte/config/plataforma con JWT de Supabase (no de plataforma) responde 401', async () => {
+    const token = await firmarToken(
+      { role: 'authenticated', sede_id: sedeMeridaId, rol: RolUsuario.ADMINISTRATIVO },
+      adminMeridaId,
+    );
+    const res = await request(app.getHttpServer())
+      .get('/soporte/config/plataforma')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(401);
+  });
+
   it('PATCH /soporte/config con JWT de Supabase (no de plataforma) responde 401', async () => {
     const token = await firmarToken(
       { role: 'authenticated', sede_id: sedeMeridaId, rol: RolUsuario.ADMINISTRATIVO },
