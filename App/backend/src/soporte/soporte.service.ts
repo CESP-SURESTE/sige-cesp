@@ -4,9 +4,10 @@ import {
   Inject,
   Injectable,
   InternalServerErrorException,
+  NotFoundException,
   Optional,
 } from '@nestjs/common';
-import { AccionAuditoria } from '@prisma/client';
+import { AccionAuditoria, EstatusReporteBug } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from '../telegram/telegram.service';
@@ -234,5 +235,109 @@ export class SoporteService {
     }
 
     return { id };
+  }
+
+  async listarReportes(
+    estatus: EstatusReporteBug | undefined,
+    page = 1,
+    limit = 20,
+  ): Promise<{
+    data: {
+      id: string;
+      sede: { id: string; nombre: string };
+      reportante: string;
+      descripcion: string;
+      capturaUrl: string | null;
+      estatus: EstatusReporteBug;
+      createdAt: Date;
+      updatedAt: Date;
+    }[];
+    page: number;
+    limit: number;
+    total: number;
+  }> {
+    const where = estatus ? { estatus } : {};
+
+    const [filas, total] = await Promise.all([
+      this.prisma.reporteBug.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          sede: { select: { id: true, nombre: true } },
+          usuario: {
+            select: {
+              perfilMaestro: { select: { nombres: true, apellidoPaterno: true } },
+              perfilAdministrativo: {
+                select: { nombres: true, apellidoPaterno: true },
+              },
+            },
+          },
+        },
+      }),
+      this.prisma.reporteBug.count({ where }),
+    ]);
+
+    const pathsConCaptura = filas
+      .map((f) => f.capturaStoragePath)
+      .filter((p): p is string => p !== null);
+    const urls = await this.firmarUrls(pathsConCaptura);
+
+    return {
+      data: filas.map((f) => {
+        const perfil = f.usuario.perfilMaestro ?? f.usuario.perfilAdministrativo;
+        return {
+          id: f.id,
+          sede: f.sede,
+          reportante: perfil
+            ? `${perfil.nombres} ${perfil.apellidoPaterno}`
+            : 'Desconocido',
+          descripcion: f.descripcion,
+          capturaUrl: f.capturaStoragePath
+            ? urls.get(f.capturaStoragePath) ?? null
+            : null,
+          estatus: f.estatus,
+          createdAt: f.createdAt,
+          updatedAt: f.updatedAt,
+        };
+      }),
+      page,
+      limit,
+      total,
+    };
+  }
+
+  async cambiarEstatus(
+    id: string,
+    estatus: EstatusReporteBug,
+    adminPlataformaId: string,
+  ): Promise<{ ok: true }> {
+    const reporte = await this.prisma.reporteBug.findUnique({
+      where: { id },
+      select: { sedeId: true },
+    });
+    if (!reporte) {
+      throw new NotFoundException({
+        error: 'Reporte no encontrado',
+        code: 'NOT_FOUND',
+      });
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.reporteBug.update({ where: { id }, data: { estatus } });
+      await tx.registroAuditoria.create({
+        data: {
+          adminPlataformaId,
+          sedeId: reporte.sedeId,
+          accion: AccionAuditoria.EDICION,
+          entidad: 'ReporteBug',
+          entidadId: id,
+          detalle: { estatus },
+        },
+      });
+    });
+
+    return { ok: true };
   }
 }

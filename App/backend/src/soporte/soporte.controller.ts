@@ -4,8 +4,10 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Param,
   Patch,
   Post,
+  Query,
   UploadedFile,
   UseFilters,
   UseGuards,
@@ -22,7 +24,9 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { SedeGuard } from '../common/guards/sede.guard';
 import { ArchivoCapturaInvalidaFilter } from './archivo-captura-invalida.filter';
 import { ActualizarConfigSoporteDto } from './dto/actualizar-config-soporte.dto';
+import { CambiarEstatusReporteBugDto } from './dto/cambiar-estatus-reporte-bug.dto';
 import { CrearReporteBugDto } from './dto/crear-reporte-bug.dto';
+import { ListarReportesBugQueryDto } from './dto/listar-reportes-bug.query.dto';
 import { SoporteService } from './soporte.service';
 
 const TRES_MB = 3 * 1024 * 1024;
@@ -71,6 +75,31 @@ export class SoporteController {
       usuarioId,
       dto.descripcion,
       file,
+    );
+    return { data };
+  }
+
+  @Get('reportes')
+  @UseGuards(PlatformAdminGuard)
+  async listarReportes(@Query() query: ListarReportesBugQueryDto) {
+    return this.soporteService.listarReportes(
+      query.estatus,
+      query.page,
+      query.limit,
+    );
+  }
+
+  @Patch('reportes/:id/estatus')
+  @UseGuards(PlatformAdminGuard)
+  async cambiarEstatus(
+    @Param('id') id: string,
+    @Body() dto: CambiarEstatusReporteBugDto,
+    @PlatformAdminActual() adminId: string,
+  ) {
+    const data = await this.soporteService.cambiarEstatus(
+      id,
+      dto.estatus,
+      adminId,
     );
     return { data };
   }
