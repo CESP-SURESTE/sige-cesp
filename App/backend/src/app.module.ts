@@ -23,6 +23,7 @@ import { CalendarioModule } from './calendario/calendario.module';
 import { AvisosModule } from './avisos/avisos.module';
 import { EmergenciaModule } from './emergencia/emergencia.module';
 import { SoporteModule } from './soporte/soporte.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { SoporteModule } from './soporte/soporte.module';
     AvisosModule,
     EmergenciaModule,
     SoporteModule,
+    HealthModule,
   ],
   controllers: [AppController],
   providers: [AppService],
