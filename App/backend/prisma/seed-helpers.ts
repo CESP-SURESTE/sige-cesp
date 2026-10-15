@@ -611,7 +611,7 @@ export async function seedSede(config: SedeSeedConfig) {
         modalidad: c.modalidad ?? ModalidadCarrera.PRESENCIAL,
         estatus: EstatusCarrera.ACTIVA,
         rvoe: c.rvoe,
-        descripcion: `Carrera de prueba (${c.nombre}) sembrada para validar el aislamiento multi-sede.`,
+        descripcion: `Programa académico de ${c.nombre}.`,
       },
     });
     carreras.push(carrera);

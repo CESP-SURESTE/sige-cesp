@@ -17,12 +17,12 @@ export const CATEGORIAS_FAQ_SOPORTE: CategoriaFaq[] = [
       {
         pregunta: '¿Cómo cambio mi contraseña?',
         respuesta:
-          'Ve a tu perfil (ícono de tu cuenta) y busca la opción "Cambiar contraseña". Te pedirá tu contraseña actual y la nueva.',
+          'La contraseña temporal se cambia en tu primer ingreso. Si después necesitas una nueva, pide a un administrativo de tu sede que te restablezca la contraseña.',
       },
       {
         pregunta: '¿Cómo subo o cambio mi foto de perfil?',
         respuesta:
-          'Desde tu perfil, usa la opción de subir foto. Acepta JPG, PNG o WEBP, hasta 3MB.',
+          'Desde "Mi perfil" (menú de tu cuenta), haz clic en tu foto o avatar (dice "Cambiar"). Acepta JPG, PNG o WEBP, hasta 3MB.',
       },
       {
         pregunta: 'Olvidé mi contraseña, ¿qué hago?',
@@ -54,7 +54,7 @@ export const CATEGORIAS_FAQ_SOPORTE: CategoriaFaq[] = [
       {
         pregunta: '¿Cómo publico un aviso para mi grupo?',
         respuesta:
-          'Ve a "Avisos", pestaña "Publicados", y usa el botón para crear uno nuevo. Como maestro solo puedes publicar avisos dirigidos a un grupo donde des clase.',
+          'Ve a "Avisos", pestaña "Publicados", y usa el botón "+ Nuevo aviso". Como maestro solo puedes publicar avisos dirigidos a un grupo donde des clase.',
       },
       {
         pregunta: '¿Cómo agrego un evento al calendario de mi grupo?',
