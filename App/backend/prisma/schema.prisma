@@ -180,6 +180,7 @@ model Sede {
   eventosCalendario   EventoCalendario[]
   avisos              Aviso[]
   telefonosEmergencia TelefonoEmergenciaSede[]
+  reportesBug         ReporteBug[]
 
   @@map("sedes")
 }
@@ -375,6 +376,7 @@ model Usuario {
   notificaciones       Notificacion[]
   eventosCreados       EventoCalendario[]
   avisosCreados        Aviso[]
+  reportesBug          ReporteBug[]
 
   @@map("usuarios")
 }
@@ -768,4 +770,43 @@ model PermisoAdministrativo {
 
   @@unique([administrativoId, seccionId])
   @@map("permisos_administrativo")
+}
+
+// ============================
+// SOPORTE (bot: FAQ + reporte de bugs)
+// ============================
+
+enum EstatusReporteBug {
+  NUEVO
+  EN_REVISION
+  RESUELTO
+}
+
+/// Singleton real — `id` siempre `'global'`, una sola fila para todo el
+/// sistema (sembrada por la propia migración). El toggle de
+/// `app/plataforma/soporte/` opera SIEMPRE contra `id: 'global'` vía
+/// `upsert`, nunca crea una fila nueva. Sin `sedeId` — es global, mismo
+/// criterio que `AdminPlataforma`/`Sede`.
+model ConfiguracionSoporte {
+  id        String   @id @default("global")
+  activo    Boolean  @default(true)
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("configuracion_soporte")
+}
+
+model ReporteBug {
+  id                 String            @id @default(uuid())
+  sedeId             String            @map("sede_id")
+  sede               Sede              @relation(fields: [sedeId], references: [id], onDelete: Cascade)
+  usuarioId          String            @map("usuario_id")
+  usuario            Usuario           @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  descripcion        String
+  capturaStoragePath String?           @map("captura_storage_path")
+  estatus            EstatusReporteBug @default(NUEVO)
+  createdAt          DateTime          @default(now()) @map("created_at")
+  updatedAt          DateTime          @updatedAt @map("updated_at")
+
+  @@index([estatus, createdAt])
+  @@map("reportes_bug")
 }

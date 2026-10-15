@@ -51,8 +51,9 @@ export function AltaPersonaFormShell({
         {children}
 
         <p className="rounded-lg border border-warning-border bg-warning-bg px-3 py-2 text-xs text-warning">
-          Verifica bien los datos antes de guardar — nombres, apellidos, CURP y demás
-          datos personales no se pueden editar después de dar de alta.
+          Verifica bien los datos antes de guardar. La matrícula y el usuario de acceso se
+          generan automáticamente y no se pueden modificar; el resto de los datos se
+          pueden corregir después desde el listado, con el ícono de lápiz.
         </p>
 
         <button

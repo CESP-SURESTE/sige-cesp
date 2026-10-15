@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { Header } from '@/components/maestro/ui/shell/Header';
+import { BotSoporte } from '@/components/maestro/ui/shell/BotSoporte';
 
 /**
  * Shell del área MAESTRO. Cuando este layout se renderiza, `src/proxy.ts` ya
@@ -28,6 +29,7 @@ export default async function MaestroLayout(props: LayoutProps<'/maestro'>) {
     <div className="flex min-h-screen flex-col bg-bone text-slate">
       <Header email={email} />
       <main className="flex-1 p-6">{props.children}</main>
+      <BotSoporte />
     </div>
   );
 }

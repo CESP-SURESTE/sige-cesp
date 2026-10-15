@@ -10,17 +10,18 @@ import { clearPlatformToken } from '@/lib/api/platform-http';
  * este árbol — no cruza a `app/admin`/`app/alumno` (regla 11 de CLAUDE.md
  * raíz; mismo criterio que `../Skeleton.tsx` y los modales de `sedes/`).
  */
-const LINKS: { id: 'dashboard' | 'sedes' | 'auditoria'; href: string; label: string }[] = [
+const LINKS: { id: 'dashboard' | 'sedes' | 'auditoria' | 'soporte'; href: string; label: string }[] = [
   { id: 'dashboard', href: '/plataforma', label: 'Dashboard' },
   { id: 'sedes', href: '/plataforma/sedes', label: 'Sedes' },
   { id: 'auditoria', href: '/plataforma/auditoria', label: 'Auditoría' },
+  { id: 'soporte', href: '/plataforma/soporte', label: 'Soporte' },
 ];
 
 export function PlataformaNav({
   activo,
   titulo,
 }: {
-  activo: 'dashboard' | 'sedes' | 'auditoria';
+  activo: 'dashboard' | 'sedes' | 'auditoria' | 'soporte';
   titulo: string;
 }) {
   const router = useRouter();
