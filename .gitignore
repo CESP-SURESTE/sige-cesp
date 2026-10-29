@@ -4,3 +4,8 @@
 
 # Credenciales de cuentas demo del entorno dev — nunca al repo.
 CUENTAS-DEMO.md
+
+# Notas internas de trabajo (solo locales, no van al repo del cliente)
+/CLAUDE.md
+/documentacion_de_agentes/
+/.claude/settings.local.json
